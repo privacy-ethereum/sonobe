@@ -139,7 +139,8 @@ impl<C: Curve, const TYPE: bool> Dummy<&R1CS<CF1<C>>> for CommittedInstance<C, T
     }
 }
 
-impl<C: Curve, const TYPE: bool> CommittedInstanceOps<C> for CommittedInstance<C, TYPE> {
+impl<C: Curve, const TYPE: bool> CommittedInstanceOps<CF1<C>> for CommittedInstance<C, TYPE> {
+    type C = C;
     type Var = CommittedInstanceVar<C, TYPE>;
 
     fn get_commitments(&self) -> Vec<C> {
@@ -225,7 +226,7 @@ impl<C: Curve, const TYPE: bool> GR1CSVar<C::ScalarField> for CommittedInstanceV
     }
 }
 
-impl<C: Curve, const TYPE: bool> CommittedInstanceVarOps<C> for CommittedInstanceVar<C, TYPE> {
+impl<C: Curve, const TYPE: bool> CommittedInstanceVarOps<CF1<C>> for CommittedInstanceVar<C, TYPE> {
     type PointVar = NonNativeAffineVar<C>;
 
     fn get_commitments(&self) -> Vec<Self::PointVar> {

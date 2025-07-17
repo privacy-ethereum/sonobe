@@ -10,7 +10,7 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::log2;
 
-use crate::folding::traits::{CommittedInstanceOps, CommittedInstanceVarOps, Dummy, WitnessOps};
+use crate::{folding::traits::{CommittedInstanceOps, CommittedInstanceVarOps, Dummy, WitnessOps}, transcript::AbsorbNonNativeGadget, Field};
 use crate::transcript::{Transcript, TranscriptVar};
 use crate::utils::vec::poly_from_vec;
 use crate::{arith::ArithRelation, folding::circuits::CF1};
@@ -24,10 +24,10 @@ pub mod on_chain;
 pub struct KZGChallengesGadget {}
 
 impl KZGChallengesGadget {
-    pub fn get_challenges_native<C: Curve, T: Transcript<CF1<C>>, U: CommittedInstanceOps<C>>(
+    pub fn get_challenges_native<F: Field, T: Transcript<F>, U: CommittedInstanceOps<F>>(
         transcript: &mut T,
         U_i: &U,
-    ) -> Vec<CF1<C>> {
+    ) -> Vec<F> {
         let mut challenges = vec![];
         for cm in U_i.get_commitments() {
             transcript.absorb_nonnative(&cm);
@@ -37,14 +37,14 @@ impl KZGChallengesGadget {
     }
 
     pub fn get_challenges_gadget<
-        C: Curve,
+        F: Field,
         S: CryptographicSponge,
-        T: TranscriptVar<CF1<C>, S>,
-        U: CommittedInstanceVarOps<C>,
+        T: TranscriptVar<F, S>,
+        U: CommittedInstanceVarOps<F, PointVar: AbsorbNonNativeGadget<F>>,
     >(
         transcript: &mut T,
         U_i: &U,
-    ) -> Result<Vec<FpVar<CF1<C>>>, SynthesisError> {
+    ) -> Result<Vec<FpVar<F>>, SynthesisError> {
         let mut challenges = vec![];
         for cm in U_i.get_commitments() {
             transcript.absorb_nonnative(&cm)?;
@@ -96,8 +96,8 @@ impl EvalGadget {
 /// folding schemes that specifies their native and in-circuit behaviors.
 pub trait DeciderEnabledNIFS<
     C: Curve,
-    RU: CommittedInstanceOps<C>, // Running instance
-    IU: CommittedInstanceOps<C>, // Incoming instance
+    RU: CommittedInstanceOps<CF1<C>>, // Running instance
+    IU: CommittedInstanceOps<CF1<C>>, // Incoming instance
     W: WitnessOps<CF1<C>>,
     A: ArithRelation<W, RU>,
 >

@@ -97,12 +97,12 @@ pub trait NIFSTrait<
 /// variants [Ova](https://hackmd.io/V4838nnlRKal9ZiTHiGYzw) and
 /// [Mova](https://eprint.iacr.org/2024/1220.pdf).
 pub trait NIFSGadgetTrait<C: Curve, S: CryptographicSponge, T: TranscriptVar<CF1<C>, S>> {
-    type CommittedInstance: Debug + Clone + Absorb + CommittedInstanceOps<C>;
+    type CommittedInstance: Debug + Clone + Absorb + CommittedInstanceOps<CF1<C>>;
     type CommittedInstanceVar: Debug
         + Clone
         + AbsorbGadget<C::ScalarField>
         + AllocVar<Self::CommittedInstance, CF1<C>>
-        + CommittedInstanceVarOps<C>;
+        + CommittedInstanceVarOps<CF1<C>>;
     type Proof: Debug + Clone;
     type ProofVar: Debug + Clone + AllocVar<Self::Proof, CF1<C>>;
 
@@ -288,7 +288,7 @@ pub mod tests {
             PoseidonSpongeVar<Fr>,
             CommittedInstance = N::CommittedInstance, // constrain that N::CI==NG::CI
         >,
-        N::CommittedInstance: CommittedInstanceOps<Projective>,
+        N::CommittedInstance: CommittedInstanceOps<Fr>,
     {
         let poseidon_config = poseidon_canonical_config::<Fr>();
         let pp_hash = Fr::from(42u32); // only for test

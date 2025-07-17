@@ -130,7 +130,8 @@ impl<C: Curve> Absorb for LCCCS<C> {
     }
 }
 
-impl<C: Curve> CommittedInstanceOps<C> for LCCCS<C> {
+impl<C: Curve> CommittedInstanceOps<CF1<C>> for LCCCS<C> {
+    type C = C;
     type Var = LCCCSVar<C>;
 
     fn get_commitments(&self) -> Vec<C> {

@@ -6,31 +6,34 @@ use ark_crypto_primitives::sponge::{
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
 use ark_relations::gr1cs::SynthesisError;
+use ark_std::fmt::Debug;
 
 use crate::{
-    transcript::{AbsorbNonNativeGadget, Transcript},
+    transcript::{AbsorbNonNativeGadget, Transcript, TranscriptVar},
     Curve, Error,
 };
 
 use super::circuits::CF1;
 
-pub trait CommittedInstanceOps<C: Curve>: Inputize<CF1<C>> {
+pub trait CommittedInstanceOps<F: PrimeField>: Inputize<F> + PartialEq + Clone + Debug {
+    type C: Curve;
+
     /// The in-circuit representation of the committed instance.
-    type Var: AllocVar<Self, CF1<C>> + CommittedInstanceVarOps<C>;
+    type Var: AllocVar<Self, F> + CommittedInstanceVarOps<F>;
     /// `hash` implements the committed instance hash compatible with the
     /// in-circuit implementation from `CommittedInstanceVarOps::hash`.
     ///
     /// Returns `H(i, z_0, z_i, U_i)`, where `i` can be `i` but also `i+1`, and
     /// `U_i` is the committed instance `self`.
-    fn hash<T: Transcript<CF1<C>>>(
+    fn hash<T: Transcript<F>>(
         &self,
         sponge: &T,
-        i: CF1<C>,
-        z_0: &[CF1<C>],
-        z_i: &[CF1<C>],
-    ) -> CF1<C>
+        i: F,
+        z_0: &[F],
+        z_i: &[F],
+    ) -> F
     where
-        Self: Sized + Absorb,
+        Self: Sized + Absorb, F: Absorb
     {
         let mut sponge = sponge.clone();
         sponge.absorb(&i);
@@ -41,7 +44,7 @@ pub trait CommittedInstanceOps<C: Curve>: Inputize<CF1<C>> {
     }
 
     /// Returns the commitments contained in the committed instance.
-    fn get_commitments(&self) -> Vec<C>;
+    fn get_commitments(&self) -> Vec<Self::C>;
 
     /// Returns `true` if the committed instance is an incoming instance, and
     /// `false` if it is a running instance.
@@ -55,8 +58,8 @@ pub trait CommittedInstanceOps<C: Curve>: Inputize<CF1<C>> {
     }
 }
 
-pub trait CommittedInstanceVarOps<C: Curve> {
-    type PointVar: AbsorbNonNativeGadget<CF1<C>>;
+pub trait CommittedInstanceVarOps<F: PrimeField> {
+    type PointVar;
     /// `hash` implements the in-circuit committed instance hash compatible with
     /// the native implementation from `CommittedInstanceOps::hash`.
     /// Returns `H(i, z_0, z_i, U_i)`, where `i` can be `i` but also `i+1`, and
@@ -66,15 +69,15 @@ pub trait CommittedInstanceVarOps<C: Curve> {
     /// instance `self` as a vector of field elements, so they can be reused in
     /// other gadgets avoiding recalculating (reconstraining) them.
     #[allow(clippy::type_complexity)]
-    fn hash(
+    fn hash<T: Transcript<F>>(
         &self,
-        sponge: &PoseidonSpongeVar<CF1<C>>,
-        i: &FpVar<CF1<C>>,
-        z_0: &[FpVar<CF1<C>>],
-        z_i: &[FpVar<CF1<C>>],
-    ) -> Result<(FpVar<CF1<C>>, Vec<FpVar<CF1<C>>>), SynthesisError>
+        sponge: &impl TranscriptVar<F, T>,
+        i: &FpVar<F>,
+        z_0: &[FpVar<F>],
+        z_i: &[FpVar<F>],
+    ) -> Result<(FpVar<F>, Vec<FpVar<F>>), SynthesisError>
     where
-        Self: AbsorbGadget<CF1<C>>,
+        Self: AbsorbGadget<F>,
     {
         let mut sponge = sponge.clone();
         let U_vec = self.to_sponge_field_elements()?;
@@ -93,7 +96,7 @@ pub trait CommittedInstanceVarOps<C: Curve> {
     fn get_commitments(&self) -> Vec<Self::PointVar>;
 
     /// Returns the public inputs contained in the committed instance.
-    fn get_public_inputs(&self) -> &[FpVar<CF1<C>>];
+    fn get_public_inputs(&self) -> &[FpVar<F>];
 
     /// Generates constraints to enforce that the committed instance is an
     /// incoming instance.
@@ -106,7 +109,7 @@ pub trait CommittedInstanceVarOps<C: Curve> {
     fn enforce_partial_equal(&self, other: &Self) -> Result<(), SynthesisError>;
 }
 
-pub trait WitnessOps<F: PrimeField> {
+pub trait WitnessOps<F: PrimeField>: PartialEq + Clone + Debug {
     /// The in-circuit representation of the witness.
     type Var: AllocVar<Self, F> + WitnessVarOps<F>;
 

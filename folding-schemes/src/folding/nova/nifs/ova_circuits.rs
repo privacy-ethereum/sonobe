@@ -66,7 +66,7 @@ impl<C: Curve> AbsorbGadget<C::ScalarField> for CommittedInstanceVar<C> {
     }
 }
 
-impl<C: Curve> CommittedInstanceVarOps<C> for CommittedInstanceVar<C> {
+impl<C: Curve> CommittedInstanceVarOps<CF1<C>> for CommittedInstanceVar<C> {
     type PointVar = NonNativeAffineVar<C>;
 
     fn get_commitments(&self) -> Vec<Self::PointVar> {

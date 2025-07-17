@@ -80,7 +80,7 @@ impl<C: Curve> AllocVar<CCCS<C>, CF1<C>> for CCCSVar<C> {
     }
 }
 
-impl<C: Curve> CommittedInstanceVarOps<C> for CCCSVar<C> {
+impl<C: Curve> CommittedInstanceVarOps<CF1<C>> for CCCSVar<C> {
     type PointVar = NonNativeAffineVar<C>;
 
     fn get_commitments(&self) -> Vec<Self::PointVar> {
@@ -166,7 +166,7 @@ impl<C: Curve> AbsorbGadget<C::ScalarField> for LCCCSVar<C> {
     }
 }
 
-impl<C: Curve> CommittedInstanceVarOps<C> for LCCCSVar<C> {
+impl<C: Curve> CommittedInstanceVarOps<CF1<C>> for LCCCSVar<C> {
     type PointVar = NonNativeAffineVar<C>;
 
     fn get_commitments(&self) -> Vec<Self::PointVar> {

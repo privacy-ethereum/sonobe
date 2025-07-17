@@ -38,8 +38,8 @@ use super::DeciderEnabledNIFS;
 pub struct GenericOffchainDeciderCircuit1<
     C1: Curve,
     C2: Curve,
-    RU: CommittedInstanceOps<C1>,               // Running instance
-    IU: CommittedInstanceOps<C1>,               // Incoming instance
+    RU: CommittedInstanceOps<CF1<C1>>,               // Running instance
+    IU: CommittedInstanceOps<CF1<C1>>,               // Incoming instance
     W: WitnessOps<CF1<C1>>,                     // Witness
     A: ArithRelation<W, RU>,                    // Constraint system
     AVar: ArithRelationGadget<W::Var, RU::Var>, // In-circuit representation of `A`
@@ -79,8 +79,8 @@ pub struct GenericOffchainDeciderCircuit1<
 impl<
         C1: Curve,
         C2: Curve<ScalarField = CF2<C1>, BaseField = CF1<C1>>,
-        RU: CommittedInstanceOps<C1> + for<'a> Dummy<&'a A>,
-        IU: CommittedInstanceOps<C1> + for<'a> Dummy<&'a A>,
+        RU: CommittedInstanceOps<CF1<C1>> + for<'a> Dummy<&'a A>,
+        IU: CommittedInstanceOps<CF1<C1>> + for<'a> Dummy<&'a A>,
         W: WitnessOps<CF1<C1>> + for<'a> Dummy<&'a A>,
         A: ArithRelation<W, RU>,
         AVar: ArithRelationGadget<W::Var, RU::Var> + AllocVar<A, CF1<C1>>,
@@ -141,8 +141,8 @@ impl<
 impl<
         C1: Curve,
         C2: Curve<ScalarField = CF2<C1>, BaseField = CF1<C1>>,
-        RU: CommittedInstanceOps<C1>,
-        IU: CommittedInstanceOps<C1>,
+        RU: CommittedInstanceOps<CF1<C1>, C = C1>,
+        IU: CommittedInstanceOps<CF1<C1>>,
         W: WitnessOps<CF1<C1>>,
         A: ArithRelation<W, RU>,
         AVar: ArithRelationGadget<W::Var, RU::Var> + AllocVar<A, CF1<C1>>,
@@ -150,7 +150,7 @@ impl<
     > ConstraintSynthesizer<CF1<C1>>
     for GenericOffchainDeciderCircuit1<C1, C2, RU, IU, W, A, AVar, D>
 where
-    RU::Var: AbsorbGadget<CF1<C1>> + CommittedInstanceVarOps<C1, PointVar = NonNativeAffineVar<C1>>,
+    RU::Var: AbsorbGadget<CF1<C1>> + CommittedInstanceVarOps<CF1<C1>, PointVar = NonNativeAffineVar<C1>>,
 {
     fn generate_constraints(self, cs: ConstraintSystemRef<CF1<C1>>) -> Result<(), SynthesisError> {
         let arith = AVar::new_witness(cs.clone(), || Ok(&self.arith))?;
