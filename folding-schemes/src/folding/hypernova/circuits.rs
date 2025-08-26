@@ -11,13 +11,15 @@ use ark_r1cs_std::{
     eq::EqGadget,
     fields::{fp::FpVar, FieldVar},
     uint8::UInt8,
-    R1CSVar,
+    GR1CSVar,
 };
-use ark_relations::r1cs::{
+use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, Namespace, SynthesisError,
     SynthesisMode,
 };
-use ark_std::{fmt::Debug, iter::Sum, One, Zero};
+#[cfg(test)]
+use ark_std::One;
+use ark_std::{fmt::Debug, iter::Sum, Zero};
 use core::{borrow::Borrow, marker::PhantomData};
 
 use super::{

@@ -9,9 +9,9 @@ use ark_r1cs_std::{
     eq::EqGadget,
     fields::{fp::FpVar, FieldVar},
     poly::polynomial::univariate::dense::DensePolynomialVar,
-    R1CSVar,
+    GR1CSVar,
 };
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
+use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_std::{fmt::Debug, Zero};
 
 use super::{
@@ -400,7 +400,7 @@ mod tests {
 
     use ark_bn254::{Fr, G1Projective as Projective};
     use ark_crypto_primitives::sponge::poseidon::PoseidonSponge;
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_relations::gr1cs::ConstraintSystem;
 
     #[test]
     fn test_folding_gadget() -> Result<(), Error> {

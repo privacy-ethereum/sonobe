@@ -7,9 +7,9 @@ use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     fields::fp::FpVar,
-    R1CSVar,
+    GR1CSVar,
 };
-use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::{borrow::Borrow, marker::PhantomData};
 
 use super::{
@@ -201,7 +201,7 @@ impl<C: Curve>
 #[cfg(test)]
 pub mod tests {
     use ark_pallas::{Fr, Projective};
-    use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
+    use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystem};
     use ark_vesta::Projective as Projective2;
 
     use super::*;
