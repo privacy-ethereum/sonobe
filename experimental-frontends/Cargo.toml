@@ -31,4 +31,3 @@ getrandom = { workspace = true, features = ["js"] }
 [features]
 default = ["ark-circom/default", "parallel"]
 parallel = []
-wasm = ["ark-circom/wasm"]
