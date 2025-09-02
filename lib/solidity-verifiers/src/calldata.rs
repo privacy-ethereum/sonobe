@@ -1,13 +1,12 @@
 use crate::utils::eth::ToEth;
 use ark_bn254::Bn254;
 use ark_groth16::Groth16;
-use crypto::digest::Digest;
-use crypto::sha3::Sha3;
 use folding_schemes::commitment::kzg::KZG;
 use folding_schemes::folding::nova::decider_eth::Proof;
 use folding_schemes::folding::nova::CommittedInstance;
 use folding_schemes::Error;
 use num_bigint::BigUint;
+use revm::primitives::alloy_primitives::Keccak256;
 
 /// Specifies which API to use for a proof verification in a contract.
 #[derive(Copy, Clone, Debug, Default)]
@@ -80,9 +79,8 @@ fn get_function_selector(mode: NovaVerificationMode, state_len: usize) -> [u8; 4
             format!("verifyOpaqueNovaProofWithInputs(uint256,uint256[{state_len}],uint256[{state_len}],uint256[25])"),
     };
 
-    let mut hasher = Sha3::keccak256();
-    hasher.input_str(&fn_sig);
-    let hash = &mut [0u8; 32];
-    hasher.result(hash);
+    let mut hasher = Keccak256::new();
+    hasher.update(&fn_sig);
+    let hash = hasher.finalize();
     [hash[0], hash[1], hash[2], hash[3]]
 }

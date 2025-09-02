@@ -14,7 +14,6 @@ ark-poly-commit = { workspace = true }
 ark-serialize = { workspace = true }
 askama = { workspace = true, features = ["config"] }
 revm = { workspace = true, features = ["std"] }
-rust-crypto = { workspace = true }
 num-bigint = { workspace = true }
 folding-schemes = { workspace = true } # without 'light-test' enabled
 
