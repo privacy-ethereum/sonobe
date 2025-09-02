@@ -38,6 +38,7 @@ ark-mnt6-298 = { workspace = true, features = ["r1cs"] }
 num-bigint = { workspace = true, features = ["rand"] }
 
 # for benchmarks
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 criterion = { workspace = true }
 pprof = { workspace = true, features = ["criterion", "flamegraph"] }
 
