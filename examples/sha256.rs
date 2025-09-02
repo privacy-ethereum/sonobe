@@ -114,7 +114,7 @@ fn main() -> Result<(), Error> {
     >;
 
     let poseidon_config = poseidon_canonical_config::<Fr>();
-    let mut rng = rand::rngs::OsRng;
+    let mut rng = ark_std::rand::rngs::OsRng;
 
     println!("Prepare Nova ProverParams & VerifierParams");
     let nova_preprocess_params = PreprocessorParam::new(poseidon_config, F_circuit);

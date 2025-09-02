@@ -201,7 +201,7 @@ pub mod tests {
     use crate::transcript::poseidon::poseidon_canonical_config;
     use ark_bn254::{Fr, G1Projective as Projective};
     use ark_grumpkin::Projective as Projective2;
-    use rand::rngs::OsRng;
+    use ark_std::rand::rngs::OsRng;
 
     // Tests zk proof generation and verification for a valid nova IVC proof
     #[test]

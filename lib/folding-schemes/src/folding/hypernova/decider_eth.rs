@@ -259,7 +259,7 @@ pub mod tests {
             NU,
         >;
 
-        let mut rng = rand::rngs::OsRng;
+        let mut rng = ark_std::rand::rngs::OsRng;
         let poseidon_config = poseidon_canonical_config::<Fr>();
 
         let F_circuit = CubicFCircuit::<Fr>::new(())?;
@@ -329,7 +329,7 @@ pub mod tests {
         let prep_param = PreprocessorParam::new(poseidon_config.clone(), F_circuit);
         let hypernova_params = HN::preprocess(&mut rng, &prep_param)?;
 
-        let mut rng = rand::rngs::OsRng;
+        let mut rng = ark_std::rand::rngs::OsRng;
 
         // prepare the Decider prover & verifier params
         let (decider_pp, decider_vp) =

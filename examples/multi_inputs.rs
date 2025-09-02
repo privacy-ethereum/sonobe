@@ -115,7 +115,7 @@ fn main() -> Result<(), Error> {
     let F_circuit = MultiInputsFCircuit::<Fr>::new(())?;
 
     let poseidon_config = poseidon_canonical_config::<Fr>();
-    let mut rng = rand::rngs::OsRng;
+    let mut rng = ark_std::rand::rngs::OsRng;
 
     /// The idea here is that eventually we could replace the next line chunk that defines the
     /// `type N = Nova<...>` by using another folding scheme that fulfills the `FoldingScheme`

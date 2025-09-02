@@ -299,7 +299,7 @@ pub mod tests {
             N,              // here we define the FoldingScheme to use
         >;
 
-        let mut rng = rand::rngs::OsRng;
+        let mut rng = ark_std::rand::rngs::OsRng;
         let poseidon_config = poseidon_canonical_config::<Fr>();
 
         let F_circuit = CubicFCircuit::<Fr>::new(())?;
@@ -378,7 +378,7 @@ pub mod tests {
             N,              // here we define the FoldingScheme to use
         >;
 
-        let mut rng = rand::rngs::OsRng;
+        let mut rng = ark_std::rand::rngs::OsRng;
         let poseidon_config = poseidon_canonical_config::<Fr>();
 
         let F_circuit = CubicFCircuit::<Fr>::new(())?;

@@ -111,8 +111,7 @@ mod tests {
     use ark_bn254::Fr;
     use ark_r1cs_std::{alloc::AllocVar, GR1CSVar};
     use ark_relations::gr1cs::ConstraintSystem;
-    use ark_std::{test_rng, UniformRand};
-    use rand::Rng;
+    use ark_std::{rand::Rng, test_rng, UniformRand};
 
     use super::*;
     use crate::Error;

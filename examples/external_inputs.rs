@@ -178,7 +178,7 @@ fn main() -> Result<(), Error> {
         false,
     >;
 
-    let mut rng = rand::rngs::OsRng;
+    let mut rng = ark_std::rand::rngs::OsRng;
 
     println!("Prepare Nova's ProverParams & VerifierParams");
     let nova_preprocess_params = PreprocessorParam::new(poseidon_config, F_circuit.clone());

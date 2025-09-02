@@ -139,8 +139,7 @@ pub mod tests {
     use ark_bn254::{Fr, G1Projective as Projective};
     use ark_r1cs_std::{alloc::AllocVar, GR1CSVar};
     use ark_relations::gr1cs::ConstraintSystem;
-    use ark_std::UniformRand;
-    use rand::Rng;
+    use ark_std::{rand::Rng, UniformRand};
 
     /// test that checks the native CommittedInstance.to_sponge_{bytes,field_elements}
     /// vs the R1CS constraints version

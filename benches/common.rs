@@ -19,7 +19,7 @@ pub(crate) fn bench_ivc_opt<
 
     let f_circuit = CustomFCircuit::<C1::ScalarField>::new(fcircuit_size)?;
 
-    let mut rng = rand::rngs::OsRng;
+    let mut rng = ark_std::rand::rngs::OsRng;
 
     // prepare the FS prover & verifier params
     let fs_params = FS::preprocess(&mut rng, &prep_param)?;

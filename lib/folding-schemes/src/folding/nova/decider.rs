@@ -398,7 +398,7 @@ pub mod tests {
         println!("prove_step, {:?}", start.elapsed());
         nova.prove_step(&mut rng, (), None)?; // do a 2nd step
 
-        let mut rng = rand::rngs::OsRng;
+        let mut rng = ark_std::rand::rngs::OsRng;
 
         // prepare the Decider prover & verifier params
         let start = Instant::now();
