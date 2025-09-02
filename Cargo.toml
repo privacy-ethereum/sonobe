@@ -1,9 +1,9 @@
 [workspace]
 members = [
-    "folding-schemes",
-    "solidity-verifiers",
+    "lib/folding-schemes",
+    "lib/solidity-verifiers",
     "cli",
-    "experimental-frontends",
+    "lib/experimental-frontends",
 ]
 resolver = "2"
 
@@ -85,6 +85,6 @@ ark-std = { version = "^0.5.0", default-features = false }
 ark-vesta = { version = "^0.5.0" }
 
 # Local crates
-experimental-frontends = { path = "experimental-frontends" }
-folding-schemes = { path = "folding-schemes" }
-solidity-verifiers = { path = "solidity-verifiers" }
+experimental-frontends = { path = "lib/experimental-frontends" }
+folding-schemes = { path = "lib/folding-schemes" }
+solidity-verifiers = { path = "lib/solidity-verifiers" }

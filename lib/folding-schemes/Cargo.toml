@@ -55,27 +55,27 @@ light-test = []
 
 [[bench]]
 name = "nova"
-path = "../benches/nova.rs"
+path = "../../benches/nova.rs"
 harness = false
 
 [[bench]]
 name = "hypernova"
-path = "../benches/hypernova.rs"
+path = "../../benches/hypernova.rs"
 harness = false
 
 [[bench]]
 name = "protogalaxy"
-path = "../benches/protogalaxy.rs"
+path = "../../benches/protogalaxy.rs"
 harness = false
 
 [[example]]
 name = "sha256"
-path = "../examples/sha256.rs"
+path = "../../examples/sha256.rs"
 
 [[example]]
 name = "multi_inputs"
-path = "../examples/multi_inputs.rs"
+path = "../../examples/multi_inputs.rs"
 
 [[example]]
 name = "external_inputs"
-path = "../examples/external_inputs.rs"
+path = "../../examples/external_inputs.rs"

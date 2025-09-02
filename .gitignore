@@ -2,15 +2,15 @@
 Cargo.lock
 
 # Circom generated files
-experimental-frontends/src/circom/test_folder/*_js/
+lib/experimental-frontends/src/circom/test_folder/*_js/
 *.r1cs
 *.sym
 
 # Noir generated files
-experimental-frontends/src/noir/test_folder/*/target/*
+lib/experimental-frontends/src/noir/test_folder/*/target/*
 
 # generated contracts data
-solidity-verifiers/generated
+lib/solidity-verifiers/generated
 examples/*.sol
 examples/*.calldata
 examples/*.inputs
