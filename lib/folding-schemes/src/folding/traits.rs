@@ -1,19 +1,13 @@
-use ark_crypto_primitives::sponge::{
-    constraints::{AbsorbGadget, CryptographicSpongeVar},
-    poseidon::constraints::PoseidonSpongeVar,
-    Absorb,
-};
+use ark_crypto_primitives::sponge::{constraints::AbsorbGadget, Absorb};
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::fmt::Debug;
 
 use crate::{
-    transcript::{AbsorbNonNativeGadget, Transcript, TranscriptVar},
+    transcript::{Transcript, TranscriptVar},
     Curve, Error,
 };
-
-use super::circuits::CF1;
 
 pub trait CommittedInstanceOps<F: PrimeField>: Inputize<F> + PartialEq + Clone + Debug {
     type C: Curve;
@@ -25,15 +19,10 @@ pub trait CommittedInstanceOps<F: PrimeField>: Inputize<F> + PartialEq + Clone +
     ///
     /// Returns `H(i, z_0, z_i, U_i)`, where `i` can be `i` but also `i+1`, and
     /// `U_i` is the committed instance `self`.
-    fn hash<T: Transcript<F>>(
-        &self,
-        sponge: &T,
-        i: F,
-        z_0: &[F],
-        z_i: &[F],
-    ) -> F
+    fn hash<T: Transcript<F>>(&self, sponge: &T, i: F, z_0: &[F], z_i: &[F]) -> F
     where
-        Self: Sized + Absorb, F: Absorb
+        Self: Sized + Absorb,
+        F: Absorb,
     {
         let mut sponge = sponge.clone();
         sponge.absorb(&i);

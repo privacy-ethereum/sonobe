@@ -839,7 +839,7 @@ mod tests {
     use ark_bn254::{Fq, Fr, G1Projective as Projective};
     use ark_crypto_primitives::sponge::Absorb;
     use ark_grumpkin::Projective as Projective2;
-    use ark_std::{cmp::max, test_rng, time::Instant, UniformRand};
+    use ark_std::{cmp::max, test_rng, UniformRand};
 
     use super::*;
     use crate::{
@@ -1139,7 +1139,6 @@ mod tests {
         const MU: usize = 3;
         const NU: usize = 3;
 
-        let start = Instant::now();
         let F_circuit = CubicFCircuit::<Fr>::new(())?;
         let mut augmented_f_circuit =
             AugmentedFCircuit::<Projective, Projective2, CubicFCircuit<Fr>, MU, NU>::empty(
@@ -1148,7 +1147,6 @@ mod tests {
                 None,
             )?;
         let ccs = augmented_f_circuit.ccs.clone();
-        println!("AugmentedFCircuit & CCS generation: {:?}", start.elapsed());
         println!("CCS m x n: {} x {}", ccs.n_constraints(), ccs.n_variables());
 
         // CycleFold circuit
@@ -1200,8 +1198,6 @@ mod tests {
         let n_steps: usize = 4;
         let mut iFr = Fr::zero();
         for i in 0..n_steps {
-            let start = Instant::now();
-
             // for this test, let Us & us be just an array of copies of the U_i & u_i respectively
             let Us = vec![U_i.clone(); MU - 1];
             let Ws = vec![W_i.clone(); MU - 1];
@@ -1381,8 +1377,6 @@ mod tests {
 
             // check the CycleFold instance relation
             cf_r1cs.check_relation(&cf_W_i, &cf_U_i)?;
-
-            println!("augmented_f_circuit step {}: {:?}", i, start.elapsed());
         }
         Ok(())
     }

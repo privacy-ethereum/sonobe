@@ -7,6 +7,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::{cfg_into_iter, log2, One};
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use super::{

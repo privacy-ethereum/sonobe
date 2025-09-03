@@ -315,7 +315,7 @@ where
     CS1: CommitmentScheme<C1, H>,
     CS2: CommitmentScheme<C2, H>,
 {
-    fn serialize_with_mode<W: std::io::prelude::Write>(
+    fn serialize_with_mode<W: ark_std::io::prelude::Write>(
         &self,
         mut writer: W,
         compress: ark_serialize::Compress,
@@ -335,7 +335,7 @@ where
     CS1: CommitmentScheme<C1, H>,
     CS2: CommitmentScheme<C2, H>,
 {
-    fn deserialize_with_mode<R: std::io::prelude::Read>(
+    fn deserialize_with_mode<R: ark_std::io::prelude::Read>(
         mut reader: R,
         compress: ark_serialize::Compress,
         validate: ark_serialize::Validate,
@@ -391,7 +391,7 @@ where
     CS1: CommitmentScheme<C1, H>,
     CS2: CommitmentScheme<C2, H>,
 {
-    fn serialize_with_mode<W: std::io::prelude::Write>(
+    fn serialize_with_mode<W: ark_std::io::prelude::Write>(
         &self,
         mut writer: W,
         compress: ark_serialize::Compress,
@@ -507,7 +507,7 @@ where
     type CFInstance = (CycleFoldCommittedInstance<C2>, CycleFoldWitness<C2>);
     type IVCProof = IVCProof<C1, C2>;
 
-    fn pp_deserialize_with_mode<R: std::io::prelude::Read>(
+    fn pp_deserialize_with_mode<R: ark_std::io::prelude::Read>(
         reader: R,
         compress: ark_serialize::Compress,
         validate: ark_serialize::Validate,
@@ -517,7 +517,7 @@ where
             reader, compress, validate,
         )?)
     }
-    fn vp_deserialize_with_mode<R: std::io::prelude::Read>(
+    fn vp_deserialize_with_mode<R: ark_std::io::prelude::Read>(
         mut reader: R,
         compress: ark_serialize::Compress,
         validate: ark_serialize::Validate,

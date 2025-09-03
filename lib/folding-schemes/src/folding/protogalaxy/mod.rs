@@ -367,7 +367,7 @@ where
     CS1: CommitmentScheme<C1, false>,
     CS2: CommitmentScheme<C2, false>,
 {
-    fn serialize_with_mode<W: std::io::prelude::Write>(
+    fn serialize_with_mode<W: ark_std::io::prelude::Write>(
         &self,
         mut writer: W,
         compress: ark_serialize::Compress,
@@ -407,7 +407,7 @@ where
     CS1: CommitmentScheme<C1, false>,
     CS2: CommitmentScheme<C2, false>,
 {
-    fn deserialize_with_mode<R: std::io::prelude::Read>(
+    fn deserialize_with_mode<R: ark_std::io::prelude::Read>(
         mut reader: R,
         compress: ark_serialize::Compress,
         validate: ark_serialize::Validate,
@@ -464,7 +464,7 @@ where
     CS1: CommitmentScheme<C1>,
     CS2: CommitmentScheme<C2>,
 {
-    fn serialize_with_mode<W: std::io::prelude::Write>(
+    fn serialize_with_mode<W: ark_std::io::prelude::Write>(
         &self,
         mut writer: W,
         compress: ark_serialize::Compress,
@@ -670,7 +670,7 @@ where
     type CFInstance = (CycleFoldCommittedInstance<C2>, CycleFoldWitness<C2>);
     type IVCProof = IVCProof<C1, C2>;
 
-    fn pp_deserialize_with_mode<R: std::io::prelude::Read>(
+    fn pp_deserialize_with_mode<R: ark_std::io::prelude::Read>(
         reader: R,
         compress: ark_serialize::Compress,
         validate: ark_serialize::Validate,
@@ -681,7 +681,7 @@ where
         )?)
     }
 
-    fn vp_deserialize_with_mode<R: std::io::prelude::Read>(
+    fn vp_deserialize_with_mode<R: ark_std::io::prelude::Read>(
         mut reader: R,
         compress: ark_serialize::Compress,
         validate: ark_serialize::Validate,
@@ -1100,7 +1100,8 @@ mod tests {
 
     use ark_bn254::{Bn254, Fr, G1Projective as Projective};
     use ark_grumpkin::Projective as Projective2;
-    use ark_std::test_rng;
+    use ark_std::{cfg_into_iter, test_rng};
+    #[cfg(feature = "parallel")]
     use rayon::prelude::*;
 
     use crate::{
@@ -1161,8 +1162,7 @@ mod tests {
         for state_len in [1, 10, 100] {
             let dummy_circuit: DummyCircuit = FCircuit::<Fr>::new(state_len)?;
 
-            let costs: Vec<usize> = (1..32)
-                .into_par_iter()
+            let costs: Vec<usize> = cfg_into_iter!(1..32)
                 .map(|t| {
                     let cs = ConstraintSystem::<Fr>::new_ref();
                     AugmentedFCircuit::<Projective, Projective2, DummyCircuit>::empty(

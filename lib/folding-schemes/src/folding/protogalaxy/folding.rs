@@ -4,9 +4,9 @@ use ark_poly::{
     univariate::{DensePolynomial, SparsePolynomial},
     DenseUVPolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain, Polynomial,
 };
-use ark_std::{cfg_into_iter, log2, One, Zero};
+use ark_std::{cfg_into_iter, log2, One, Zero, marker::PhantomData};
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
-use std::marker::PhantomData;
 
 use super::utils::{all_powers, betas_star, exponential_powers, pow_i};
 use super::ProtoGalaxyError;

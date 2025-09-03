@@ -13,9 +13,10 @@
 use ark_ff::PrimeField;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
 use ark_serialize::CanonicalSerialize;
-use ark_std::{end_timer, start_timer};
+use ark_std::{cfg_iter_mut, end_timer, start_timer, cmp::max, marker::PhantomData, ops::Add};
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
-use std::{cmp::max, collections::HashMap, marker::PhantomData, ops::Add, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use thiserror::Error;
 
 //-- aritherrors
@@ -376,7 +377,7 @@ fn build_eq_x_r_helper<F: PrimeField>(r: &[F], buf: &mut Vec<F>) -> Result<(), A
         // *buf = res;
 
         let mut res = vec![F::zero(); buf.len() << 1];
-        res.par_iter_mut().enumerate().for_each(|(i, val)| {
+        cfg_iter_mut!(res).enumerate().for_each(|(i, val)| {
             let bi = buf[i >> 1];
             let tmp = r[0] * bi;
             if i & 1 == 0 {

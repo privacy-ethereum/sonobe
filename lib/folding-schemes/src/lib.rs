@@ -163,7 +163,7 @@ pub trait FoldingScheme<
     /// Internally it generates the r1cs/ccs & cf_r1cs needed for the VerifierParams. In this way
     /// we avoid needing to serialize them, saving significant space in the VerifierParams
     /// serialized size.
-    fn pp_deserialize_with_mode<R: std::io::prelude::Read>(
+    fn pp_deserialize_with_mode<R: ark_std::io::prelude::Read>(
         reader: R,
         compress: ark_serialize::Compress,
         validate: ark_serialize::Validate,
@@ -175,7 +175,7 @@ pub trait FoldingScheme<
     /// Internally it generates the r1cs/ccs & cf_r1cs needed for the VerifierParams. In this way
     /// we avoid needing to serialize them, saving significant space in the VerifierParams
     /// serialized size.
-    fn vp_deserialize_with_mode<R: std::io::prelude::Read>(
+    fn vp_deserialize_with_mode<R: ark_std::io::prelude::Read>(
         reader: R,
         compress: ark_serialize::Compress,
         validate: ark_serialize::Validate,

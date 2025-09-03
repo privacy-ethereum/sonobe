@@ -15,11 +15,9 @@ use ark_poly_commit::kzg10::{
     Commitment as KZG10Commitment, Proof as KZG10Proof, VerifierKey, KZG10,
 };
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Valid};
-use ark_std::rand::RngCore;
-use ark_std::{borrow::Cow, fmt::Debug};
-use ark_std::{One, Zero};
-use core::marker::PhantomData;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use ark_std::{borrow::Cow, fmt::Debug, marker::PhantomData, rand::RngCore, One, Zero};
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use super::CommitmentScheme;
 use crate::transcript::Transcript;
@@ -35,7 +33,7 @@ pub struct ProverKey<'a, C: Curve> {
 }
 
 impl<'a, C: Curve> CanonicalSerialize for ProverKey<'a, C> {
-    fn serialize_with_mode<W: std::io::prelude::Write>(
+    fn serialize_with_mode<W: ark_std::io::prelude::Write>(
         &self,
         mut writer: W,
         compress: ark_serialize::Compress,
@@ -49,7 +47,7 @@ impl<'a, C: Curve> CanonicalSerialize for ProverKey<'a, C> {
 }
 
 impl<'a, C: Curve> CanonicalDeserialize for ProverKey<'a, C> {
-    fn deserialize_with_mode<R: std::io::prelude::Read>(
+    fn deserialize_with_mode<R: ark_std::io::prelude::Read>(
         reader: R,
         compress: ark_serialize::Compress,
         validate: ark_serialize::Validate,

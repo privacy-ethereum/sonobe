@@ -62,26 +62,27 @@ thiserror = { version = "1.0" }
 wasmer = { version = "6.1.0-rc.3", default-features = false }
 
 # Arkworks family
-ark-bn254 = { version = "^0.5.0", default-features = false }
 ark-circom = { git = "https://github.com/arkworks-rs/circom-compat", default-features = false }
 ark-crypto-primitives = { version = "^0.5.0", default-features = false }
 ark-ec = { version = "^0.5.0", default-features = false }
 ark-ff = { version = "^0.5.0", default-features = false }
-ark-groth16 = { version = "^0.5.0" }
-ark-grumpkin = { version = "^0.5.0", default-features = false }
-ark-mnt4-298 = { version = "^0.5.0" }
-ark-mnt6-298 = { version = "^0.5.0" }
-ark-pallas = { version = "^0.5.0" }
+ark-groth16 = { version = "^0.5.0", default-features = false }
 ark-poly = { version = "^0.5.0", default-features = false }
-ark-poly-commit = { version = "^0.5.0" }
+ark-poly-commit = { version = "^0.5.0", default-features = false }
 ark-r1cs-std = { version = "^0.5.0", default-features = false }
 ark-relations = { version = "^0.5.0", default-features = false }
-ark-serialize = { version = "^0.5.0" }
+ark-serialize = { version = "^0.5.0", default-features = false }
 ark-snark = { version = "^0.5.0", default-features = false }
 ark-std = { version = "^0.5.0", default-features = false }
-ark-vesta = { version = "^0.5.0" }
+
+ark-bn254 = { version = "^0.5.0", default-features = false }
+ark-grumpkin = { version = "^0.5.0", default-features = false }
+ark-mnt4-298 = { version = "^0.5.0", default-features = false }
+ark-mnt6-298 = { version = "^0.5.0", default-features = false }
+ark-pallas = { version = "^0.5.0", default-features = false }
+ark-vesta = { version = "^0.5.0", default-features = false }
 
 # Local crates
-experimental-frontends = { path = "lib/experimental-frontends" }
-folding-schemes = { path = "lib/folding-schemes" }
-solidity-verifiers = { path = "lib/solidity-verifiers" }
+experimental-frontends = { path = "lib/experimental-frontends", default-features = false }
+folding-schemes = { path = "lib/folding-schemes", default-features = false }
+solidity-verifiers = { path = "lib/solidity-verifiers", default-features = false }

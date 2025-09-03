@@ -6,23 +6,26 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ark-ff = { workspace = true, features = ["parallel", "asm"] }
-ark-std = { workspace = true, features = ["parallel"] }
+ark-ff = { workspace = true, features = ["asm"] }
+ark-std = { workspace = true }
 ark-relations = { workspace = true }
-ark-r1cs-std = { workspace = true, features = ["parallel"] }
+ark-r1cs-std = { workspace = true }
 ark-serialize = { workspace = true }
 ark-circom = { workspace = true }
 num-bigint = { workspace = true }
 noname = { workspace = true }
 acvm = { workspace = true }
-folding-schemes = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 wasmer = { workspace = true }
+
+folding-schemes = { workspace = true }
 
 [dev-dependencies]
 ark-bn254 = { workspace = true, features = ["r1cs"] }
 
 [features]
-default = ["ark-circom/default", "parallel"]
-parallel = []
+default = ["parallel"]
+parallel = [
+    "folding-schemes/parallel",
+]

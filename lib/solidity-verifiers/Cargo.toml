@@ -7,7 +7,7 @@ repository.workspace = true
 
 [dependencies]
 ark-ec = { workspace = true }
-ark-ff = { workspace = true }
+ark-ff = { workspace = true, features = ["asm"] }
 ark-groth16 = { workspace = true }
 ark-bn254 = { workspace = true, features = ["r1cs"] }
 ark-poly-commit = { workspace = true }
@@ -15,27 +15,24 @@ ark-serialize = { workspace = true }
 askama = { workspace = true, features = ["config"] }
 revm = { workspace = true, features = ["std"] }
 num-bigint = { workspace = true }
+
 folding-schemes = { workspace = true } # without 'light-test' enabled
 
 [dev-dependencies]
-ark-ec = { workspace = true, features = ["parallel"] }
-ark-ff = { workspace = true, features = ["parallel", "asm"] }
-ark-std = { workspace = true, features = ["parallel"] }
-ark-crypto-primitives = { workspace = true, features = ["sponge", "parallel"] }
+ark-std = { workspace = true }
+ark-crypto-primitives = { workspace = true, features = ["sponge"] }
 ark-snark = { workspace = true }
 ark-relations = { workspace = true }
-ark-r1cs-std = { workspace = true, features = ["parallel"] }
+ark-r1cs-std = { workspace = true }
 ark-grumpkin = { workspace = true, features = ["r1cs"] }
-folding-schemes = { workspace = true, features = ["light-test"] }
-experimental-frontends = { workspace = true }
 noname = { workspace = true }
+
+experimental-frontends = { workspace = true }
 
 [features]
 default = ["parallel"]
 
 parallel = [
-    "ark-groth16/parallel",
-    "ark-poly-commit/parallel",
     "folding-schemes/parallel",
 ]
 

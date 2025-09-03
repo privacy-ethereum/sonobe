@@ -16,12 +16,11 @@ use super::{
 use crate::{transcript::Transcript, utils::virtual_polynomial::VPAuxInfo, Error};
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
-use ark_poly::Polynomial;
-use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial};
-use ark_std::{end_timer, start_timer};
+use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
+use ark_std::{cfg_iter, end_timer, start_timer};
 
 #[cfg(feature = "parallel")]
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+use rayon::prelude::*;
 
 impl<F: PrimeField + Absorb> SumCheckVerifier<F> for IOPVerifierState<F> {
     type VPAuxInfo = VPAuxInfo<F>;
@@ -99,29 +98,12 @@ impl<F: PrimeField + Absorb> SumCheckVerifier<F> for IOPVerifierState<F> {
 
         // the deferred check during the interactive phase:
         // 2. set `expected` to P(r)`
-        #[cfg(feature = "parallel")]
-        let mut expected_vec = self
-            .polynomials_received
-            .clone()
-            .into_par_iter()
-            .zip(self.challenges.clone().into_par_iter())
+        let mut expected_vec = cfg_iter!(self.polynomials_received)
+            .zip(&self.challenges)
             .map(|(coeffs, challenge)| {
                 // Removed check on number of evaluations here since verifier receives polynomial in coeffs form
-                let prover_poly = DensePolynomial::from_coefficients_slice(&coeffs);
-                prover_poly.evaluate(&challenge)
-            })
-            .collect::<Vec<_>>();
-
-        #[cfg(not(feature = "parallel"))]
-        let mut expected_vec = self
-            .polynomials_received
-            .clone()
-            .into_iter()
-            .zip(self.challenges.clone().into_iter())
-            .map(|(coeffs, challenge)| {
-                // Removed check on number of evaluations here since verifier receives polynomial in coeffs form
-                let prover_poly = DensePolynomial::from_coefficients_slice(&coeffs);
-                prover_poly.evaluate(&challenge)
+                let prover_poly = DensePolynomial::from_coefficients_slice(coeffs);
+                prover_poly.evaluate(challenge)
             })
             .collect::<Vec<_>>();
 

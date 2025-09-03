@@ -19,9 +19,9 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::{cfg_iter, rand::RngCore, UniformRand, Zero};
-use core::{borrow::Borrow, marker::PhantomData};
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use ark_std::{borrow::Borrow, cfg_iter, marker::PhantomData, rand::RngCore, UniformRand, Zero};
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use super::{pedersen::Params as PedersenParams, CommitmentScheme};
 use crate::folding::circuits::CF2;

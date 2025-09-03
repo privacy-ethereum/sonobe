@@ -4,9 +4,9 @@ use ark_poly::{
 };
 pub use ark_relations::gr1cs::Matrix as R1CSMatrix;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::cfg_iter;
-use ark_std::rand::Rng;
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use ark_std::{cfg_iter, rand::Rng};
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use crate::{folding::traits::Dummy, Error};
 

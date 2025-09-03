@@ -6,36 +6,33 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ark-ec = { workspace = true, features = ["parallel"] }
-ark-ff = { workspace = true, features = ["parallel", "asm"] }
-ark-poly = { workspace = true, features = ["parallel"] }
-ark-std = { workspace = true, features = ["parallel"] }
-ark-crypto-primitives = { workspace = true, features = ["constraints", "sponge", "crh", "parallel"] }
-ark-poly-commit = { workspace = true, features = ["parallel"] }
+ark-ec = { workspace = true }
+ark-ff = { workspace = true, features = ["asm"] }
+ark-poly = { workspace = true }
+ark-std = { workspace = true, features = ["getrandom"] }
+ark-crypto-primitives = { workspace = true, features = ["constraints", "sponge", "crh"] }
+ark-poly-commit = { workspace = true }
 ark-relations = { workspace = true }
-ark-r1cs-std = { workspace = true, features = ["parallel"] }
+ark-r1cs-std = { workspace = true }
 ark-snark = { workspace = true }
 ark-serialize = { workspace = true }
-ark-groth16 = { workspace = true, features = ["parallel"] }
-ark-bn254 = { workspace = true }
-ark-grumpkin = { workspace = true }
+ark-groth16 = { workspace = true }
+ark-bn254 = { workspace = true, features = ["r1cs"] }
+ark-grumpkin = { workspace = true, features = ["r1cs"] }
 thiserror = { workspace = true }
 rayon = { workspace = true }
-num-bigint = { workspace = true }
+num-bigint = { workspace = true, features = ["rand"] }
 num-integer = { workspace = true }
 sha3 = { workspace = true }
 log = { workspace = true }
 
 [dev-dependencies]
-ark-pallas = { workspace = true, features = ["r1cs"] }
+ark-pallas = { workspace = true, features = ["curve", "r1cs"] }
 ark-vesta = { workspace = true, features = ["r1cs"] }
-ark-bn254 = { workspace = true, features = ["r1cs"] }
-ark-grumpkin = { workspace = true, features = ["r1cs"] }
 # Note: do not use the MNTx_298 curves in practice due security reasons, here
 # we only use them in the tests.
-ark-mnt4-298 = { workspace = true, features = ["r1cs"] }
+ark-mnt4-298 = { workspace = true, features = ["curve", "r1cs"] }
 ark-mnt6-298 = { workspace = true, features = ["r1cs"] }
-num-bigint = { workspace = true, features = ["rand"] }
 
 # for benchmarks
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -44,7 +41,12 @@ pprof = { workspace = true, features = ["criterion", "flamegraph"] }
 
 [features]
 default = ["parallel"]
-parallel = []
+parallel = [
+    "ark-groth16/parallel",
+    "ark-poly-commit/parallel",
+    "ark-relations/parallel",
+    "ark-r1cs-std/parallel",
+]
 light-test = []
 
 

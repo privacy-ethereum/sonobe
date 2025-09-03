@@ -8,8 +8,9 @@
 // along with the HyperPlonk library. If not, see <https://mit-license.org/>.
 
 use ark_ff::Field;
+use ark_std::cfg_iter_mut;
 #[cfg(feature = "parallel")]
-use rayon::prelude::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rayon::prelude::*;
 
 pub use ark_poly::DenseMultilinearExtension;
 
@@ -36,13 +37,7 @@ fn fix_one_variable_helper<F: Field>(data: &[F], nv: usize, point: &F) -> Vec<F>
     let mut res = vec![F::zero(); 1 << (nv - 1)];
 
     // evaluate single variable of partial point from left to right
-    #[cfg(not(feature = "parallel"))]
-    for i in 0..(1 << (nv - 1)) {
-        res[i] = data[i << 1] + (data[(i << 1) + 1] - data[i << 1]) * point;
-    }
-
-    #[cfg(feature = "parallel")]
-    res.par_iter_mut().enumerate().for_each(|(i, x)| {
+    cfg_iter_mut!(res).enumerate().for_each(|(i, x)| {
         *x = data[i << 1] + (data[(i << 1) + 1] - data[i << 1]) * point;
     });
 
@@ -119,13 +114,7 @@ pub mod tests {
         let mut res = vec![F::zero(); half_len];
 
         // evaluate single variable of partial point from left to right
-        #[cfg(not(feature = "parallel"))]
-        for b in 0..half_len {
-            res[b] = data[b] + (data[b + half_len] - data[b]) * point;
-        }
-
-        #[cfg(feature = "parallel")]
-        res.par_iter_mut().enumerate().for_each(|(i, x)| {
+        cfg_iter_mut!(res).enumerate().for_each(|(i, x)| {
             *x = data[i] + (data[i + half_len] - data[i]) * point;
         });
 
