@@ -1,7 +1,12 @@
-pub use revm;
 use revm::{
-    primitives::{hex, Address, ExecutionResult, Output, TransactTo, TxEnv},
-    Evm as EVM, EvmBuilder, InMemoryDB,
+    context::{
+        result::{ExecutionResult, Output},
+        Context, TxEnv,
+    },
+    database::InMemoryDB,
+    handler::MainnetContext,
+    primitives::{hex, Address, TxKind},
+    ExecuteCommitEvm, MainBuilder, MainContext, MainnetEvm,
 };
 use std::{
     fmt::Debug,
@@ -83,19 +88,22 @@ fn find_binary(stdout: &str, contract_name: &str) -> Option<Vec<u8>> {
 
 /// Evm runner.
 #[derive(Debug)]
-pub struct Evm<'a> {
-    evm: EVM<'a, (), InMemoryDB>,
+pub struct Evm {
+    evm: MainnetEvm<MainnetContext<InMemoryDB>>,
 }
 
-impl<'a> Default for Evm<'a> {
+impl Default for Evm {
     fn default() -> Self {
-        Self {
-            evm: EvmBuilder::default().with_db(InMemoryDB::default()).build(),
-        }
+        let mut evm = Context::mainnet()
+            .with_db(InMemoryDB::default())
+            .build_mainnet();
+        evm.cfg.disable_nonce_check = true;
+
+        Self { evm }
     }
 }
 
-impl<'a> Evm<'a> {
+impl Evm {
     /// Apply create transaction with given `bytecode` as creation bytecode.
     /// Return created `address`.
     ///
@@ -104,7 +112,7 @@ impl<'a> Evm<'a> {
     pub fn create(&mut self, bytecode: Vec<u8>) -> Address {
         let (_, output) = self.transact_success_or_panic(TxEnv {
             gas_limit: u64::MAX,
-            transact_to: TransactTo::Create,
+            kind: TxKind::Create,
             data: bytecode.into(),
             ..Default::default()
         });
@@ -122,7 +130,7 @@ impl<'a> Evm<'a> {
     pub fn call(&mut self, address: Address, calldata: Vec<u8>) -> (u64, Vec<u8>) {
         let (gas_used, output) = self.transact_success_or_panic(TxEnv {
             gas_limit: u64::MAX,
-            transact_to: TransactTo::Call(address),
+            kind: TxKind::Call(address),
             data: calldata.into(),
             ..Default::default()
         });
@@ -133,8 +141,7 @@ impl<'a> Evm<'a> {
     }
 
     fn transact_success_or_panic(&mut self, tx: TxEnv) -> (u64, Output) {
-        *self.evm.tx_mut() = tx;
-        let result = self.evm.transact_commit().unwrap();
+        let result = self.evm.transact_commit(tx).unwrap();
         match result {
             ExecutionResult::Success {
                 gas_used,

@@ -24,8 +24,8 @@ ark-r1cs-std = { git = "https://github.com/winderica/r1cs-std", rev = "ae8283a" 
 ark-std = { git = "https://github.com/arkworks-rs/std" }
 ark-poly-commit = { git = "https://github.com/arkworks-rs/poly-commit" }
 
-
 # Curve crates also need git versions
+ark-bls12-381 = { git = "https://github.com/arkworks-rs/algebra" }
 ark-bn254 = { git = "https://github.com/arkworks-rs/algebra" }
 ark-grumpkin = { git = "https://github.com/arkworks-rs/algebra" }
 ark-pallas = { git = "https://github.com/arkworks-rs/algebra" }
@@ -42,14 +42,12 @@ license = "MIT"
 repository = "https://github.com/privacy-scaling-explorations/sonobe/"
 
 [workspace.dependencies]
-acvm = { git = "https://github.com/winderica/noir", rev = "fc9e99", default-features = false } # "arkworks-next" branch
 askama = { version = "0.12.0", default-features = false }
 clap = { version = "4.4" }
 clap-verbosity-flag = { version = "2.1" }
 criterion = { version = "0.5" }
 env_logger = { version = "0.10" }
 log = { version = "0.4" }
-noname = { git = "https://github.com/dmpierre/noname", rev = "c34f17" }
 num-bigint = { version = "0.4.3" }
 num-integer = { version = "0.1" }
 pprof = { version = "0.13" }
@@ -57,12 +55,16 @@ serde = { version = "^1.0.0" }
 serde_json = { version = "^1.0.0" }
 sha3 = { version = "0.10" }
 rayon = { version = "1" }
-revm = { version = "19.5.0", default-features = false }
-thiserror = { version = "1.0" }
+revm = { version = "29.0.1", default-features = false }
+thiserror = { version = "2.0.16" }
 wasmer = { version = "6.1.0-rc.3", default-features = false }
 
-# Arkworks family
+# Circuit DSLs
+acvm = { git = "https://github.com/noir-lang/noir", rev = "6e469c3", default-features = false }
 ark-circom = { git = "https://github.com/arkworks-rs/circom-compat", default-features = false }
+noname = { git = "https://github.com/zksecurity/noname", rev = "a2be6f1" }
+
+# Arkworks family
 ark-crypto-primitives = { version = "^0.5.0", default-features = false }
 ark-ec = { version = "^0.5.0", default-features = false }
 ark-ff = { version = "^0.5.0", default-features = false }
@@ -75,6 +77,7 @@ ark-serialize = { version = "^0.5.0", default-features = false }
 ark-snark = { version = "^0.5.0", default-features = false }
 ark-std = { version = "^0.5.0", default-features = false }
 
+# Ark curves
 ark-bn254 = { version = "^0.5.0", default-features = false }
 ark-grumpkin = { version = "^0.5.0", default-features = false }
 ark-mnt4-298 = { version = "^0.5.0", default-features = false }

@@ -1,25 +1,23 @@
 use ark_ff::PrimeField;
-use ark_r1cs_std::alloc::AllocVar;
-use ark_r1cs_std::fields::fp::FpVar;
-use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
-use noname::backends::{r1cs::R1CS as R1CSNoname, BackendField};
-use noname::witness::CompiledCircuit;
+use ark_r1cs_std::{
+    fields::fp::{AllocatedFp, FpVar},
+    GR1CSVar,
+};
+use ark_relations::gr1cs::{ConstraintSystemRef, LinearCombination, SynthesisError, Variable};
+use noname::{backends::BackendField, imports::FnKind, witness::WitnessEnv};
 use num_bigint::BigUint;
 use std::marker::PhantomData;
 
 use folding_schemes::{frontend::FCircuit, Error};
 
-pub mod bridge;
 pub mod utils;
+use crate::noname::utils::{compile_source_code, LC, R1CS};
 use crate::utils::{VecF, VecFpVar};
-
-use self::bridge::NonameSonobeCircuit;
-use self::utils::{compile_source_code, NonameInputs};
 
 // `L` indicates the length of the ExternalInputs vector of field elements.
 #[derive(Debug, Clone)]
 pub struct NonameFCircuit<F: PrimeField, BF: BackendField, const SL: usize, const EIL: usize> {
-    pub circuit: CompiledCircuit<R1CSNoname<BF>>,
+    pub r1cs: R1CS<BF>,
     _f: PhantomData<F>,
 }
 
@@ -31,11 +29,22 @@ impl<F: PrimeField, BF: BackendField, const SL: usize, const EIL: usize> FCircui
     type ExternalInputsVar = VecFpVar<F, EIL>;
 
     fn new(code: Self::Params) -> Result<Self, Error> {
+        assert_eq!(F::MODULUS.to_string(), BF::MODULUS.to_string());
         let compiled_circuit = compile_source_code::<BF>(&code).map_err(|_| {
             Error::Other("Encountered an error while compiling a noname circuit".to_owned())
         })?;
+
+        let main_sig = match &compiled_circuit.main_info().kind {
+            FnKind::BuiltIn(_, _, _) => unreachable!(),
+            FnKind::Native(fn_sig) => fn_sig.sig.clone(),
+        };
+
+        for arg in &main_sig.arguments {
+            assert!(arg.name.value == "ivc_inputs" || arg.name.value == "external_inputs");
+        }
+
         Ok(NonameFCircuit {
-            circuit: compiled_circuit,
+            r1cs: compiled_circuit.circuit.backend,
             _f: PhantomData,
         })
     }
@@ -51,34 +60,76 @@ impl<F: PrimeField, BF: BackendField, const SL: usize, const EIL: usize> FCircui
         z_i: Vec<FpVar<F>>,
         external_inputs: Self::ExternalInputsVar,
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        let wtns_external_inputs =
-            NonameInputs::from_fpvars((&external_inputs.0, "external_inputs".to_string()));
-        let wtns_ivc_inputs = NonameInputs::from_fpvars((&z_i, "ivc_inputs".to_string()));
-        let noname_witness = self
-            .circuit
-            .generate_witness(wtns_ivc_inputs.0, wtns_external_inputs.0)
-            .map_err(|_| SynthesisError::Unsatisfiable)?;
-        let z_i1_end_index = z_i.len() + 1;
-        let assigned_z_i1: Vec<FpVar<F>> = (1..z_i1_end_index)
-            .map(|idx| -> Result<FpVar<F>, SynthesisError> {
-                // the assigned zi1 is of the same size than the initial zi and is located in the
-                // output of the witness vector
-                // we prefer to assign z_i1 here since (1) we have to return it, (2) we can't return
-                // anything with the `generate_constraints` method used below
-                let value: BigUint = Into::into(noname_witness.witness[idx]);
-                let field_element = F::from(value);
-                FpVar::<F>::new_witness(cs.clone(), || Ok(field_element))
-            })
-            .collect::<Result<Vec<FpVar<F>>, SynthesisError>>()?;
-
-        let noname_circuit = NonameSonobeCircuit {
-            compiled_circuit: self.circuit.clone(),
-            witness: noname_witness,
-            assigned_z_i: &z_i,
-            assigned_external_inputs: &external_inputs.0,
-            assigned_z_i1: &assigned_z_i1,
+        let mut env = WitnessEnv {
+            var_values: [
+                (
+                    "external_inputs".to_string(),
+                    external_inputs
+                        .0
+                        .iter()
+                        .map(|var| BF::from(Into::<BigUint>::into(var.value().unwrap_or_default())))
+                        .collect::<Vec<BF>>(),
+                ),
+                (
+                    "ivc_inputs".to_string(),
+                    z_i.iter()
+                        .map(|var| BF::from(Into::<BigUint>::into(var.value().unwrap_or_default())))
+                        .collect::<Vec<BF>>(),
+                ),
+            ]
+            .into(),
+            cached_values: Default::default(),
         };
-        noname_circuit.generate_constraints(cs.clone())?;
+
+        let noname_witness = self
+            .r1cs
+            .extract_witness(&mut env)
+            .map_err(|_| SynthesisError::Unsatisfiable)?;
+
+        let z_i1 = noname_witness[1..1 + z_i.len()]
+            .iter()
+            .map(|&val| cs.new_witness_variable(|| Ok(Into::<BigUint>::into(val).into())))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let assigned_z_i1 = z_i1
+            .iter()
+            .map(|&var| FpVar::Var(AllocatedFp::new(cs.assigned_value(var), var, cs.clone())))
+            .collect();
+
+        // arkworks assigns by default the 1 constant
+        // assumes witness is: [1, public_outputs, public_inputs, private_inputs, aux]
+        // for both the  z_i, z_i1 vectors, we assume that they have been assigned in the order
+        // with which it will appear in the witness
+        let idx_to_var = [
+            &[Variable::One][..],
+            &z_i1,
+            &z_i.iter()
+                .chain(&external_inputs.0)
+                .map(|var| match var {
+                    FpVar::Var(fp) => Ok(fp.variable),
+                    _ => Err(SynthesisError::Unsatisfiable),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            &noname_witness[1 + z_i1.len() + z_i.len() + external_inputs.0.len()..]
+                .iter()
+                .map(|&val| cs.new_witness_variable(|| Ok(Into::<BigUint>::into(val).into())))
+                .collect::<Result<Vec<_>, _>>()?,
+        ]
+        .concat();
+
+        let make_lc = |lc_data: &LC<BF>| {
+            LinearCombination(
+                lc_data
+                    .0
+                    .iter()
+                    .map(|(&var, &coeff)| (F::from(Into::<BigUint>::into(coeff)), idx_to_var[var]))
+                    .collect(),
+            )
+        };
+
+        for (a, b, c) in &self.r1cs.constraints {
+            cs.enforce_r1cs_constraint(|| make_lc(a), || make_lc(b), || make_lc(c))?;
+        }
 
         Ok(assigned_z_i1)
     }

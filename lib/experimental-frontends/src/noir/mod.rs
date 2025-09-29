@@ -76,7 +76,7 @@ impl<F: PrimeField, const SL: usize, const EIL: usize> FCircuit<F> for NoirFCirc
         external_inputs: Self::ExternalInputsVar, // inputs that are not part of the state
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
         let mut acvm = ACVM::new(
-            &StubbedBlackBoxSolver,
+            &StubbedBlackBoxSolver(true),
             &self.circuit.opcodes,
             WitnessMap::new(),
             &[],
