@@ -10,10 +10,14 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::log2;
 
-use crate::{folding::traits::{CommittedInstanceOps, CommittedInstanceVarOps, Dummy, WitnessOps}, transcript::AbsorbNonNativeGadget, Field};
 use crate::transcript::{Transcript, TranscriptVar};
 use crate::utils::vec::poly_from_vec;
 use crate::{arith::ArithRelation, folding::circuits::CF1};
+use crate::{
+    folding::traits::{CommittedInstanceOps, CommittedInstanceVarOps, Dummy, WitnessOps},
+    transcript::AbsorbNonNativeGadget,
+    Field,
+};
 use crate::{Curve, Error};
 
 pub mod off_chain;

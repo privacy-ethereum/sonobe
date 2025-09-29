@@ -162,10 +162,10 @@ impl<F: BackendField> Backend for R1CS<F> {
 pub fn compile_source_code<BF: BackendField>(code: &str) -> Result<CompiledCircuit<R1CS<BF>>> {
     let mut sources = Sources::new();
 
-    let mut tast = TypeChecker::<R1CS<BF>>::new();
+    let mut checker = TypeChecker::<R1CS<BF>>::new();
     let node_id = 0;
     typecheck_next_file(
-        &mut tast,
+        &mut checker,
         None,
         &mut sources,
         "main.no".to_string(),
@@ -175,5 +175,5 @@ pub fn compile_source_code<BF: BackendField>(code: &str) -> Result<CompiledCircu
     )
     .unwrap();
 
-    CircuitWriter::generate_circuit(mast::monomorphize(tast)?, R1CS::<BF>::default(), false)
+    CircuitWriter::generate_circuit(mast::monomorphize(checker)?, R1CS::<BF>::default(), false)
 }

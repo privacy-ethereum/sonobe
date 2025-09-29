@@ -13,7 +13,7 @@
 use ark_ff::PrimeField;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
 use ark_serialize::CanonicalSerialize;
-use ark_std::{cfg_iter_mut, end_timer, start_timer, cmp::max, marker::PhantomData, ops::Add};
+use ark_std::{cfg_iter_mut, cmp::max, end_timer, marker::PhantomData, ops::Add, start_timer};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use std::{collections::HashMap, sync::Arc};

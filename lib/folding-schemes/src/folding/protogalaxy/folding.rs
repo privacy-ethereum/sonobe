@@ -4,7 +4,7 @@ use ark_poly::{
     univariate::{DensePolynomial, SparsePolynomial},
     DenseUVPolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain, Polynomial,
 };
-use ark_std::{cfg_into_iter, log2, One, Zero, marker::PhantomData};
+use ark_std::{cfg_into_iter, log2, marker::PhantomData, One, Zero};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 

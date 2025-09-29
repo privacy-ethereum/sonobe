@@ -62,8 +62,8 @@ use super::DeciderEnabledNIFS;
 pub struct GenericOnchainDeciderCircuit<
     C1: Curve,
     C2: Curve,
-    RU: CommittedInstanceOps<CF1<C1>>,               // Running instance
-    IU: CommittedInstanceOps<CF1<C1>>,               // Incoming instance
+    RU: CommittedInstanceOps<CF1<C1>>,          // Running instance
+    IU: CommittedInstanceOps<CF1<C1>>,          // Incoming instance
     W: WitnessOps<CF1<C1>>,                     // Witness
     A: ArithRelation<W, RU>,                    // Constraint system
     AVar: ArithRelationGadget<W::Var, RU::Var>, // In-circuit representation of `A`
@@ -184,7 +184,8 @@ impl<
         D: DeciderEnabledNIFS<C1, RU, IU, W, A>,
     > ConstraintSynthesizer<CF1<C1>> for GenericOnchainDeciderCircuit<C1, C2, RU, IU, W, A, AVar, D>
 where
-    RU::Var: AbsorbGadget<CF1<C1>> + CommittedInstanceVarOps<CF1<C1>, PointVar = NonNativeAffineVar<C1>>,
+    RU::Var:
+        AbsorbGadget<CF1<C1>> + CommittedInstanceVarOps<CF1<C1>, PointVar = NonNativeAffineVar<C1>>,
 {
     fn generate_constraints(self, cs: ConstraintSystemRef<CF1<C1>>) -> Result<(), SynthesisError> {
         let arith = AVar::new_witness(cs.clone(), || Ok(&self.arith))?;

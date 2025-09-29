@@ -15,7 +15,7 @@ cp "${GIT_ROOT}/rust-toolchain" .
 rustup target add wasm32-unknown-unknown wasm32-wasip1
 
 # add dependencies
-cargo add --path "${GIT_ROOT}/lib/frontends" --features wasm, parallel
+cargo add --path "${GIT_ROOT}/lib/frontends" --features parallel
 cargo add --path "${GIT_ROOT}/lib/folding-schemes" --features parallel
 cargo add getrandom --features wasm_js --target wasm32-unknown-unknown
 
