@@ -57,10 +57,11 @@ fn main() -> Result<(), Error> {
     ];
 
     // initialize the Circom circuit
-    let r1cs_path =
-        PathBuf::from("./experimental-frontends/src/circom/test_folder/with_external_inputs.r1cs");
+    let r1cs_path = PathBuf::from(
+        "./lib/experimental-frontends/src/circom/test_folder/with_external_inputs.r1cs",
+    );
     let wasm_path = PathBuf::from(
-        "./experimental-frontends/src/circom/test_folder/with_external_inputs_js/with_external_inputs.wasm",
+        "./lib/experimental-frontends/src/circom/test_folder/with_external_inputs_js/with_external_inputs.wasm",
     );
 
     let f_circuit_params = (r1cs_path.into(), wasm_path.into());

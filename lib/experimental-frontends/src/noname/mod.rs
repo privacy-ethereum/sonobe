@@ -10,6 +10,8 @@ use std::marker::PhantomData;
 
 use folding_schemes::{frontend::FCircuit, Error};
 
+pub use noname::backends::r1cs::R1csBn254Field;
+
 pub mod utils;
 use crate::noname::utils::{compile_source_code, LC, R1CS};
 use crate::utils::{VecF, VecFpVar};

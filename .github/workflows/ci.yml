@@ -139,7 +139,7 @@ jobs:
       - name: Run examples tests
         run: cargo test --examples
       - name: Run examples
-        run: cargo run --release --example 2>&1 | grep -E '^ ' | xargs -n1 cargo run --release --example
+        run: cargo run --release --example 2>&1 | grep -E '^ ' | xargs -n1 cargo run --release --example --features "light-test"
 
   # run the benchmarks with the flag `--no-run` to ensure that they compile,
   # but without executing them.

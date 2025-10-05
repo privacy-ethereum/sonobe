@@ -7,35 +7,6 @@ members = [
 ]
 resolver = "2"
 
-
-[patch.crates-io]
-# Update ark-groth16 to latest git version
-ark-groth16 = { git = "https://github.com/arkworks-rs/groth16", rev = "b3b4a15" }
-
-# Required dependencies for latest ark-groth16
-ark-ff = { git = "https://github.com/arkworks-rs/algebra" }
-ark-ec = { git = "https://github.com/arkworks-rs/algebra" }
-ark-serialize = { git = "https://github.com/arkworks-rs/algebra" }
-ark-poly = { git = "https://github.com/arkworks-rs/algebra" }
-ark-relations = { git = "https://github.com/arkworks-rs/snark" }
-ark-snark = { git = "https://github.com/arkworks-rs/snark" }
-ark-crypto-primitives = { git = "https://github.com/winderica/crypto-primitives", rev = "af003fc" }
-ark-r1cs-std = { git = "https://github.com/winderica/r1cs-std", rev = "ae8283a" }         # "sw-fix-updated" branch
-ark-std = { git = "https://github.com/arkworks-rs/std" }
-ark-poly-commit = { git = "https://github.com/arkworks-rs/poly-commit" }
-
-# Curve crates also need git versions
-ark-bls12-381 = { git = "https://github.com/arkworks-rs/algebra" }
-ark-bn254 = { git = "https://github.com/arkworks-rs/algebra" }
-ark-grumpkin = { git = "https://github.com/arkworks-rs/algebra" }
-ark-pallas = { git = "https://github.com/arkworks-rs/algebra" }
-ark-vesta = { git = "https://github.com/arkworks-rs/algebra" }
-ark-mnt4-298 = { git = "https://github.com/arkworks-rs/algebra" }
-ark-mnt6-298 = { git = "https://github.com/arkworks-rs/algebra" }
-
-[patch."https://github.com/arkworks-rs/circom-compat"]
-ark-circom = { git = "https://github.com/winderica/circom-compat", rev = "d94cc71" }
-
 [workspace.package]
 edition = "2021"
 license = "MIT"
@@ -62,30 +33,52 @@ wasmer = { version = "6.1.0-rc.3", default-features = false }
 # Circuit DSLs
 acvm = { git = "https://github.com/noir-lang/noir", rev = "6e469c3", default-features = false }
 ark-circom = { git = "https://github.com/arkworks-rs/circom-compat", default-features = false }
-noname = { git = "https://github.com/zksecurity/noname", rev = "a2be6f1" }
+noname = { git = "https://github.com/winderica/noname", rev = "a6f41cc", default-features = false }
 
 # Arkworks family
-ark-crypto-primitives = { version = "^0.5.0", default-features = false }
-ark-ec = { version = "^0.5.0", default-features = false }
-ark-ff = { version = "^0.5.0", default-features = false }
-ark-groth16 = { version = "^0.5.0", default-features = false }
-ark-poly = { version = "^0.5.0", default-features = false }
-ark-poly-commit = { version = "^0.5.0", default-features = false }
-ark-r1cs-std = { version = "^0.5.0", default-features = false }
-ark-relations = { version = "^0.5.0", default-features = false }
-ark-serialize = { version = "^0.5.0", default-features = false }
-ark-snark = { version = "^0.5.0", default-features = false }
-ark-std = { version = "^0.5.0", default-features = false }
+ark-crypto-primitives = { git = "https://github.com/arkworks-rs/crypto-primitives", default-features = false }
+ark-ec = { git = "https://github.com/arkworks-rs/algebra", default-features = false }
+ark-ff = { git = "https://github.com/arkworks-rs/algebra", default-features = false }
+ark-groth16 = { git = "https://github.com/arkworks-rs/groth16", default-features = false }
+ark-poly = { git = "https://github.com/arkworks-rs/algebra", default-features = false }
+ark-poly-commit = { git = "https://github.com/arkworks-rs/poly-commit", default-features = false }
+ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std", default-features = false }
+ark-relations = { git = "https://github.com/arkworks-rs/snark", default-features = false }
+ark-serialize = { git = "https://github.com/arkworks-rs/algebra", default-features = false }
+ark-snark = { git = "https://github.com/arkworks-rs/snark", default-features = false }
+ark-std = { git = "https://github.com/arkworks-rs/std", default-features = false }
 
 # Ark curves
-ark-bn254 = { version = "^0.5.0", default-features = false }
-ark-grumpkin = { version = "^0.5.0", default-features = false }
-ark-mnt4-298 = { version = "^0.5.0", default-features = false }
-ark-mnt6-298 = { version = "^0.5.0", default-features = false }
-ark-pallas = { version = "^0.5.0", default-features = false }
-ark-vesta = { version = "^0.5.0", default-features = false }
+ark-bn254 = { git = "https://github.com/arkworks-rs/algebra", default-features = false }
+ark-grumpkin = { git = "https://github.com/arkworks-rs/algebra", default-features = false }
+ark-pallas = { git = "https://github.com/arkworks-rs/algebra", default-features = false }
+ark-vesta = { git = "https://github.com/arkworks-rs/algebra", default-features = false }
+ark-mnt4-298 = { git = "https://github.com/arkworks-rs/algebra", default-features = false }
+ark-mnt6-298 = { git = "https://github.com/arkworks-rs/algebra", default-features = false }
 
 # Local crates
 experimental-frontends = { path = "lib/experimental-frontends", default-features = false }
 folding-schemes = { path = "lib/folding-schemes", default-features = false }
 solidity-verifiers = { path = "lib/solidity-verifiers", default-features = false }
+
+[patch.crates-io]
+# We depend on git versions of arkworks crates, but some of our dependencies
+# depend on crates.io versions, so we need to override them here to avoid
+# version conflicts.
+ark-ff = { git = "https://github.com/arkworks-rs/algebra" }
+ark-ec = { git = "https://github.com/arkworks-rs/algebra" }
+ark-serialize = { git = "https://github.com/arkworks-rs/algebra" }
+ark-poly = { git = "https://github.com/arkworks-rs/algebra" }
+ark-std = { git = "https://github.com/arkworks-rs/std" }
+ark-crypto-primitives = { git = "https://github.com/winderica/crypto-primitives", rev = "af003fc" }
+ark-r1cs-std = { git = "https://github.com/winderica/r1cs-std", rev = "ae8283a" }         # "sw-fix-updated" branch
+
+# Curve crates also need git versions
+ark-bls12-381 = { git = "https://github.com/arkworks-rs/algebra" }
+ark-bn254 = { git = "https://github.com/arkworks-rs/algebra" }
+
+[patch."https://github.com/arkworks-rs/crypto-primitives"]
+ark-crypto-primitives = { git = "https://github.com/winderica/crypto-primitives", rev = "af003fc" }
+
+[patch."https://github.com/arkworks-rs/r1cs-std"]
+ark-r1cs-std = { git = "https://github.com/winderica/r1cs-std", rev = "ae8283a" }         # "sw-fix-updated" branch

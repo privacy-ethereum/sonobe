@@ -25,7 +25,6 @@ ark-snark = { workspace = true }
 ark-relations = { workspace = true }
 ark-r1cs-std = { workspace = true }
 ark-grumpkin = { workspace = true, features = ["r1cs"] }
-noname = { workspace = true }
 
 experimental-frontends = { workspace = true }
 

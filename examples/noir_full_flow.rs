@@ -44,8 +44,10 @@ fn main() -> Result<(), Error> {
     const EXT_INP_LEN: usize = 0;
     const STATE_LEN: usize = 1;
     let f_circuit = NoirFCircuit::<Fr, STATE_LEN, EXT_INP_LEN>::new(
-        Path::new("./experimental-frontends/src/noir/test_folder/test_mimc/target/test_mimc.json")
-            .into(),
+        Path::new(
+            "./lib/experimental-frontends/src/noir/test_folder/test_mimc/target/test_mimc.json",
+        )
+        .into(),
     )?;
 
     pub type N =

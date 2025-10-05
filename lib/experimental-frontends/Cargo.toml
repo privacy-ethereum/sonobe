@@ -12,8 +12,8 @@ ark-relations = { workspace = true }
 ark-r1cs-std = { workspace = true }
 ark-serialize = { workspace = true }
 ark-circom = { workspace = true }
+noname = { workspace = true, features = ["r1cs"] }
 num-bigint = { workspace = true }
-noname = { workspace = true }
 acvm = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

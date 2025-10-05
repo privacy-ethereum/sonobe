@@ -10,12 +10,14 @@
 /// - verify the proof in the EVM
 ///
 use ark_bn254::{Bn254, Fr, G1Projective as G1};
-use noname::backends::r1cs::R1csBn254Field;
 
 use ark_groth16::Groth16;
 use ark_grumpkin::Projective as G2;
 
-use experimental_frontends::{noname::NonameFCircuit, utils::VecF};
+use experimental_frontends::{
+    noname::{NonameFCircuit, R1csBn254Field},
+    utils::VecF,
+};
 use folding_schemes::{
     commitment::{kzg::KZG, pedersen::Pedersen},
     folding::{
