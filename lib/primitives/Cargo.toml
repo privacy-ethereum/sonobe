@@ -1,0 +1,36 @@
+[package]
+name = "sonobe-primitives"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ark-crypto-primitives = { workspace = true, features = ["constraints", "sponge", "crh"] }
+ark-ec = { workspace = true }
+ark-ff = { workspace = true, features = ["asm"] }
+ark-std = { workspace = true, features = ["getrandom"] }
+ark-poly = { workspace = true }
+ark-poly-commit = { workspace = true }
+ark-relations = { workspace = true }
+ark-r1cs-std = { workspace = true }
+ark-serialize = { workspace = true }
+num-bigint = { workspace = true, features = ["rand"] }
+num-integer = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+
+sonobe-traits = { workspace = true }
+
+[dev-dependencies]
+ark-bn254 = { workspace = true, features = ["curve", "r1cs"] }
+ark-pallas = { workspace = true, features = ["curve", "r1cs"] }
+ark-vesta = { workspace = true, features = ["r1cs"] }
+
+[features]
+default = ["parallel"]
+parallel = [
+    "ark-relations/parallel",
+    "ark-r1cs-std/parallel",
+    "sonobe-traits/parallel",
+]
