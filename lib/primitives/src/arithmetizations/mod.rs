@@ -1,9 +1,7 @@
-use std::ops::Index;
-
 use ark_relations::gr1cs::SynthesisError;
-use ark_std::rand::RngCore;
-use sonobe_traits::Dummy;
 use thiserror::Error;
+
+use crate::relations::{Referenceable, Relation};
 
 pub mod ccs;
 pub mod r1cs;
@@ -16,66 +14,8 @@ pub enum Error {
     UnsatisfiedAssignments(String),
     #[error("Failed to extract constraints from the constraint system: {0}")]
     ConstraintExtractionFailure(String),
-}
-
-pub struct Assignments<'a, F> {
-    pub constant: F,
-    pub public: &'a [F],
-    pub private: &'a [F],
-}
-
-impl<'a, F> From<(F, &'a [F], &'a [F])> for Assignments<'a, F> {
-    fn from((u, x, w): (F, &'a [F], &'a [F])) -> Self {
-        Self {
-            constant: u,
-            public: x,
-            private: w,
-        }
-    }
-}
-
-impl<'a, F> Index<usize> for Assignments<'a, F> {
-    type Output = F;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        if index == 0 {
-            &self.constant
-        } else if index <= self.public.len() {
-            &self.public[index - 1]
-        } else {
-            &self.private[index - 1 - self.public.len()]
-        }
-    }
-}
-
-pub struct AssignmentsVar<'a, FV> {
-    pub constant: FV,
-    pub public: &'a [FV],
-    pub private: &'a [FV],
-}
-
-impl<'a, FV> From<(FV, &'a [FV], &'a [FV])> for AssignmentsVar<'a, FV> {
-    fn from((u, x, w): (FV, &'a [FV], &'a [FV])) -> Self {
-        Self {
-            constant: u,
-            public: x,
-            private: w,
-        }
-    }
-}
-
-impl<'a, FV> Index<usize> for AssignmentsVar<'a, FV> {
-    type Output = FV;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        if index == 0 {
-            &self.constant
-        } else if index <= self.public.len() {
-            &self.public[index - 1]
-        } else {
-            &self.private[index - 1 - self.public.len()]
-        }
-    }
+    #[error("Synthesis error: {0}")]
+    SynthesisError(#[from] SynthesisError),
 }
 
 /// [`Arith`] is a trait about constraint systems (R1CS, CCS, etc.), where we
@@ -131,7 +71,7 @@ pub trait Arith: Clone {
 /// This is also the case of CCS, where `W` and `U` may be vectors of field
 /// elements, [`crate::folding::hypernova::Witness`] and [`crate::folding::hypernova::lcccs::LCCCS`],
 /// or [`crate::folding::hypernova::Witness`] and [`crate::folding::hypernova::cccs::CCCS`].
-pub trait ArithRelation<W, U>: Arith {
+pub trait ArithRelation<W: Referenceable, U: Referenceable>: Arith {
     type Evaluation;
 
     /// Evaluates the constraint system `self` at witness `w` and instance `u`.
@@ -150,7 +90,7 @@ pub trait ArithRelation<W, U>: Arith {
     ///
     /// However, we use `Self::Evaluation` to represent the evaluation result
     /// for future extensibility.
-    fn eval_relation(&self, w: &W, u: &U) -> Result<Self::Evaluation, Error>;
+    fn eval_relation(&self, w: W::Ref<'_>, u: U::Ref<'_>) -> Result<Self::Evaluation, Error>;
 
     /// Checks if the evaluation result is valid. The witness `w` and instance
     /// `u` are also parameters, because the validity check may need information
@@ -166,26 +106,10 @@ pub trait ArithRelation<W, U>: Arith {
     /// - The evaluation `v` of relaxed R1CS in ProtoGalaxy at satisfying `W`
     ///   and `U` should satisfy `e = Σ pow_i(β) v_i`, where `e` is the error
     ///   term in the committed instance.
-    fn check_evaluation(w: &W, u: &U, v: Self::Evaluation) -> Result<(), Error>;
+    fn check_evaluation(w: W::Ref<'_>, u: U::Ref<'_>, v: Self::Evaluation) -> Result<(), Error>;
 }
 
-pub trait Relation<W, U> {
-    type Error;
-
-    /// Returns a dummy witness and instance
-    fn dummy_witness_instance<'a>(&'a self) -> (W, U)
-    where
-        W: Dummy<&'a Self>,
-        U: Dummy<&'a Self>,
-    {
-        (W::dummy(self), U::dummy(self))
-    }
-
-    /// Checks if witness `w` and instance `u` satisfy the relation `self`
-    fn check_relation(&self, w: &W, u: &U) -> Result<(), Self::Error>;
-}
-
-impl<W, U, A: ArithRelation<W, U>> Relation<W, U> for A {
+impl<W: Referenceable, U: Referenceable, A: ArithRelation<W, U>> Relation<W, U> for A {
     type Error = Error;
 
     /// Checks if witness `w` and instance `u` satisfy the constraint system
@@ -193,50 +117,11 @@ impl<W, U, A: ArithRelation<W, U>> Relation<W, U> for A {
     /// validity of the evaluation result.
     ///
     /// Used only for testing.
-    fn check_relation(&self, w: &W, u: &U) -> Result<(), Self::Error> {
+    fn check_relation(&self, w: W::Ref<'_>, u: U::Ref<'_>) -> Result<(), Self::Error> {
         let e = self.eval_relation(w, u)?;
         Self::check_evaluation(w, u, e)
     }
 }
-
-/// `ArithSerializer` is for serializing constraint systems.
-///
-/// Currently we only support converting parameters to bytes, but in the future
-/// we may consider implementing methods for serializing the actual data (e.g.,
-/// R1CS matrices).
-pub trait ArithSerializer {
-    /// Returns the bytes that represent the parameters, that is, the matrices sizes, the amount of
-    /// public inputs, etc, without the matrices/polynomials values.
-    fn params_to_le_bytes(&self) -> Vec<u8>;
-}
-
-/// `ArithSampler` allows sampling random pairs of witness and instance that
-/// satisfy the constraint system `self`.
-///
-/// This is useful for constructing a zero-knowledge layer for a folding-based
-/// IVC.
-/// An example of such a layer can be found in Appendix D of the [HyperNova]
-/// paper.
-///
-/// Note that we use a separate trait for sampling, because this operation may
-/// not be supported by all witness-instance pairs.
-/// For instance, it is difficult (if not impossible) to do this for `w` and `x`
-/// in a plain R1CS.
-///
-/// [HyperNova]: https://eprint.iacr.org/2023/573.pdf
-pub trait ArithSampler {
-    fn sample_witness_instance() {
-        todo!()
-    }
-}
-// pub trait ArithSampler<C: Curve, W, U>: ArithRelation<W, U> {
-//     /// Samples a random witness and instance that satisfy the constraint system.
-//     fn sample_witness_instance<CS: CommitmentScheme<C, true>>(
-//         &self,
-//         params: &CS::ProverParams,
-//         rng: impl RngCore,
-//     ) -> Result<(W, U), Error>;
-// }
 
 /// `ArithRelationGadget` defines the in-circuit counterparts of operations
 /// specified in `ArithRelation` on constraint systems.

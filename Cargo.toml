@@ -4,8 +4,8 @@ members = [
     "lib/solidity-verifiers",
     "cli",
     "lib/experimental-frontends",
-    "lib/traits",
     "lib/primitives",
+    "lib/fs",
 ]
 resolver = "2"
 
@@ -62,7 +62,6 @@ ark-mnt6-298 = { git = "https://github.com/arkworks-rs/algebra", default-feature
 experimental-frontends = { path = "lib/experimental-frontends", default-features = false }
 folding-schemes = { path = "lib/folding-schemes", default-features = false }
 solidity-verifiers = { path = "lib/solidity-verifiers", default-features = false }
-sonobe-traits = { path = "lib/traits", default-features = false }
 sonobe-primitives = { path = "lib/primitives", default-features = false }
 
 [patch.crates-io]

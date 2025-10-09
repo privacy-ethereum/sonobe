@@ -1,5 +1,3 @@
-use std::ops::Index;
-
 use ark_ff::{BigInteger, One, PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
@@ -14,16 +12,18 @@ use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{
     borrow::Borrow,
     cmp::{max, min},
+    ops::Index,
 };
 use num_bigint::BigUint;
 use num_integer::Integer;
 
-use sonobe_traits::{AbsorbNonNativeGadget, Field};
-
-use crate::gadgets::math::{
-    eq::EquivalenceGadget,
-    matrix::{MatrixGadget, SparseMatrixVar},
-    vector::VectorGadget,
+use crate::{
+    gadgets::math::{
+        eq::EquivalenceGadget,
+        matrix::{MatrixGadget, SparseMatrixVar},
+        vector::VectorGadget,
+    },
+    traits::{AbsorbNonNativeGadget, SonobeField},
 };
 
 /// `LimbVar` represents a single limb of a non-native unsigned integer in the
@@ -242,7 +242,7 @@ impl<F: PrimeField> AllocVar<BoundedBigUint, F> for NonNativeUintVar<F> {
     }
 }
 
-impl<F: PrimeField, G: Field> AllocVar<G, F> for NonNativeUintVar<F> {
+impl<F: PrimeField, G: SonobeField> AllocVar<G, F> for NonNativeUintVar<F> {
     fn new_variable<T: Borrow<G>>(
         cs: impl Into<Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -799,8 +799,7 @@ impl<F: PrimeField> AbsorbNonNativeGadget<F> for NonNativeUintVar<F> {
     fn to_native_sponge_field_elements(&self) -> Result<Vec<FpVar<F>>, SynthesisError> {
         let bits_per_limb = F::MODULUS_BIT_SIZE as usize - 1;
 
-        self
-            .to_bits_le()?
+        self.to_bits_le()?
             .chunks(bits_per_limb)
             .map(Boolean::le_bits_to_fp)
             .collect()

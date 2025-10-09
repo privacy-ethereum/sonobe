@@ -8,7 +8,11 @@ use ark_r1cs_std::{
     fields::{fp::FpVar, FieldVar},
     groups::{curves::short_weierstrass::ProjectiveVar, CurveVar},
 };
-use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
+use ark_relations::gr1cs::SynthesisError;
+use ark_std::{
+    iter::Sum,
+    ops::{Add, Mul},
+};
 
 pub type CF1<C> = <C as PrimeGroup>::ScalarField;
 pub type CF2<C> = <<C as CurveGroup>::BaseField as ArkField>::BasePrimeField;
@@ -73,7 +77,7 @@ impl<P: FpConfig<N>, const N: usize> Inputize<Self> for Fp<P, N> {
     }
 }
 
-impl<P: SWCurveConfig<BaseField: Field>> Inputize<P::BaseField> for Projective<P> {
+impl<P: SWCurveConfig<BaseField: SonobeField>> Inputize<P::BaseField> for Projective<P> {
     /// Returns the internal representation in the same order as how the value
     /// is allocated in `ProjectiveVar::new_input`.
     fn inputize(&self) -> Vec<P::BaseField> {
@@ -85,7 +89,7 @@ impl<P: SWCurveConfig<BaseField: Field>> Inputize<P::BaseField> for Projective<P
     }
 }
 
-impl<F: Field, P: Field> InputizeNonNative<F> for P {
+impl<F: SonobeField, P: SonobeField> InputizeNonNative<F> for P {
     /// Returns the internal representation in the same order as how the value
     /// is allocated in `NonNativeUintVar::new_input`.
     fn inputize_nonnative(&self) -> Vec<F> {
@@ -97,8 +101,8 @@ impl<F: Field, P: Field> InputizeNonNative<F> for P {
     }
 }
 
-impl<P: SWCurveConfig<BaseField: Field, ScalarField: Field>> InputizeNonNative<P::ScalarField>
-    for Projective<P>
+impl<P: SWCurveConfig<BaseField: SonobeField, ScalarField: SonobeField>>
+    InputizeNonNative<P::ScalarField> for Projective<P>
 {
     /// Returns the internal representation in the same order as how the value
     /// is allocated in `NonNativeAffineVar::new_input`.
@@ -112,7 +116,7 @@ impl<P: SWCurveConfig<BaseField: Field, ScalarField: Field>> InputizeNonNative<P
 
 /// `Field` trait is a wrapper around `PrimeField` that also includes the
 /// necessary bounds for the field to be used conveniently in folding schemes.
-pub trait Field:
+pub trait SonobeField:
     PrimeField<BasePrimeField = Self> + Absorb + AbsorbNonNative + Inputize<Self>
 {
     const BITS_PER_LIMB: usize;
@@ -120,15 +124,15 @@ pub trait Field:
     type Var: FieldVar<Self, Self>;
 }
 
-impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
+impl<P: FpConfig<N>, const N: usize> SonobeField for Fp<P, N> {
     const BITS_PER_LIMB: usize = 55; // TODO: make this configurable
     type Var = FpVar<Self>;
 }
 
 /// `Curve` trait is a wrapper around `CurveGroup` that also includes the
 /// necessary bounds for the curve to be used conveniently in folding schemes.
-pub trait Curve:
-    CurveGroup<ScalarField: Field, BaseField: Field>
+pub trait SonobeCurve:
+    CurveGroup<ScalarField: SonobeField, BaseField: SonobeField>
     + AbsorbNonNative
     + Inputize<Self::BaseField>
     + InputizeNonNative<Self::ScalarField>
@@ -137,7 +141,9 @@ pub trait Curve:
     type Var: CurveVar<Self, Self::BaseField>;
 }
 
-impl<P: SWCurveConfig<ScalarField: Field, BaseField: Field>> Curve for Projective<P> {
+impl<P: SWCurveConfig<ScalarField: SonobeField, BaseField: SonobeField>> SonobeCurve
+    for Projective<P>
+{
     type Var = ProjectiveVar<P, FpVar<P::BaseField>>;
 }
 
@@ -175,6 +181,13 @@ impl<T: AbsorbNonNative> AbsorbNonNative for [T] {
     }
 }
 
+impl<T: AbsorbNonNative> AbsorbNonNative for (T, T) {
+    fn to_native_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
+        self.0.to_native_sponge_field_elements(dest);
+        self.1.to_native_sponge_field_elements(dest);
+    }
+}
+
 impl<F: PrimeField, T: AbsorbNonNativeGadget<F>> AbsorbNonNativeGadget<F> for &T {
     fn to_native_sponge_field_elements(&self) -> Result<Vec<FpVar<F>>, SynthesisError> {
         T::to_native_sponge_field_elements(self)
@@ -208,7 +221,7 @@ impl<P: FpConfig<N>, const N: usize> AbsorbNonNative for Fp<P, N> {
     }
 }
 
-impl<P: SWCurveConfig<BaseField: Field>> AbsorbNonNative for Projective<P> {
+impl<P: SWCurveConfig<BaseField: SonobeField>> AbsorbNonNative for Projective<P> {
     fn to_native_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
         let affine = self.into_affine();
         let (x, y) = affine.xy().unwrap_or_default();
@@ -217,29 +230,83 @@ impl<P: SWCurveConfig<BaseField: Field>> AbsorbNonNative for Projective<P> {
     }
 }
 
-/// FCircuit defines the trait of the circuit of the F function, which is the one being folded (ie.
-/// inside the agmented F' function).
-/// The parameter z_i denotes the current state, and z_{i+1} denotes the next state after applying
-/// the step.
-/// Note that the external inputs for the specific circuit are defined at the implementation of
-/// both `FCircuit::ExternalInputs` and `FCircuit::ExternalInputsVar`, where the `Default` trait
-/// implementation for the `ExternalInputs` returns the initialized data structure (ie. if the type
-/// contains a vector, it is initialized at the expected length).
-pub trait FCircuit<F: PrimeField> {
-    type ExternalInputs;
+#[derive(Clone, Copy, Default)]
+pub struct Null;
 
-    /// returns the number of elements in the state of the FCircuit, which corresponds to the
-    /// FCircuit inputs.
-    fn state_len(&self) -> usize;
+impl<F> Add<F> for Null {
+    type Output = Null;
 
-    /// generates the constraints for the step of F for the given z_i
-    fn generate_step_constraints(
-        // this method uses self, so that each FCircuit implementation (and different frontends)
-        // can hold a state if needed to store data to generate the constraints.
-        &self,
-        cs: ConstraintSystemRef<F>,
-        i: usize,
-        z_i: Vec<FpVar<F>>,
-        external_inputs: Self::ExternalInputs, // inputs that are not part of the state
-    ) -> Result<Vec<FpVar<F>>, SynthesisError>;
+    fn add(self, _: F) -> Null {
+        Null
+    }
+}
+
+impl<F> Add<F> for &Null {
+    type Output = Null;
+
+    fn add(self, _: F) -> Null {
+        Null
+    }
+}
+
+impl<F> Mul<F> for Null {
+    type Output = Self;
+
+    fn mul(self, _: F) -> Null {
+        Null
+    }
+}
+
+impl<F> Mul<F> for &Null {
+    type Output = Null;
+
+    fn mul(self, _: F) -> Null {
+        Null
+    }
+}
+
+impl Sum for Null {
+    fn sum<I: Iterator<Item = Self>>(_: I) -> Self {
+        Null
+    }
+}
+
+pub trait ScalarRLC<Coeff> {
+    type Value;
+
+    fn scalar_rlc(self, coeffs: &[Coeff]) -> Self::Value;
+}
+
+impl<I: Iterator + Sized, Coeff> ScalarRLC<Coeff> for I
+where
+    I::Item: Add<Output = I::Item> + Sum + for<'a> Mul<&'a Coeff, Output = I::Item>,
+{
+    type Value = I::Item;
+
+    fn scalar_rlc(self, coeffs: &[Coeff]) -> Self::Value {
+        self.zip(coeffs).map(|(v, c)| v * c).sum::<I::Item>()
+    }
+}
+
+pub trait SliceRLC<Coeff> {
+    type Value;
+
+    fn slice_rlc(self, coeffs: &[Coeff]) -> Vec<Self::Value>;
+}
+
+impl<'a, T: 'a, I: Iterator<Item = &'a [T]>, Coeff> SliceRLC<Coeff> for I
+where
+    T: Add<Output = T> + Copy,
+    for<'x> T: Mul<&'x Coeff, Output = T>,
+{
+    type Value = T;
+
+    fn slice_rlc(self, coeffs: &[Coeff]) -> Vec<Self::Value> {
+        let mut iter = self.zip(coeffs).map(|(v, c)| v.iter().map(|x| *x * c));
+        let first = iter.next().unwrap();
+
+        iter.fold(first.collect(), |acc, v| {
+            acc.into_iter().zip(v).map(|(a, b)| a + b).collect()
+        })
+    }
 }

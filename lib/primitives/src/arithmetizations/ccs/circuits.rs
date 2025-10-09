@@ -6,8 +6,9 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
 
-use super::CCS;
 use crate::gadgets::math::matrix::SparseMatrixVar;
+
+use super::CCS;
 
 /// CCSMatricesVar contains the matrices 'M' of the CCS without the rest of CCS parameters.
 #[derive(Debug, Clone)]
@@ -24,13 +25,14 @@ impl<F: PrimeField> AllocVar<CCS<F>, F> for CCSMatricesVar<F> {
     ) -> Result<Self, SynthesisError> {
         f().and_then(|val| {
             let cs = cs.into();
-            let M: Vec<SparseMatrixVar<FpVar<F>>> = val
-                .borrow()
-                .M
-                .iter()
-                .map(|M| SparseMatrixVar::<FpVar<F>>::new_constant(cs.clone(), M.clone()))
-                .collect::<Result<_, SynthesisError>>()?;
-            Ok(Self { M })
+            Ok(Self {
+                M: val
+                    .borrow()
+                    .M
+                    .iter()
+                    .map(|M| SparseMatrixVar::<FpVar<F>>::new_constant(cs.clone(), M.clone()))
+                    .collect::<Result<_, _>>()?,
+            })
         })
     }
 }

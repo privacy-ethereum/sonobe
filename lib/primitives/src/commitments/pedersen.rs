@@ -3,14 +3,14 @@ use ark_relations::gr1cs::SynthesisError;
 use ark_std::{iter::repeat_with, marker::PhantomData, rand::RngCore, UniformRand};
 
 use super::{Error, VectorCommitment};
-use sonobe_traits::{Curve, CF2};
+use crate::traits::{Null, SonobeCurve, CF2};
 
-#[derive(Debug)]
-pub struct Pedersen<C: Curve, const H: bool> {
+#[derive(Debug, PartialEq)]
+pub struct Pedersen<C: SonobeCurve, const H: bool> {
     _c: PhantomData<C>,
 }
 
-impl<C: Curve, const H: bool> Pedersen<C, H> {
+impl<C: SonobeCurve, const H: bool> Pedersen<C, H> {
     fn msm(g: &[C::Affine], v: &[C::ScalarField]) -> Result<C, Error> {
         if g.len() < v.len() {
             return Err(Error::MessageTooLong(g.len(), v.len()));
@@ -21,16 +21,16 @@ impl<C: Curve, const H: bool> Pedersen<C, H> {
     }
 }
 
-impl<C: Curve> VectorCommitment for Pedersen<C, false> {
+impl<C: SonobeCurve> VectorCommitment for Pedersen<C, false> {
     const IS_HIDING: bool = false;
 
     type Key = Vec<C::Affine>;
     type Scalar = C::ScalarField;
     type Commitment = C;
-    type Randomness = ();
+    type Randomness = Null;
 
-    fn generate_key(rng: &mut impl RngCore, len: usize) -> Result<Self::Key, Error> {
-        let generators = repeat_with(|| C::rand(rng))
+    fn generate_key(mut rng: impl RngCore, len: usize) -> Result<Self::Key, Error> {
+        let generators = repeat_with(|| C::rand(&mut rng))
             .take(len.next_power_of_two())
             .collect::<Vec<_>>();
         Ok(C::normalize_batch(&generators))
@@ -39,9 +39,9 @@ impl<C: Curve> VectorCommitment for Pedersen<C, false> {
     fn commit(
         g: &Self::Key,
         v: &[Self::Scalar],
-        _rng: &mut impl RngCore,
+        _rng: impl RngCore,
     ) -> Result<(Self::Commitment, Self::Randomness), Error> {
-        Ok((Self::msm(g, v)?, ()))
+        Ok((Self::msm(g, v)?, Null))
     }
 
     fn open(
@@ -54,7 +54,7 @@ impl<C: Curve> VectorCommitment for Pedersen<C, false> {
     }
 }
 
-impl<C: Curve> VectorCommitment for Pedersen<C, true> {
+impl<C: SonobeCurve> VectorCommitment for Pedersen<C, true> {
     const IS_HIDING: bool = true;
 
     type Key = (Vec<C::Affine>, C);
@@ -62,16 +62,19 @@ impl<C: Curve> VectorCommitment for Pedersen<C, true> {
     type Commitment = C;
     type Randomness = C::ScalarField;
 
-    fn generate_key(rng: &mut impl RngCore, len: usize) -> Result<Self::Key, Error> {
-        Ok((Pedersen::<C, false>::generate_key(rng, len)?, C::rand(rng)))
+    fn generate_key(mut rng: impl RngCore, len: usize) -> Result<Self::Key, Error> {
+        Ok((
+            Pedersen::<C, false>::generate_key(&mut rng, len)?,
+            C::rand(&mut rng),
+        ))
     }
 
     fn commit(
         (g, h): &Self::Key,
         v: &[Self::Scalar],
-        rng: &mut impl RngCore,
+        mut rng: impl RngCore,
     ) -> Result<(Self::Commitment, Self::Randomness), Error> {
-        let r = C::ScalarField::rand(rng);
+        let r = C::ScalarField::rand(&mut rng);
         Ok((Self::msm(g, v)? + h.mul(r), r))
     }
 
@@ -85,11 +88,11 @@ impl<C: Curve> VectorCommitment for Pedersen<C, true> {
     }
 }
 
-pub struct PedersenGadget<C: Curve, const H: bool = false> {
+pub struct PedersenGadget<C: SonobeCurve, const H: bool = false> {
     _c: PhantomData<C>,
 }
 
-impl<C: Curve, const H: bool> PedersenGadget<C, H> {
+impl<C: SonobeCurve, const H: bool> PedersenGadget<C, H> {
     pub fn commit(
         h: &C::Var,
         g: &[C::Var],
@@ -123,25 +126,20 @@ impl<C: Curve, const H: bool> PedersenGadget<C, H> {
 
 #[cfg(test)]
 mod tests {
-    use ark_bn254::{constraints::GVar, Fq, Fr, G1Projective};
-    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
-    use ark_ff::{BigInteger, PrimeField};
-    use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget};
-    use ark_relations::gr1cs::ConstraintSystem;
+    use ark_bn254::G1Projective;
     use ark_std::{error::Error, rand::Rng, test_rng};
 
-    use crate::commitments::tests::test_commitment_opt;
+    use crate::commitments::tests::test_commitment_correctness;
 
     use super::*;
-    use crate::transcripts::poseidon::poseidon_canonical_config;
 
     #[test]
     fn test_pedersen_commitment() -> Result<(), Box<dyn Error>> {
-        let rng = &mut test_rng();
+        let mut rng = test_rng();
         for i in 0..10 {
             let len = rng.gen_range((1 << i)..(1 << (i + 1)));
-            test_commitment_opt::<Pedersen<G1Projective, false>>(rng, len)?;
-            test_commitment_opt::<Pedersen<G1Projective, true>>(rng, len)?;
+            test_commitment_correctness::<Pedersen<G1Projective, false>>(&mut rng, len)?;
+            test_commitment_correctness::<Pedersen<G1Projective, true>>(&mut rng, len)?;
         }
         Ok(())
     }

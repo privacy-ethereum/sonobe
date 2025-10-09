@@ -3,15 +3,17 @@ use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::{borrow::Borrow, marker::PhantomData, One};
 
-use super::R1CS;
 use crate::{
-    arithmetizations::{ArithRelationGadget, AssignmentsVar},
+    arithmetizations::ArithRelationGadget,
+    circuits::Assignments,
     gadgets::math::{
         eq::EquivalenceGadget,
         matrix::{MatrixGadget, SparseMatrixVar},
         vector::VectorGadget,
     },
 };
+
+use super::R1CS;
 
 /// An in-circuit representation of the `R1CS` struct.
 ///
@@ -51,9 +53,9 @@ where
     SparseMatrixVar<FVar>: MatrixGadget<FVar>,
     [FVar]: VectorGadget<FVar>,
 {
-    pub fn eval_at_z(
+    pub fn eval_assignments(
         &self,
-        z: AssignmentsVar<FVar>,
+        z: Assignments<FVar, impl AsRef<[FVar]>>,
     ) -> Result<(Vec<FVar>, Vec<FVar>), SynthesisError> {
         // Multiply Cz by z[0] (u) here, allowing this method to be reused for
         // both relaxed and unrelaxed R1CS.
@@ -79,7 +81,7 @@ where
     type Evaluation = (Vec<FVar>, Vec<FVar>);
 
     fn eval_relation(&self, w: &WVar, u: &UVar) -> Result<Self::Evaluation, SynthesisError> {
-        self.eval_at_z((FVar::one(), u.as_ref(), w.as_ref()).into())
+        self.eval_assignments((FVar::one(), u.as_ref(), w.as_ref()).into())
     }
 
     fn enforce_evaluation(

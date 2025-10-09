@@ -150,9 +150,9 @@ pub mod tests {
 
         let config = poseidon_canonical_config::<Fr>();
         let mut poseidon_sponge: PoseidonSponge<_> = CryptographicSponge::new(&config);
-        let v: Vec<Fr> = vec![1, 2, 3, 4]
+        let v = vec![1, 2, 3, 4]
             .into_iter()
-            .map(|x| Fr::from(x))
+            .map(Fr::from)
             .collect::<Vec<_>>();
         poseidon_sponge.absorb(&v);
         poseidon_sponge.squeeze_field_elements::<Fr>(1);

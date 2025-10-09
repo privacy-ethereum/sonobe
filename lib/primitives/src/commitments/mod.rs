@@ -1,10 +1,10 @@
-use ark_r1cs_std::alloc::AllocVar;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::fmt::Debug;
-use ark_std::rand::RngCore;
+use ark_std::{
+    fmt::Debug,
+    iter::Sum,
+    ops::{Add, Mul},
+    rand::RngCore,
+};
 use thiserror::Error;
-
-use sonobe_traits::Curve;
 
 pub mod pedersen;
 // TODO: add back other commitment schemes
@@ -22,20 +22,30 @@ pub enum Error {
     CommitmentVerificationFail,
 }
 
-pub trait VectorCommitment {
+pub trait VectorCommitment: 'static + Debug + PartialEq {
     const IS_HIDING: bool;
 
     type Key;
-    type Scalar;
-    type Commitment;
-    type Randomness;
+    type Scalar: Clone + Copy + Debug + PartialEq + Sync;
+    type Commitment: Default + Debug + PartialEq + Sync;
+    type Randomness: Clone
+        + Copy
+        + Default
+        + Sync
+        + Add<Self::Scalar, Output = Self::Randomness>
+        + Mul<Self::Scalar, Output = Self::Randomness>
+        + for<'a> Add<&'a Self::Scalar, Output = Self::Randomness>
+        + for<'a> Mul<&'a Self::Scalar, Output = Self::Randomness>
+        + Add<Output = Self::Randomness>
+        + Mul<Output = Self::Randomness>
+        + Sum;
 
-    fn generate_key(rng: &mut impl RngCore, len: usize) -> Result<Self::Key, Error>;
+    fn generate_key(rng: impl RngCore, len: usize) -> Result<Self::Key, Error>;
 
     fn commit(
         ck: &Self::Key,
         v: &[Self::Scalar],
-        rng: &mut impl RngCore,
+        rng: impl RngCore,
     ) -> Result<(Self::Commitment, Self::Randomness), Error>;
 
     fn open(
@@ -53,14 +63,16 @@ mod tests {
 
     use super::*;
 
-    pub fn test_commitment_opt<VC: VectorCommitment<Scalar: UniformRand>>(
-        rng: &mut impl RngCore,
+    pub fn test_commitment_correctness<VC: VectorCommitment<Scalar: UniformRand>>(
+        mut rng: impl RngCore,
         len: usize,
     ) -> Result<(), Box<dyn Error>> {
-        let v = (0..len).map(|_| VC::Scalar::rand(rng)).collect::<Vec<_>>();
+        let v = (0..len)
+            .map(|_| VC::Scalar::rand(&mut rng))
+            .collect::<Vec<_>>();
 
-        let ck = VC::generate_key(rng, len)?;
-        let (cm, r) = VC::commit(&ck, &v, rng)?;
+        let ck = VC::generate_key(&mut rng, len)?;
+        let (cm, r) = VC::commit(&ck, &v, &mut rng)?;
         assert!(VC::open(&ck, &v, &r, &cm)?);
         Ok(())
     }

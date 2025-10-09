@@ -3,7 +3,8 @@ use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{boolean::Boolean, fields::fp::FpVar, groups::CurveVar};
 use ark_relations::gr1cs::SynthesisError;
-use sonobe_traits::{AbsorbNonNative, AbsorbNonNativeGadget};
+
+use crate::traits::{AbsorbNonNative, AbsorbNonNativeGadget};
 
 pub mod poseidon;
 

@@ -11,7 +11,7 @@ use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_serialize::{CanonicalSerialize, CanonicalSerializeWithFlags};
 use ark_std::{borrow::Borrow, Zero};
 
-use sonobe_traits::{AbsorbNonNativeGadget, Curve};
+use crate::traits::{AbsorbNonNativeGadget, SonobeCurve};
 
 use super::uint::NonNativeUintVar;
 
@@ -19,12 +19,12 @@ use super::uint::NonNativeUintVar;
 /// field, over the constraint field. It is not intended to perform operations, but just to contain
 /// the affine coordinates in order to perform hash operations of the point.
 #[derive(Debug, Clone)]
-pub struct NonNativeAffineVar<C: Curve> {
+pub struct NonNativeAffineVar<C: SonobeCurve> {
     pub x: NonNativeUintVar<C::ScalarField>,
     pub y: NonNativeUintVar<C::ScalarField>,
 }
 
-impl<C: Curve> AllocVar<C, C::ScalarField> for NonNativeAffineVar<C> {
+impl<C: SonobeCurve> AllocVar<C, C::ScalarField> for NonNativeAffineVar<C> {
     fn new_variable<T: Borrow<C>>(
         cs: impl Into<Namespace<C::ScalarField>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -44,7 +44,7 @@ impl<C: Curve> AllocVar<C, C::ScalarField> for NonNativeAffineVar<C> {
     }
 }
 
-impl<C: Curve> GR1CSVar<C::ScalarField> for NonNativeAffineVar<C> {
+impl<C: SonobeCurve> GR1CSVar<C::ScalarField> for NonNativeAffineVar<C> {
     type Value = C;
 
     fn cs(&self) -> ConstraintSystemRef<C::ScalarField> {
@@ -81,7 +81,7 @@ impl<C: Curve> GR1CSVar<C::ScalarField> for NonNativeAffineVar<C> {
     }
 }
 
-impl<C: Curve> EqGadget<C::ScalarField> for NonNativeAffineVar<C> {
+impl<C: SonobeCurve> EqGadget<C::ScalarField> for NonNativeAffineVar<C> {
     fn is_eq(&self, other: &Self) -> Result<Boolean<C::ScalarField>, SynthesisError> {
         let mut result = Boolean::TRUE;
         if self.x.0.len() != other.x.0.len() {
@@ -128,7 +128,7 @@ impl<C: Curve> EqGadget<C::ScalarField> for NonNativeAffineVar<C> {
     }
 }
 
-impl<C: Curve> NonNativeAffineVar<C> {
+impl<C: SonobeCurve> NonNativeAffineVar<C> {
     pub fn zero() -> Self {
         // `unwrap` below is safe because we are allocating a constant value,
         // which is guaranteed to succeed.
@@ -136,7 +136,7 @@ impl<C: Curve> NonNativeAffineVar<C> {
     }
 }
 
-impl<C: Curve> AbsorbNonNativeGadget<C::ScalarField> for NonNativeAffineVar<C> {
+impl<C: SonobeCurve> AbsorbNonNativeGadget<C::ScalarField> for NonNativeAffineVar<C> {
     fn to_native_sponge_field_elements(
         &self,
     ) -> Result<Vec<FpVar<C::ScalarField>>, SynthesisError> {
@@ -150,7 +150,7 @@ mod tests {
     use ark_r1cs_std::groups::curves::short_weierstrass::ProjectiveVar;
     use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::{error::Error, UniformRand};
-    use sonobe_traits::{AbsorbNonNative, Inputize, InputizeNonNative};
+    use crate::traits::{AbsorbNonNative, Inputize, InputizeNonNative};
 
     use super::*;
 
