@@ -1,3 +1,4 @@
+use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, Field, One, PrimeField};
 use ark_std::{
     cfg_into_iter, cfg_iter,
@@ -118,6 +119,12 @@ pub struct AbstractNova<VC, TF, const CHALLENGE_BITS: usize = 128> {
 
 pub type Nova<VC, const CHALLENGE_BITS: usize = 128> =
     AbstractNova<VC, <VC as VectorCommitment>::Scalar, CHALLENGE_BITS>;
+
+pub type CycleFoldNova<VC, const CHALLENGE_BITS: usize = 128> = AbstractNova<
+    VC,
+    <<<VC as VectorCommitment>::Commitment as CurveGroup>::BaseField as Field>::BasePrimeField,
+    CHALLENGE_BITS,
+>;
 
 impl<VC: VectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingScheme<1, 1>
     for AbstractNova<VC, TF, CHALLENGE_BITS>
@@ -252,7 +259,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use ark_bn254::{Fr, G1Projective};
+    use ark_bn254::{Fq, Fr, G1Projective};
     use ark_ff::UniformRand;
     use ark_std::{error::Error, test_rng};
 
@@ -265,31 +272,40 @@ mod tests {
 
     use super::*;
 
+    fn test_nova_opt<TF: SonobeField>(
+        rounds: usize,
+        mut rng: impl RngCore,
+    ) -> Result<(), Box<dyn Error>> {
+        test_folding_scheme::<AbstractNova<Pedersen<G1Projective, true>, TF>, 1, 1>(
+            8,
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            (0..rounds)
+                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
+                .collect(),
+            &mut rng,
+        )?;
+
+        test_folding_scheme::<AbstractNova<Pedersen<G1Projective, false>, TF>, 1, 1>(
+            8,
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            (0..rounds)
+                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
+                .collect(),
+            &mut rng,
+        )?;
+        Ok(())
+    }
+
     #[test]
     fn test_nova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
 
-        test_folding_scheme::<Nova<Pedersen<G1Projective, true>>, 1, 1>(
-            8,
-            CircuitForTest {
-                x: Fr::rand(&mut rng),
-            },
-            (0..10)
-                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
-                .collect(),
-            &mut rng,
-        )?;
-
-        test_folding_scheme::<Nova<Pedersen<G1Projective, false>>, 1, 1>(
-            8,
-            CircuitForTest {
-                x: Fr::rand(&mut rng),
-            },
-            (0..10)
-                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
-                .collect(),
-            &mut rng,
-        )?;
+        test_nova_opt::<Fr>(10, &mut rng)?;
+        test_nova_opt::<Fq>(10, &mut rng)?;
         Ok(())
     }
 }
