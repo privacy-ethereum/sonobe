@@ -150,7 +150,8 @@ mod tests {
     use ark_r1cs_std::groups::curves::short_weierstrass::ProjectiveVar;
     use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::{error::Error, UniformRand};
-    use crate::traits::{AbsorbNonNative, Inputize, InputizeNonNative};
+
+    use crate::traits::{Absorbable, Inputize, InputizeNonNative};
 
     use super::*;
 
@@ -173,7 +174,7 @@ mod tests {
         let p_var = NonNativeAffineVar::<Projective>::new_witness(cs.clone(), || Ok(p))?;
         assert_eq!(
             p_var.to_native_sponge_field_elements()?.value()?,
-            p.to_native_sponge_field_elements_as_vec()
+            p.extract_absorbed()
         );
         Ok(())
     }

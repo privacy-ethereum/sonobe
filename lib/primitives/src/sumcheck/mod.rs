@@ -9,7 +9,6 @@
 
 //! This module implements the sum check protocol.
 
-use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
 use ark_poly::{
     univariate::DensePolynomial, DenseMultilinearExtension, DenseUVPolynomial, Polynomial,
@@ -19,7 +18,7 @@ use ark_std::{cfg_chunks, cfg_into_iter, cfg_iter, fmt::Debug};
 use rayon::prelude::*;
 use thiserror::Error;
 
-use crate::transcripts::Transcript;
+use crate::{traits::Absorbable, transcripts::Transcript};
 
 use utils::{
     barycentric_weights, compute_lagrange_interpolated_poly, extrapolate, VPAuxInfo,
@@ -65,12 +64,12 @@ pub struct SumCheckSubClaim<F: PrimeField> {
 pub struct IOPSumCheck;
 
 impl IOPSumCheck {
-    pub fn prove<F: PrimeField + Absorb>(
+    pub fn prove<F: PrimeField + Absorbable<F>>(
         mut poly: VirtualPolynomial<F>,
         transcript: &mut impl Transcript<F>,
     ) -> Result<(IOPProof<F>, Vec<DenseMultilinearExtension<F>>), Error> {
-        transcript.absorb(&F::from(poly.aux_info.num_variables as u64));
-        transcript.absorb(&F::from(poly.aux_info.max_degree as u64));
+        transcript.add(&F::from(poly.aux_info.num_variables as u64));
+        transcript.add(&F::from(poly.aux_info.max_degree as u64));
         let extrapolation_aux = (1..poly.aux_info.max_degree)
             .map(|degree| {
                 let points = (0..1 + degree as u64).map(F::from).collect::<Vec<_>>();
@@ -161,10 +160,10 @@ impl IOPSumCheck {
             });
 
             let prover_poly = compute_lagrange_interpolated_poly(&products_sum).coeffs;
-            transcript.absorb(&prover_poly);
+            transcript.add(&prover_poly);
             prover_msgs.push(prover_poly);
 
-            let challenge = transcript.get_challenge();
+            let challenge = transcript.challenge_field_element();
             challenges.push(challenge);
             poly.flattened_ml_extensions.iter_mut().for_each(|mle| {
                 mle.evaluations = cfg_chunks!(mle.evaluations, 2)
@@ -183,22 +182,22 @@ impl IOPSumCheck {
         ))
     }
 
-    pub fn verify<F: PrimeField + Absorb>(
+    pub fn verify<F: PrimeField + Absorbable<F>>(
         claimed_sum: F,
         proof: &IOPProof<F>,
         aux_info: &VPAuxInfo,
         transcript: &mut impl Transcript<F>,
     ) -> Result<SumCheckSubClaim<F>, Error> {
-        transcript.absorb(&F::from(aux_info.num_variables as u64));
-        transcript.absorb(&F::from(aux_info.max_degree as u64));
+        transcript.add(&F::from(aux_info.num_variables as u64));
+        transcript.add(&F::from(aux_info.max_degree as u64));
         assert_eq!(aux_info.num_variables, proof.proofs.len());
 
         let challenges = proof
             .proofs
             .iter()
             .map(|msg| {
-                transcript.absorb(&msg);
-                transcript.get_challenge()
+                transcript.add(msg);
+                transcript.challenge_field_element()
             })
             .collect::<Vec<_>>();
 

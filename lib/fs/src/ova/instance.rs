@@ -1,8 +1,7 @@
-use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
 
 use sonobe_primitives::{
-    commitments::VectorCommitment, relations::Referenceable, traits::AbsorbNonNative,
+    commitments::VectorCommitment, relations::Referenceable, traits::Absorbable,
 };
 
 use crate::FoldingInstance;
@@ -30,16 +29,12 @@ impl<VC: VectorCommitment> FoldingInstance<VC> for RunningInstance<VC> {
     }
 }
 
-impl<VC: VectorCommitment<Scalar: Absorb, Commitment: AbsorbNonNative>> Absorb
-    for RunningInstance<VC>
+impl<F: PrimeField, VC: VectorCommitment<Scalar: Absorbable<F>, Commitment: Absorbable<F>>>
+    Absorbable<F> for RunningInstance<VC>
 {
-    fn to_sponge_bytes(&self, _dest: &mut Vec<u8>) {
-        unreachable!()
-    }
-
-    fn to_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
-        self.u.to_sponge_field_elements(dest);
-        self.x.to_sponge_field_elements(dest);
-        self.cm.to_native_sponge_field_elements(dest);
+    fn absorb_into(&self, dest: &mut Vec<F>) {
+        self.u.absorb_into(dest);
+        self.x.absorb_into(dest);
+        self.cm.absorb_into(dest);
     }
 }

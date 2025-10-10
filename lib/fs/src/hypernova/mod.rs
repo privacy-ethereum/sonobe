@@ -15,7 +15,7 @@ use sonobe_primitives::{
         utils::{build_eq_x_r_vec, eq_eval, VPAuxInfo, VirtualPolynomial},
         IOPProof, IOPSumCheck,
     },
-    traits::{ScalarRLC, SliceRLC, SonobeCurve, CF1},
+    traits::{Absorbable, ScalarRLC, SliceRLC, SonobeCurve, SonobeField},
     transcripts::Transcript,
 };
 
@@ -144,8 +144,8 @@ pub struct HyperNova<VC, const CHALLENGE_BITS: usize = 128> {
 impl<VC: VectorCommitment, const M: usize, const N: usize, const CHALLENGE_BITS: usize>
     FoldingScheme<M, N> for HyperNova<VC, CHALLENGE_BITS>
 where
-    VC: VectorCommitment<Scalar = CF1<<VC as VectorCommitment>::Commitment>>,
-    VC::Commitment: SonobeCurve,
+    VC::Scalar: SonobeField,
+    VC::Commitment: SonobeCurve<ScalarField = VC::Scalar> + Absorbable<VC::Scalar>,
 {
     type VC = VC;
     type RW = RW<VC>;
@@ -206,10 +206,10 @@ where
         let ccs = &pk.arith;
         // absorb instances to transcript
         for U in Us {
-            transcript.absorb(U);
+            transcript.add(U);
         }
         for u in us {
-            transcript.absorb(u);
+            transcript.add(u);
         }
 
         let running_mles = cfg_iter!(Ws)
@@ -230,8 +230,8 @@ where
             .collect::<Vec<_>>();
 
         // Step 1: Get some challenges
-        let gamma: VC::Scalar = transcript.get_challenge();
-        let beta: Vec<VC::Scalar> = transcript.get_challenges(ccs.s);
+        let gamma: VC::Scalar = transcript.challenge_field_element();
+        let beta: Vec<VC::Scalar> = transcript.challenge_field_elements(ccs.s);
 
         let gamma_powers = pows(gamma, M * ccs.t + N);
         let (running_gammas, incoming_gammas) = gamma_powers.split_at(M * ccs.t);
@@ -294,7 +294,7 @@ where
             .collect::<Vec<_>>();
 
         // Step 6: Get the folding challenge
-        let rho_bits: Vec<bool> = transcript.get_challenge_nbits(CHALLENGE_BITS);
+        let rho_bits: Vec<bool> = transcript.challenge_bits(CHALLENGE_BITS);
         let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
 
         let rho_powers = pows(rho, M + N);
@@ -351,15 +351,15 @@ where
     ) -> Result<Self::RU, Error> {
         // absorb instances to transcript
         for U in Us {
-            transcript.absorb(U);
+            transcript.add(U);
         }
         for u in us {
-            transcript.absorb(u);
+            transcript.add(u);
         }
 
         // Step 1: Get some challenges
-        let gamma: VC::Scalar = transcript.get_challenge();
-        let beta: Vec<VC::Scalar> = transcript.get_challenges(ccs.s);
+        let gamma: VC::Scalar = transcript.challenge_field_element();
+        let beta: Vec<VC::Scalar> = transcript.challenge_field_elements(ccs.s);
 
         let gamma_powers = pows(gamma, M * ccs.t + N);
 
@@ -414,7 +414,7 @@ where
         assert_eq!(c, sumcheck_subclaim.expected_evaluation);
 
         // Step 6: Get the folding challenge
-        let rho_bits = transcript.get_challenge_nbits(CHALLENGE_BITS);
+        let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
         let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
 
         let rho_powers = pows(rho, M + N);

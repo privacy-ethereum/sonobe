@@ -18,7 +18,7 @@ use sonobe_primitives::{
     circuits::AssignmentsOwned,
     commitments::VectorCommitment,
     relations::{Relation, WitnessInstanceSampler},
-    traits::{SonobeCurve, CF1},
+    traits::{Absorbable, SonobeCurve, SonobeField},
     transcripts::Transcript,
 };
 
@@ -110,15 +110,19 @@ where
 // From [Srinath Setty](https://microsoft.com/en-us/research/people/srinath/): In Nova, soundness
 // error ≤ 2/|S|, where S is the subset of the field F from which the challenges are drawn. In this
 // case, we keep the size of S close to 2^128.
-pub struct Nova<VC, const CHALLENGE_BITS: usize = 128> {
+pub struct AbstractNova<VC, TF, const CHALLENGE_BITS: usize = 128> {
     _vc: PhantomData<VC>,
+    _tf: PhantomData<TF>,
 }
 
-impl<VC: VectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<1, 1>
-    for Nova<VC, CHALLENGE_BITS>
+pub type Nova<VC, const CHALLENGE_BITS: usize = 128> =
+    AbstractNova<VC, <VC as VectorCommitment>::Scalar, CHALLENGE_BITS>;
+
+impl<VC: VectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingScheme<1, 1>
+    for AbstractNova<VC, TF, CHALLENGE_BITS>
 where
-    VC: VectorCommitment<Scalar = CF1<<VC as VectorCommitment>::Commitment>>,
-    VC::Commitment: SonobeCurve,
+    VC::Scalar: SonobeField + Absorbable<TF>,
+    VC::Commitment: SonobeCurve<ScalarField = VC::Scalar> + Absorbable<TF>,
 {
     type VC = VC;
     type RW = RW<VC>;
@@ -126,7 +130,7 @@ where
     type IW = IW<VC>;
     type IU = IU<VC>;
 
-    type TranscriptField = VC::Scalar;
+    type TranscriptField = TF;
     type Arith = R1CS<VC::Scalar>;
 
     type Config = usize;
@@ -159,7 +163,7 @@ where
 
     fn prove(
         pk: &Self::ProverKey,
-        transcript: &mut impl Transcript<VC::Scalar>,
+        transcript: &mut impl Transcript<TF>,
         Ws: &[Self::RW; 1],
         Us: &[Self::RU; 1],
         ws: &[Self::IW; 1],
@@ -189,10 +193,10 @@ where
         let (cm_t, r_t) = VC::commit(&pk.ck, &t, StepRng::new(0, 0))?;
 
         let rho_bits = {
-            transcript.absorb(&U);
-            transcript.absorb(&u);
-            transcript.absorb_nonnative(&cm_t);
-            transcript.squeeze_bits(CHALLENGE_BITS)
+            transcript.add(&U);
+            transcript.add(&u);
+            transcript.add(&cm_t);
+            transcript.challenge_bits(CHALLENGE_BITS)
         };
         let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
 
@@ -215,7 +219,7 @@ where
 
     fn verify(
         _vk: &Self::VerifierKey,
-        transcript: &mut impl Transcript<VC::Scalar>,
+        transcript: &mut impl Transcript<TF>,
         Us: &[Self::RU; 1],
         us: &[Self::IU; 1],
         cm_t: &Self::Proof,
@@ -223,10 +227,10 @@ where
         let (U, u) = (&Us[0], &us[0]);
 
         let rho_bits = {
-            transcript.absorb(&U);
-            transcript.absorb(&u);
-            transcript.absorb_nonnative(cm_t);
-            transcript.squeeze_bits(CHALLENGE_BITS)
+            transcript.add(&U);
+            transcript.add(&u);
+            transcript.add(cm_t);
+            transcript.challenge_bits(CHALLENGE_BITS)
         };
         let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
 

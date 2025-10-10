@@ -1,4 +1,3 @@
-use ark_crypto_primitives::sponge::Absorb;
 use ark_ec::{
     short_weierstrass::{Projective, SWCurveConfig},
     AffineRepr, CurveGroup, PrimeGroup,
@@ -10,7 +9,9 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::{
+    any::TypeId,
     iter::Sum,
+    mem::transmute_copy,
     ops::{Add, Mul},
 };
 
@@ -117,7 +118,7 @@ impl<P: SWCurveConfig<BaseField: SonobeField, ScalarField: SonobeField>>
 /// `Field` trait is a wrapper around `PrimeField` that also includes the
 /// necessary bounds for the field to be used conveniently in folding schemes.
 pub trait SonobeField:
-    PrimeField<BasePrimeField = Self> + Absorb + AbsorbNonNative + Inputize<Self>
+    PrimeField<BasePrimeField = Self> + Absorbable<Self> + Inputize<Self>
 {
     const BITS_PER_LIMB: usize;
     /// The in-circuit variable type for this field.
@@ -133,7 +134,7 @@ impl<P: FpConfig<N>, const N: usize> SonobeField for Fp<P, N> {
 /// necessary bounds for the curve to be used conveniently in folding schemes.
 pub trait SonobeCurve:
     CurveGroup<ScalarField: SonobeField, BaseField: SonobeField>
-    + AbsorbNonNative
+    + Absorbable<Self::BaseField>
     + Inputize<Self::BaseField>
     + InputizeNonNative<Self::ScalarField>
 {
@@ -147,23 +148,96 @@ impl<P: SWCurveConfig<ScalarField: SonobeField, BaseField: SonobeField>> SonobeC
     type Var = ProjectiveVar<P, FpVar<P::BaseField>>;
 }
 
-/// An interface for objects that can be absorbed by a `Transcript`.
-///
-/// Matches `Absorb` in `ark-crypto-primitives`.
-pub trait AbsorbNonNative {
-    /// Converts the object into field elements that can be absorbed by a `Transcript`.
+pub trait Absorbable<F: PrimeField> {
+    /// Converts the object into field elements that can be absorbed by a `CryptographicSponge`.
     /// Append the list to `dest`
-    fn to_native_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>);
+    fn absorb_into(&self, dest: &mut Vec<F>);
 
-    /// Converts the object into field elements that can be absorbed by a `Transcript`.
+    /// Converts the object into field elements that can be absorbed by a `CryptographicSponge`.
     /// Return the list as `Vec`
-    fn to_native_sponge_field_elements_as_vec<F: PrimeField>(&self) -> Vec<F> {
+    fn extract_absorbed(&self) -> Vec<F> {
         let mut result = Vec::new();
-        self.to_native_sponge_field_elements(&mut result);
+        self.absorb_into(&mut result);
         result
     }
 }
 
+impl<F: PrimeField, P: FpConfig<N>, const N: usize> Absorbable<F> for Fp<P, N> {
+    fn absorb_into(&self, dest: &mut Vec<F>) {
+        if TypeId::of::<F>() == TypeId::of::<Self>() {
+            // Safe because `F` and `Self` have the same type
+            // TODO (@winderica): specialization when???
+            dest.push(unsafe { transmute_copy::<Self, F>(self) });
+        } else {
+            let bits_per_limb = F::MODULUS_BIT_SIZE - 1;
+            let num_limbs = Self::MODULUS_BIT_SIZE.div_ceil(bits_per_limb);
+
+            let mut limbs = self
+                .into_bigint()
+                .to_bits_le()
+                .chunks(bits_per_limb as usize)
+                .map(|chunk| F::from(F::BigInt::from_bits_le(chunk)))
+                .collect::<Vec<F>>();
+            limbs.resize(num_limbs as usize, F::zero());
+
+            dest.extend(&limbs)
+        }
+    }
+}
+
+impl<F: PrimeField, P: SWCurveConfig<BaseField: Absorbable<F>>> Absorbable<F> for Projective<P> {
+    fn absorb_into(&self, dest: &mut Vec<F>) {
+        let affine = self.into_affine();
+        let (x, y) = affine.xy().unwrap_or_default();
+        [x, y].absorb_into(dest);
+    }
+}
+
+impl<F: PrimeField> Absorbable<F> for usize {
+    fn absorb_into(&self, dest: &mut Vec<F>) {
+        dest.push(F::from(*self as u64));
+    }
+}
+
+impl<F: PrimeField, T: Absorbable<F>> Absorbable<F> for &T {
+    fn absorb_into(&self, dest: &mut Vec<F>) {
+        <T as Absorbable<F>>::absorb_into(self, dest);
+    }
+}
+
+impl<F: PrimeField, T: Absorbable<F>> Absorbable<F> for (T, T) {
+    fn absorb_into(&self, dest: &mut Vec<F>) {
+        self.0.absorb_into(dest);
+        self.1.absorb_into(dest);
+    }
+}
+
+impl<F: PrimeField, T: Absorbable<F> + 'static> Absorbable<F> for [T] {
+    fn absorb_into(&self, dest: &mut Vec<F>) {
+        if TypeId::of::<F>() == TypeId::of::<T>() {
+            // Safe because `F` and `T` have the same type
+            dest.extend(unsafe { transmute_copy::<&[T], &[F]>(&self) });
+        } else {
+            for t in self.iter() {
+                t.absorb_into(dest);
+            }
+        }
+    }
+}
+
+impl<F: PrimeField, T: Absorbable<F> + 'static, const N: usize> Absorbable<F> for [T; N] {
+    fn absorb_into(&self, dest: &mut Vec<F>) {
+        <[T] as Absorbable<F>>::absorb_into(self, dest);
+    }
+}
+
+impl<F: PrimeField, T: Absorbable<F> + 'static> Absorbable<F> for Vec<T> {
+    fn absorb_into(&self, dest: &mut Vec<F>) {
+        <[T] as Absorbable<F>>::absorb_into(self, dest);
+    }
+}
+
+// TODO: rework this
 /// An interface for objects that can be absorbed by a `TranscriptVar` whose constraint field
 /// is `F`.
 ///
@@ -171,21 +245,6 @@ pub trait AbsorbNonNative {
 pub trait AbsorbNonNativeGadget<F: PrimeField> {
     /// Converts the object into field elements that can be absorbed by a `TranscriptVar`.
     fn to_native_sponge_field_elements(&self) -> Result<Vec<FpVar<F>>, SynthesisError>;
-}
-
-impl<T: AbsorbNonNative> AbsorbNonNative for [T] {
-    fn to_native_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
-        for t in self.iter() {
-            t.to_native_sponge_field_elements(dest);
-        }
-    }
-}
-
-impl<T: AbsorbNonNative> AbsorbNonNative for (T, T) {
-    fn to_native_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
-        self.0.to_native_sponge_field_elements(dest);
-        self.1.to_native_sponge_field_elements(dest);
-    }
 }
 
 impl<F: PrimeField, T: AbsorbNonNativeGadget<F>> AbsorbNonNativeGadget<F> for &T {
@@ -201,32 +260,6 @@ impl<F: PrimeField, T: AbsorbNonNativeGadget<F>> AbsorbNonNativeGadget<F> for [T
             result.extend(t.to_native_sponge_field_elements()?);
         }
         Ok(result)
-    }
-}
-
-impl<P: FpConfig<N>, const N: usize> AbsorbNonNative for Fp<P, N> {
-    fn to_native_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
-        let bits_per_limb = F::MODULUS_BIT_SIZE as usize - 1;
-        let num_limbs = (Fp::<P, N>::MODULUS_BIT_SIZE as usize).div_ceil(bits_per_limb);
-
-        let mut limbs = self
-            .into_bigint()
-            .to_bits_le()
-            .chunks(bits_per_limb)
-            .map(|chunk| F::from(F::BigInt::from_bits_le(chunk)))
-            .collect::<Vec<F>>();
-        limbs.resize(num_limbs, F::zero());
-
-        dest.extend(&limbs)
-    }
-}
-
-impl<P: SWCurveConfig<BaseField: SonobeField>> AbsorbNonNative for Projective<P> {
-    fn to_native_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
-        let affine = self.into_affine();
-        let (x, y) = affine.xy().unwrap_or_default();
-
-        [x, y].to_native_sponge_field_elements(dest);
     }
 }
 

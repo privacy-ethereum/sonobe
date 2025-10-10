@@ -1,47 +1,56 @@
+use std::mem::transmute_copy;
+
 use ark_crypto_primitives::sponge::{
     constraints::CryptographicSpongeVar,
     poseidon::{
         constraints::PoseidonSpongeVar, find_poseidon_ark_and_mds, PoseidonConfig, PoseidonSponge,
     },
-    Absorb, CryptographicSponge,
+    Absorb, CryptographicSponge, FieldBasedCryptographicSponge,
 };
-use ark_ec::{AffineRepr, CurveGroup};
-use ark_ff::{BigInteger, PrimeField};
+use ark_ec::CurveGroup;
+use ark_ff::PrimeField;
 use ark_r1cs_std::{boolean::Boolean, fields::fp::FpVar, groups::CurveVar};
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 
-use super::{AbsorbNonNative, AbsorbNonNativeGadget, Transcript, TranscriptVar};
+use crate::transcripts::{Absorbable, FieldElementSize};
 
-impl<F: PrimeField + Absorb> Transcript<F> for PoseidonSponge<F> {
-    fn new_with_pp_hash(config: &Self::Config, pp_hash: F) -> Self {
-        let mut sponge = Self::new(config);
-        sponge.absorb(&pp_hash);
-        sponge
+use super::{AbsorbNonNativeGadget, Transcript, TranscriptVar};
+
+impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
+    fn add<A: Absorbable<F> + ?Sized>(&mut self, input: &A) {
+        struct Hack<I>(I);
+        impl<F> Absorb for Hack<Vec<F>> {
+            fn to_sponge_bytes(&self, _: &mut Vec<u8>) {
+                // Unreachable because `PoseidonSponge::absorb` only calls
+                // `to_sponge_field_elements_as_vec::<F>`
+                unreachable!()
+            }
+
+            fn to_sponge_field_elements<T: PrimeField>(&self, dest: &mut Vec<T>) {
+                // Safe because `F` in `to_sponge_field_elements_as_vec::<F>`,
+                // which is called by `PoseidonSponge::absorb`, is the same as
+                // `T` here.
+                dest.extend(unsafe { transmute_copy::<&[F], &[T]>(&self.0.as_ref()) });
+            }
+        }
+        let v = input.extract_absorbed();
+        CryptographicSponge::absorb(self, &Hack(v));
     }
 
-    // Compatible with the in-circuit `TranscriptVar::absorb_point`
-    fn absorb_point<C: CurveGroup<BaseField = F>>(&mut self, p: &C) {
-        let (x, y) = p.into_affine().xy().unwrap_or_default();
-        self.absorb(&x);
-        self.absorb(&y);
+    fn get_bits(&mut self, num_bits: usize) -> Vec<bool> {
+        CryptographicSponge::squeeze_bits(self, num_bits)
     }
-    fn absorb_nonnative<V: AbsorbNonNative>(&mut self, v: &V) {
-        self.absorb(&v.to_native_sponge_field_elements_as_vec::<F>());
+
+    fn get_bytes(&mut self, num_bytes: usize) -> Vec<u8> {
+        CryptographicSponge::squeeze_bytes(self, num_bytes)
     }
-    fn get_challenge(&mut self) -> F {
-        let c = self.squeeze_field_elements(1);
-        self.absorb(&c[0]);
-        c[0]
+
+    fn get_field_elements_with_sizes(&mut self, sizes: &[FieldElementSize]) -> Vec<F> {
+        self.squeeze_native_field_elements_with_sizes(sizes)
     }
-    fn get_challenge_nbits(&mut self, nbits: usize) -> Vec<bool> {
-        let bits = self.squeeze_bits(nbits);
-        self.absorb(&F::from(F::BigInt::from_bits_le(&bits)));
-        bits
-    }
-    fn get_challenges(&mut self, n: usize) -> Vec<F> {
-        let c = self.squeeze_field_elements(n);
-        self.absorb(&c);
-        c
+
+    fn get_field_elements(&mut self, num_elements: usize) -> Vec<F> {
+        self.squeeze_native_field_elements(num_elements)
     }
 }
 
@@ -133,7 +142,7 @@ pub fn poseidon_canonical_config<F: PrimeField>() -> PoseidonConfig<F> {
 pub mod tests {
     use ark_bn254::{constraints::GVar, g1::Config, Fq, Fr, G1Projective as G1};
     use ark_ec::PrimeGroup;
-    use ark_ff::UniformRand;
+    use ark_ff::{BigInteger, UniformRand};
     use ark_r1cs_std::{
         alloc::AllocVar, groups::curves::short_weierstrass::ProjectiveVar, GR1CSVar,
     };
@@ -174,8 +183,8 @@ pub mod tests {
         let rng = &mut test_rng();
 
         let p = G1::rand(rng);
-        tr.absorb_point(&p);
-        let c = tr.get_challenge();
+        tr.add(&p);
+        let c = tr.challenge_field_element();
 
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fq>::new_ref();
@@ -200,8 +209,8 @@ pub mod tests {
         let rng = &mut test_rng();
 
         let p = G1::rand(rng);
-        tr.absorb_nonnative(&p);
-        let c = tr.get_challenge();
+        tr.add(&p);
+        let c = tr.challenge_field_element();
 
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fr>::new_ref();
@@ -221,8 +230,8 @@ pub mod tests {
         // use 'native' transcript
         let config = poseidon_canonical_config::<Fr>();
         let mut tr = PoseidonSponge::<Fr>::new(&config);
-        tr.absorb(&Fr::from(42_u32));
-        let c = tr.get_challenge();
+        tr.add(&Fr::from(42_u32));
+        let c = tr.challenge_field_element();
 
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fr>::new_ref();
@@ -243,10 +252,10 @@ pub mod tests {
         // use 'native' transcript
         let config = poseidon_canonical_config::<Fq>();
         let mut tr = PoseidonSponge::<Fq>::new(&config);
-        tr.absorb(&Fq::from(42_u32));
+        tr.add(&Fq::from(42_u32));
 
         // get challenge from native transcript
-        let c_bits = tr.get_challenge_nbits(nbits);
+        let c_bits = tr.challenge_bits(nbits);
 
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fq>::new_ref();

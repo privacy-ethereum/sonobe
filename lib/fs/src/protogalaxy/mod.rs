@@ -12,7 +12,7 @@ use sonobe_primitives::{
     circuits::{Assignments, AssignmentsOwned},
     commitments::VectorCommitment,
     relations::{Relation, WitnessInstanceSampler},
-    traits::{ScalarRLC, SliceRLC, SonobeCurve, CF1},
+    traits::{Absorbable, ScalarRLC, SliceRLC, SonobeCurve, SonobeField},
     transcripts::Transcript,
 };
 
@@ -140,10 +140,10 @@ pub struct ProtoGalaxy<VC> {
     _vc: PhantomData<VC>,
 }
 
-impl<VC, const N: usize> FoldingScheme<1, N> for ProtoGalaxy<VC>
+impl<VC: VectorCommitment, const N: usize> FoldingScheme<1, N> for ProtoGalaxy<VC>
 where
-    VC: VectorCommitment<Scalar = CF1<<VC as VectorCommitment>::Commitment>>,
-    VC::Commitment: SonobeCurve,
+    VC::Scalar: SonobeField,
+    VC::Commitment: SonobeCurve<ScalarField = VC::Scalar> + Absorbable<VC::Scalar>,
 {
     type VC = VC;
     type RW = RW<VC>;
@@ -192,16 +192,16 @@ where
         let d = r1cs.degree();
         let t = log2(r1cs.n_constraints()) as usize;
 
-        transcript.absorb(&t);
-        transcript.absorb(&(d * N + 1));
+        transcript.add(&t);
+        transcript.add(&(d * N + 1));
 
         // absorb the committed instances
-        transcript.absorb(U);
+        transcript.add(U);
         for u in us {
-            transcript.absorb(u);
+            transcript.add(u);
         }
 
-        let delta = transcript.get_challenge();
+        let delta = transcript.challenge_field_element();
         let deltas = exponential_powers(delta, t);
 
         let mut eval = r1cs.eval_assignments((VC::Scalar::one(), &U.x, &W.w).into())?;
@@ -211,9 +211,9 @@ where
         let f_poly = calc_f_from_btree(&eval, &U.betas, &deltas);
         let mut f_coeffs = f_poly.coeffs[1..].to_vec();
         f_coeffs.resize(t, VC::Scalar::default());
-        transcript.absorb(&f_coeffs);
+        transcript.add(&f_coeffs);
 
-        let alpha = transcript.get_challenge();
+        let alpha = transcript.challenge_field_element();
 
         // eval F(alpha)
         let f_alpha = f_poly.evaluate(&alpha);
@@ -302,9 +302,9 @@ where
         assert!(r.is_zero());
 
         k_poly.coeffs.resize(d * N + 1, VC::Scalar::default());
-        transcript.absorb(&k_poly.coeffs);
+        transcript.add(&k_poly.coeffs);
 
-        let gamma = transcript.get_challenge();
+        let gamma = transcript.challenge_field_element();
 
         let lagrange_evals = H.evaluate_all_lagrange_coefficients(gamma);
 
@@ -348,21 +348,21 @@ where
     ) -> Result<Self::RU, Error> {
         let U = &Us[0];
 
-        transcript.absorb(&proof.f_coeffs.len());
-        transcript.absorb(&proof.k_coeffs.len());
+        transcript.add(&proof.f_coeffs.len());
+        transcript.add(&proof.k_coeffs.len());
 
         // absorb the committed instances
-        transcript.absorb(U);
+        transcript.add(U);
         for u in us {
-            transcript.absorb(u);
+            transcript.add(u);
         }
 
-        let delta = transcript.get_challenge();
+        let delta = transcript.challenge_field_element();
         let deltas = exponential_powers(delta, U.betas.len());
 
-        transcript.absorb(&proof.f_coeffs);
+        transcript.add(&proof.f_coeffs);
 
-        let alpha = transcript.get_challenge();
+        let alpha = transcript.challenge_field_element();
 
         let f_poly = DensePolynomial::from_coefficients_vec([&[U.e][..], &proof.f_coeffs].concat());
 
@@ -370,12 +370,12 @@ where
 
         let betas_star = betas_star(&U.betas, &deltas, alpha);
 
-        transcript.absorb(&proof.k_coeffs);
+        transcript.add(&proof.k_coeffs);
 
         let H = GeneralEvaluationDomain::new(N + 1).ok_or(Error::DomainCreationFailure)?;
         let k_poly = DensePolynomial::from_coefficients_slice(&proof.k_coeffs);
 
-        let gamma = transcript.get_challenge();
+        let gamma = transcript.challenge_field_element();
 
         let lagrange_evals = H.evaluate_all_lagrange_coefficients(gamma);
 
