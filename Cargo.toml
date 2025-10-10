@@ -6,6 +6,7 @@ members = [
     "lib/experimental-frontends",
     "lib/primitives",
     "lib/fs",
+    "lib/ivc",
 ]
 resolver = "2"
 
@@ -63,6 +64,8 @@ experimental-frontends = { path = "lib/experimental-frontends", default-features
 folding-schemes = { path = "lib/folding-schemes", default-features = false }
 solidity-verifiers = { path = "lib/solidity-verifiers", default-features = false }
 sonobe-primitives = { path = "lib/primitives", default-features = false }
+sonobe-fs = { path = "lib/fs", default-features = false }
+sonobe-ivc = { path = "lib/ivc", default-features = false }
 
 [patch.crates-io]
 # We depend on git versions of arkworks crates, but some of our dependencies

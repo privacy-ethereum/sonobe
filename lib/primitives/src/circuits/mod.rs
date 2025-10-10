@@ -3,7 +3,10 @@ use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError, SynthesisMode,
 };
-use ark_std::{marker::PhantomData, ops::{Index, IndexMut}};
+use ark_std::{
+    marker::PhantomData,
+    ops::{Index, IndexMut},
+};
 
 pub mod utils;
 
@@ -15,7 +18,8 @@ pub mod utils;
 /// both `FCircuit::ExternalInputs` and `FCircuit::ExternalInputsVar`, where the `Default` trait
 /// implementation for the `ExternalInputs` returns the initialized data structure (ie. if the type
 /// contains a vector, it is initialized at the expected length).
-pub trait FCircuit<F: PrimeField> {
+pub trait FCircuit {
+    type Field: PrimeField;
     type ExternalInputs;
 
     /// returns the number of elements in the state of the FCircuit, which corresponds to the
@@ -27,11 +31,11 @@ pub trait FCircuit<F: PrimeField> {
         // this method uses self, so that each FCircuit implementation (and different frontends)
         // can hold a state if needed to store data to generate the constraints.
         &self,
-        cs: ConstraintSystemRef<F>,
+        cs: ConstraintSystemRef<Self::Field>,
         i: usize,
-        z_i: Vec<FpVar<F>>,
+        z_i: Vec<FpVar<Self::Field>>,
         external_inputs: Self::ExternalInputs, // inputs that are not part of the state
-    ) -> Result<Vec<FpVar<F>>, SynthesisError>;
+    ) -> Result<Vec<FpVar<Self::Field>>, SynthesisError>;
 }
 
 #[derive(Clone, Debug, PartialEq)]
