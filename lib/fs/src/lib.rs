@@ -35,7 +35,7 @@ pub enum Error {
     DomainCreationFailure,
 }
 
-pub trait FoldingWitness<VC: VectorCommitment>: Referenceable + Sync {
+pub trait FoldingWitness<VC: VectorCommitment>: Debug + Referenceable + Sync {
     /// Returns the reference to all openings contained in the witness, each
     /// being a tuple of the values being committed to and the randomness.
     fn openings_ref(&self) -> Vec<(&[VC::Scalar], &VC::Randomness)>;
@@ -208,18 +208,18 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<Self::TranscriptField>,
-        Ws: &[&Self::RW; M],
-        Us: &[&Self::RU; M],
-        ws: &[&Self::IW; N],
-        us: &[&Self::IU; N],
+        Ws: &[Self::RW; M],
+        Us: &[Self::RU; M],
+        ws: &[Self::IW; N],
+        us: &[Self::IU; N],
         rng: impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof), Error>;
 
     fn verify(
         vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<Self::TranscriptField>,
-        Us: &[&Self::RU; M],
-        us: &[&Self::IU; N],
+        Us: &[Self::RU; M],
+        us: &[Self::IU; N],
         proof: &Self::Proof,
     ) -> Result<Self::RU, Error>;
 
@@ -246,7 +246,7 @@ mod tests {
 
     use super::*;
 
-    pub fn test_folding_scheme_1_1<FS>(
+    pub fn test_folding_scheme<FS, const M: usize, const N: usize>(
         config: FS::Config,
         circuit: impl ConstraintSynthesizer<<FS::VC as VectorCommitment>::Scalar>,
         assignments_vec: Vec<AssignmentsOwned<<FS::VC as VectorCommitment>::Scalar>>,
@@ -254,9 +254,9 @@ mod tests {
     ) -> Result<(), Box<dyn Error>>
     where
         FS: FoldingScheme<
-            1,
-            1,
-            Arith: From<R1CS<<<FS as FoldingScheme>::VC as VectorCommitment>::Scalar>>,
+            M,
+            N,
+            Arith: From<R1CS<<<FS as FoldingScheme<M, N>>::VC as VectorCommitment>::Scalar>>,
             DeciderKey: WitnessInstanceSampler<
                 FS::IW,
                 FS::IU,
@@ -273,21 +273,51 @@ mod tests {
             .constraints()?;
         let (pk, vk, dk) = FS::generate_keys(pp, arith.into())?;
 
-        let (mut W, mut U) = WitnessInstanceSampler::<FS::RW, FS::RU>::sample(&dk, (), &mut rng)?;
-        FS::decide_running(&dk, &W, &U)?;
+        let mut Ws = vec![];
+        let mut Us = vec![];
+        for _ in 0..M {
+            let (W, U) = WitnessInstanceSampler::<FS::RW, FS::RU>::sample(&dk, (), &mut rng)?;
+            FS::decide_running(&dk, &W, &U)?;
+            Ws.push(W);
+            Us.push(U);
+        }
+        let mut Ws = Ws.try_into().unwrap();
+        let mut Us = Us.try_into().unwrap();
+
         let mut transcript_p = PoseidonSponge::new(&poseidon_canonical_config());
         let mut transcript_v = PoseidonSponge::new(&poseidon_canonical_config());
 
         for assignments in assignments_vec {
-            let (w, u) =
-                WitnessInstanceSampler::<FS::IW, FS::IU>::sample(&dk, assignments, &mut rng)?;
-            FS::decide_incoming(&dk, &w, &u)?;
-            let (WW, UU, pi) =
-                FS::prove(&pk, &mut transcript_p, &[&W], &[&U], &[&w], &[&u], &mut rng)?;
-            FS::decide_running(&dk, &WW, &UU)?;
-            assert_eq!(FS::verify(&vk, &mut transcript_v, &[&U], &[&u], &pi)?, UU);
+            let mut ws = vec![];
+            let mut us = vec![];
+            for _ in 0..N {
+                let (w, u) = WitnessInstanceSampler::<FS::IW, FS::IU>::sample(
+                    &dk,
+                    assignments.clone(),
+                    &mut rng,
+                )?;
+                FS::decide_incoming(&dk, &w, &u)?;
+                ws.push(w);
+                us.push(u);
+            }
+            let ws = ws.try_into().unwrap();
+            let us = us.try_into().unwrap();
 
-            (W, U) = (WW, UU);
+            let (WW, UU, pi) = FS::prove(&pk, &mut transcript_p, &Ws, &Us, &ws, &us, &mut rng)?;
+            FS::decide_running(&dk, &WW, &UU)?;
+            assert_eq!(FS::verify(&vk, &mut transcript_v, &Us, &us, &pi)?, UU);
+
+            for i in 0..M {
+                let (W, U) = WitnessInstanceSampler::<FS::RW, FS::RU>::sample(&dk, (), &mut rng)?;
+                FS::decide_running(&dk, &W, &U)?;
+                Ws[i] = W;
+                Us[i] = U;
+            }
+            if M != 0 {
+                let idx = rng.gen_range(0..M);
+                Ws[idx] = WW;
+                Us[idx] = UU;
+            }
         }
 
         Ok(())

@@ -9,7 +9,7 @@ use sonobe_primitives::{
         ArithRelation,
     },
     circuits::{Assignments, AssignmentsOwned},
-    commitments::VectorCommitment,
+   commitments::VectorCommitment,
     relations::{Referenceable, Relation, WitnessInstanceSampler},
     traits::{SonobeCurve, CF1},
     transcripts::Transcript,
@@ -155,13 +155,13 @@ where
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Ws: &[&Self::RW; 1],
-        Us: &[&Self::RU; 1],
-        ws: &[&Self::IW; 1],
-        us: &[&Self::IU; 1],
+        Ws: &[Self::RW; 1],
+        Us: &[Self::RU; 1],
+        ws: &[Self::IW; 1],
+        us: &[Self::IU; 1],
         rng: impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof), Error> {
-        let (W, U, w, u) = (Ws[0], Us[0], ws[0], us[0]);
+        let (W, U, w, u) = (&Ws[0], &Us[0], &ws[0], &us[0]);
 
         // Compute the cross term `T` by following the original Nova paper.
         let z1 = Assignments::from((U.u, &U.x, &W.w));
@@ -225,11 +225,11 @@ where
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Us: &[&Self::RU; 1],
-        us: &[&Self::IU; 1],
+        Us: &[Self::RU; 1],
+        us: &[Self::IU; 1],
         cm: &Self::Proof,
     ) -> Result<Self::RU, Error> {
-        let (U, u) = (Us[0], us[0]);
+        let (U, u) = (&Us[0], &us[0]);
 
         let rho_bits = {
             transcript.absorb(&U);
@@ -258,7 +258,7 @@ mod tests {
         commitments::pedersen::Pedersen,
     };
 
-    use crate::tests::test_folding_scheme_1_1;
+    use crate::tests::test_folding_scheme;
 
     use super::*;
 
@@ -268,7 +268,7 @@ mod tests {
 
         let config = (4, 4);
 
-        test_folding_scheme_1_1::<Ova<Pedersen<G1Projective, true>>>(
+        test_folding_scheme::<Ova<Pedersen<G1Projective, true>>, 1, 1>(
             config,
             CircuitForTest {
                 x: Fr::rand(&mut rng),
@@ -279,7 +279,7 @@ mod tests {
             &mut rng,
         )?;
 
-        test_folding_scheme_1_1::<Ova<Pedersen<G1Projective, false>>>(
+        test_folding_scheme::<Ova<Pedersen<G1Projective, false>>, 1, 1>(
             config,
             CircuitForTest {
                 x: Fr::rand(&mut rng),

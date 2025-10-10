@@ -31,6 +31,7 @@ pub trait VectorCommitment: 'static + Debug + PartialEq {
     type Randomness: Clone
         + Copy
         + Default
+        + Debug
         + Sync
         + Add<Self::Scalar, Output = Self::Randomness>
         + Mul<Self::Scalar, Output = Self::Randomness>

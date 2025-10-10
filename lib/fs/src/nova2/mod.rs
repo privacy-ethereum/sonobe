@@ -161,13 +161,13 @@ where
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Ws: &[&Self::RW; 1],
-        Us: &[&Self::RU; 1],
-        ws: &[&Self::IW; 1],
-        us: &[&Self::IU; 1],
+        Ws: &[Self::RW; 1],
+        Us: &[Self::RU; 1],
+        ws: &[Self::IW; 1],
+        us: &[Self::IU; 1],
         rng: impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof), Error> {
-        let (W, U, w, u) = (Ws[0], Us[0], ws[0], us[0]);
+        let (W, U, w, u) = (&Ws[0], &Us[0], &ws[0], &us[0]);
 
         // Compute the cross term `T` by following the optimized approach in
         // [Mova](https://eprint.iacr.org/2024/1220.pdf)'s section 5.2.
@@ -221,11 +221,11 @@ where
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Us: &[&Self::RU; 1],
-        us: &[&Self::IU; 1],
+        Us: &[Self::RU; 1],
+        us: &[Self::IU; 1],
         pi: &Self::Proof,
     ) -> Result<Self::RU, Error> {
-        let (U, u) = (Us[0], us[0]);
+        let (U, u) = (&Us[0], &us[0]);
 
         let rho_bits = {
             transcript.absorb(&U);
@@ -257,7 +257,7 @@ mod tests {
         commitments::pedersen::Pedersen,
     };
 
-    use crate::tests::test_folding_scheme_1_1;
+    use crate::tests::test_folding_scheme;
 
     use super::*;
 
@@ -265,7 +265,7 @@ mod tests {
     fn test_nova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
 
-        test_folding_scheme_1_1::<Nova<Pedersen<G1Projective, true>>>(
+        test_folding_scheme::<Nova<Pedersen<G1Projective, true>>, 1, 1>(
             8,
             CircuitForTest {
                 x: Fr::rand(&mut rng),
@@ -276,7 +276,7 @@ mod tests {
             &mut rng,
         )?;
 
-        test_folding_scheme_1_1::<Nova<Pedersen<G1Projective, false>>>(
+        test_folding_scheme::<Nova<Pedersen<G1Projective, false>>, 1, 1>(
             8,
             CircuitForTest {
                 x: Fr::rand(&mut rng),

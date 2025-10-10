@@ -7,9 +7,7 @@ use ark_std::{
 use rayon::prelude::*;
 
 use sonobe_primitives::{
-    arithmetizations::{
-        ccs::CCS, Arith, ArithRelation, Error as ArithError,
-    },
+    arithmetizations::{ccs::CCS, Arith, ArithRelation, Error as ArithError},
     circuits::{Assignments, AssignmentsOwned},
     commitments::VectorCommitment,
     relations::{Referenceable, Relation, WitnessInstanceSampler},
@@ -200,10 +198,10 @@ where
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Ws: &[&Self::RW; M],
-        Us: &[&Self::RU; M],
-        ws: &[&Self::IW; N],
-        us: &[&Self::IU; N],
+        Ws: &[Self::RW; M],
+        Us: &[Self::RU; M],
+        ws: &[Self::IW; N],
+        us: &[Self::IU; N],
         mut rng: impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof), Error> {
         let ccs = &pk.arith;
@@ -211,14 +209,14 @@ where
         let mut cms = [VC::Commitment::default(); N];
         let mut rs = [VC::Randomness::default(); N];
         for i in 0..N {
-            let (cm, r) = VC::commit(&pk.ck, ws[i], &mut rng)?;
+            let (cm, r) = VC::commit(&pk.ck, &ws[i], &mut rng)?;
             cms[i] = cm;
             rs[i] = r;
         }
 
         // absorb instances to transcript
         for U in Us {
-            transcript.absorb(&U);
+            transcript.absorb(U);
         }
         for u in us {
             transcript.absorb(u);
@@ -359,16 +357,16 @@ where
     fn verify(
         ccs: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Us: &[&Self::RU; M],
-        us: &[&Self::IU; N],
+        Us: &[Self::RU; M],
+        us: &[Self::IU; N],
         (cms, proof): &Self::Proof,
     ) -> Result<Self::RU, Error> {
         // absorb instances to transcript
         for U in Us {
-            transcript.absorb(&U);
+            transcript.absorb(U);
         }
         for u in us {
-            transcript.absorb(&u);
+            transcript.absorb(u);
         }
         for cm in cms {
             transcript.absorb_nonnative(cm);
@@ -474,42 +472,54 @@ fn pows<F: Field>(base: F, n: usize) -> Vec<F> {
 mod tests {
     use ark_bn254::{Fr, G1Projective};
     use ark_ff::UniformRand;
-    use ark_std::{error::Error, test_rng};
+    use ark_std::{error::Error, rand::Rng, test_rng};
 
     use sonobe_primitives::{
         circuits::utils::{satisfying_assignments_for_test, CircuitForTest},
         commitments::pedersen::Pedersen,
     };
 
-    use crate::tests::test_folding_scheme_1_1;
+    use crate::tests::test_folding_scheme;
 
     use super::*;
+
+    fn test_hypernova_opt<const M: usize, const N: usize>(
+        rounds: usize,
+        mut rng: impl Rng,
+    ) -> Result<(), Box<dyn Error>> {
+        test_folding_scheme::<HyperNova<Pedersen<G1Projective, true>>, M, N>(
+            8,
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            (0..rounds)
+                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
+                .collect(),
+            &mut rng,
+        )?;
+
+        test_folding_scheme::<HyperNova<Pedersen<G1Projective, false>>, M, N>(
+            8,
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            (0..rounds)
+                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
+                .collect(),
+            &mut rng,
+        )?;
+        Ok(())
+    }
 
     #[test]
     fn test_hypernova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
-
-        test_folding_scheme_1_1::<HyperNova<Pedersen<G1Projective, true>>>(
-            8,
-            CircuitForTest {
-                x: Fr::rand(&mut rng),
-            },
-            (0..10)
-                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
-                .collect(),
-            &mut rng,
-        )?;
-
-        test_folding_scheme_1_1::<HyperNova<Pedersen<G1Projective, false>>>(
-            8,
-            CircuitForTest {
-                x: Fr::rand(&mut rng),
-            },
-            (0..10)
-                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
-                .collect(),
-            &mut rng,
-        )?;
+        test_hypernova_opt::<1, 1>(10, &mut rng)?;
+        test_hypernova_opt::<1, 3>(10, &mut rng)?;
+        test_hypernova_opt::<3, 1>(10, &mut rng)?;
+        test_hypernova_opt::<3, 3>(10, &mut rng)?;
+        test_hypernova_opt::<0, 5>(10, &mut rng)?;
+        test_hypernova_opt::<5, 0>(10, &mut rng)?;
         Ok(())
     }
 }

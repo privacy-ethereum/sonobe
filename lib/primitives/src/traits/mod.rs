@@ -230,7 +230,7 @@ impl<P: SWCurveConfig<BaseField: SonobeField>> AbsorbNonNative for Projective<P>
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug)]
 pub struct Null;
 
 impl<F> Add<F> for Null {

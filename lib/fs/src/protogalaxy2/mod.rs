@@ -1,4 +1,4 @@
-use ark_ff::{Field, One, Zero};
+use ark_ff::{batch_inversion, Field, One, Zero};
 use ark_poly::{
     univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations,
     GeneralEvaluationDomain, Polynomial,
@@ -186,10 +186,10 @@ where
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Ws: &[&Self::RW; 1],
-        Us: &[&Self::RU; 1],
-        ws: &[&Self::IW; N],
-        us: &[&Self::IU; N],
+        Ws: &[Self::RW; 1],
+        Us: &[Self::RU; 1],
+        ws: &[Self::IW; N],
+        us: &[Self::IU; N],
         mut rng: impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof), Error> {
         if !(N + 1).is_power_of_two() {
@@ -198,14 +198,14 @@ where
 
         let r1cs = &pk.arith;
 
-        let (W, U) = (Ws[0], Us[0]);
+        let (W, U) = (&Ws[0], &Us[0]);
         let d = r1cs.degree();
         let t = log2(r1cs.n_constraints()) as usize;
 
         let mut phis = [VC::Commitment::default(); N];
         let mut rs = [VC::Randomness::default(); N];
         for i in 0..N {
-            let (cm, r) = VC::commit(&pk.ck, ws[i], &mut rng)?;
+            let (cm, r) = VC::commit(&pk.ck, &ws[i], &mut rng)?;
             phis[i] = cm;
             rs[i] = r;
         }
@@ -251,33 +251,55 @@ where
             )
             .collect::<Vec<_>>();
 
-        let G = GeneralEvaluationDomain::new((d * N) + 1).ok_or(Error::DomainCreationFailure)?;
+        let G = GeneralEvaluationDomain::<VC::Scalar>::new(d * N + 1)
+            .ok_or(Error::DomainCreationFailure)?;
         let H = GeneralEvaluationDomain::new(N + 1).ok_or(Error::DomainCreationFailure)?;
 
-        let lagrange_polys = cfg_into_iter!(0..H.size())
-            .map(|i| {
-                let evals = (0..H.size()).map(|k| VC::Scalar::from(k == i)).collect();
-                Evaluations::from_vec_and_domain(evals, H).interpolate()
-            })
+        let omegas = pows(H.group_gen_inv(), H.size());
+        let mut lagrange_bases = vec![vec![H.size_inv(); H.size()]];
+        for i in 1..H.size() {
+            lagrange_bases.push(
+                lagrange_bases[i - 1]
+                    .iter()
+                    .zip(&omegas)
+                    .map(|(a, b)| *a * b)
+                    .collect(),
+            );
+        }
+        let lagrange_bases = lagrange_bases
+            .into_iter()
+            .map(DensePolynomial::from_coefficients_vec)
             .collect::<Vec<_>>();
 
         // Optimized G(X) computation as described in Claim 4.5 of the paper.
-        let beta_star_pows = beta_all_powers(&betas_star);
-
         let s_evals = (0..r1cs.n_variables())
             .map(|i| {
-                lagrange_polys
+                lagrange_bases
                     .iter()
                     .zip(&zs)
                     .map(|(l, z)| l * z[i])
                     .fold(DensePolynomial::zero(), |acc, x| acc + x)
-                    .evaluate_over_domain_by_ref(G)
+                    .evaluate_over_domain(G)
                     .evals
             })
             .collect::<Vec<_>>();
 
-        let g_evals = (0..G.size())
-            .map(|k| {
+        let mut invs = G
+            .elements()
+            .map(|e| e - VC::Scalar::one())
+            .collect::<Vec<_>>();
+        batch_inversion(&mut invs);
+
+        // Compute evaluations of G(X) - F(alpha)*L_0(X)
+        let beta_star_pows = beta_all_powers(&betas_star);
+        let g_evals = G
+            .elements()
+            .zip(invs)
+            .enumerate()
+            .map(|(k, (e, inv))| {
+                if k.is_multiple_of(H.size()) {
+                    return Ok(VC::Scalar::zero());
+                }
                 let z = AssignmentsOwned::from((
                     s_evals[0][k],
                     (1..1 + r1cs.n_public_inputs())
@@ -288,29 +310,24 @@ where
                         .collect(),
                 ));
                 let v = r1cs.eval_assignments(z)?;
-                Ok(v.into_iter().scalar_rlc(&beta_star_pows))
+                // L_0(e) = (e^H.size() - 1) / (e - 1) / H.size()
+                let l_0_eval = H.evaluate_vanishing_polynomial(e) * inv * H.size_inv();
+                Ok(v.into_iter().scalar_rlc(&beta_star_pows) - f_alpha * l_0_eval)
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
+        // Interpolate G(X) - F(alpha)*L_0(X)
         let g_poly = Evaluations::from_vec_and_domain(g_evals, G).interpolate();
-
-        let z_poly = H.vanishing_polynomial();
-        // K(X) = (G(X) - F(alpha)*L_0(X)) / Z(X)
-        // Pending optimization: move division by Z_X to the prev loop
-        let (k_poly, r) = (&g_poly - &lagrange_polys[0] * f_alpha).divide_by_vanishing_poly(H);
+        // Compute K(X) = (G(X) - F(alpha)*L_0(X)) / Z(X)
+        let (mut k_poly, r) = g_poly.divide_by_vanishing_poly(H);
         assert!(r.is_zero());
 
-        let mut k_coeffs = k_poly.coeffs.clone();
-        k_coeffs.resize(d * N + 1, VC::Scalar::default());
-        transcript.absorb(&k_coeffs);
+        k_poly.coeffs.resize(d * N + 1, VC::Scalar::default());
+        transcript.absorb(&k_poly.coeffs);
 
         let gamma = transcript.get_challenge();
 
-        let lagrange_evals = lagrange_polys
-            .iter()
-            .take(N + 1)
-            .map(|l| l.evaluate(&gamma))
-            .collect::<Vec<_>>();
+        let lagrange_evals = H.evaluate_all_lagrange_coefficients(gamma);
 
         Ok((
             RW {
@@ -324,7 +341,8 @@ where
                     .scalar_rlc(&lagrange_evals),
             },
             RU {
-                e: f_alpha * lagrange_evals[0] + z_poly.evaluate(&gamma) * k_poly.evaluate(&gamma),
+                e: f_alpha * lagrange_evals[0]
+                    + H.evaluate_vanishing_polynomial(gamma) * k_poly.evaluate(&gamma),
                 x: vec![&U.x[..]]
                     .into_iter()
                     .chain(us.iter().map(|u| &u[..]))
@@ -335,18 +353,24 @@ where
                     .chain(phis.iter().copied())
                     .scalar_rlc(&lagrange_evals),
             },
-            (phis, ProtoGalaxyProof { f_coeffs, k_coeffs }),
+            (
+                phis,
+                ProtoGalaxyProof {
+                    f_coeffs,
+                    k_coeffs: k_poly.coeffs,
+                },
+            ),
         ))
     }
 
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Us: &[&Self::RU; 1],
-        us: &[&Self::IU; N],
+        Us: &[Self::RU; 1],
+        us: &[Self::IU; N],
         (phis, proof): &Self::Proof,
     ) -> Result<Self::RU, Error> {
-        let U = Us[0];
+        let U = &Us[0];
 
         transcript.absorb(&proof.f_coeffs.len());
         transcript.absorb(&proof.k_coeffs.len());
@@ -376,7 +400,6 @@ where
         transcript.absorb(&proof.k_coeffs);
 
         let H = GeneralEvaluationDomain::new(N + 1).ok_or(Error::DomainCreationFailure)?;
-        let z_poly = H.vanishing_polynomial();
         let k_poly = DensePolynomial::from_coefficients_slice(&proof.k_coeffs);
 
         let gamma = transcript.get_challenge();
@@ -384,7 +407,8 @@ where
         let lagrange_evals = H.evaluate_all_lagrange_coefficients(gamma);
 
         Ok(RU {
-            e: f_alpha * lagrange_evals[0] + z_poly.evaluate(&gamma) * k_poly.evaluate(&gamma),
+            e: f_alpha * lagrange_evals[0]
+                + H.evaluate_vanishing_polynomial(gamma) * k_poly.evaluate(&gamma),
             x: vec![&U.x[..]]
                 .into_iter()
                 .chain(us.iter().map(|u| &u[..]))
@@ -448,46 +472,64 @@ pub fn beta_all_powers<F: Field>(betas: &[F]) -> Vec<F> {
     pows
 }
 
+fn pows<F: Field>(base: F, n: usize) -> Vec<F> {
+    let mut res = vec![F::one(); n];
+    for i in 1..n {
+        res[i] = res[i - 1] * base;
+    }
+    res
+}
+
 #[cfg(test)]
 mod tests {
     use ark_bn254::{Fr, G1Projective};
     use ark_ff::UniformRand;
-    use ark_std::{error::Error, test_rng};
+    use ark_std::{error::Error, rand::Rng, test_rng};
 
     use sonobe_primitives::{
         circuits::utils::{satisfying_assignments_for_test, CircuitForTest},
         commitments::pedersen::Pedersen,
     };
 
-    use crate::tests::test_folding_scheme_1_1;
+    use crate::tests::test_folding_scheme;
 
     use super::*;
+
+    fn test_protogalaxy_opt<const N: usize>(
+        rounds: usize,
+        mut rng: impl Rng,
+    ) -> Result<(), Box<dyn Error>> {
+        test_folding_scheme::<ProtoGalaxy<Pedersen<G1Projective, true>>, 1, N>(
+            8,
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            (0..rounds)
+                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
+                .collect(),
+            &mut rng,
+        )?;
+
+        test_folding_scheme::<ProtoGalaxy<Pedersen<G1Projective, false>>, 1, N>(
+            8,
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            (0..rounds)
+                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
+                .collect(),
+            &mut rng,
+        )?;
+        Ok(())
+    }
 
     #[test]
     fn test_protogalaxy() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
-
-        test_folding_scheme_1_1::<ProtoGalaxy<Pedersen<G1Projective, true>>>(
-            8,
-            CircuitForTest {
-                x: Fr::rand(&mut rng),
-            },
-            (0..10)
-                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
-                .collect(),
-            &mut rng,
-        )?;
-
-        test_folding_scheme_1_1::<ProtoGalaxy<Pedersen<G1Projective, false>>>(
-            8,
-            CircuitForTest {
-                x: Fr::rand(&mut rng),
-            },
-            (0..10)
-                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
-                .collect(),
-            &mut rng,
-        )?;
+        test_protogalaxy_opt::<1>(10, &mut rng)?;
+        test_protogalaxy_opt::<3>(10, &mut rng)?;
+        test_protogalaxy_opt::<7>(10, &mut rng)?;
+        test_protogalaxy_opt::<0>(10, &mut rng)?;
         Ok(())
     }
 }
