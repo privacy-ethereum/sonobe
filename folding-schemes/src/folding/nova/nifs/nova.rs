@@ -51,7 +51,7 @@ impl<C: Curve, CI: Absorb> ChallengeGadget<C, CI> {
         CIVar: AbsorbGadget<CF1<C>>,
     >(
         transcript: &mut T,
-        U_i_vec: Vec<FpVar<CF1<C>>>, // apready processed input, so we don't have to recompute these values
+        U_i_vec: Vec<FpVar<CF1<C>>>, // already processed input, so we don't have to recompute these values
         u_i: CIVar,
         cmT: Option<NonNativeAffineVar<C>>,
     ) -> Result<Vec<Boolean<C::ScalarField>>, SynthesisError> {

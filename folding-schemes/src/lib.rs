@@ -281,7 +281,7 @@ pub trait Decider<
         running_instance: &Self::CommittedInstance,
         incoming_instance: &Self::CommittedInstance,
         proof: &Self::Proof,
-        // returns `Result<bool, Error>` to differentiate between an error occurred while performing
+        // returns `Result<bool, Error>` to differentiate between an error occurring while performing
         // the verification steps, and the verification logic of the scheme not passing.
     ) -> Result<bool, Error>;
 }
