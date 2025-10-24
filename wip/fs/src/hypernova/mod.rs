@@ -20,7 +20,7 @@ use sonobe_primitives::{
     transcripts::{Absorbable, Transcript},
 };
 
-use crate::{Error, FoldingScheme};
+use crate::{Error, FoldingScheme, PlainInstance as PU, PlainWitness as PW};
 
 use instance::{CCCS as IU, LCCCS as RU};
 use witness::{IncomingWitness as IW, RunningWitness as RW};
@@ -83,6 +83,19 @@ where
     }
 }
 
+impl<A, VC> Relation<PW<VC>, PU<VC>> for HyperNovaKey<A, VC>
+where
+    A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
+    VC: VectorCommitment,
+{
+    type Error = Error;
+
+    fn check_relation(&self, w: &PW<VC>, u: &PU<VC>) -> Result<(), Self::Error> {
+        self.arith.check_relation(w, u)?;
+        Ok(())
+    }
+}
+
 impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<VC>>
     for HyperNovaKey<A, VC>
 {
@@ -93,6 +106,17 @@ impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<V
         let (w, x) = (z.private, z.public);
         let (cm, r) = VC::commit(&self.ck, &w, rng)?;
         Ok((IW { w, r }, IU { cm, x }))
+    }
+}
+
+impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<PW<VC>, PU<VC>>
+    for HyperNovaKey<A, VC>
+{
+    type Source = AssignmentsOwned<VC::Scalar>;
+    type Error = Error;
+
+    fn sample(&self, z: Self::Source, _rng: impl RngCore) -> Result<(PW<VC>, PU<VC>), Error> {
+        Ok((z.private, z.public))
     }
 }
 
@@ -431,6 +455,308 @@ where
     }
 }
 
+pub struct HyperNova2<VC, const CHALLENGE_BITS: usize = 128> {
+    _vc: PhantomData<VC>,
+}
+
+impl<VC: VectorCommitment, const M: usize, const N: usize, const CHALLENGE_BITS: usize>
+    FoldingScheme<M, N> for HyperNova2<VC, CHALLENGE_BITS>
+where
+    VC::Scalar: SonobeField,
+    VC::Commitment: SonobeCurve<ScalarField = VC::Scalar> + Absorbable<VC::Scalar>,
+{
+    type VC = VC;
+    type RW = RW<VC>;
+    type RU = RU<VC>;
+    type IW = PW<VC>;
+    type IU = PU<VC>;
+
+    type TranscriptField = VC::Scalar;
+    type Arith = CCS<VC::Scalar>;
+
+    type Config = usize;
+    type PublicParam = VC::Key;
+    type ProverKey = HyperNovaKey<Self::Arith, VC>;
+    type VerifierKey = CCS<VC::Scalar>;
+    type DeciderKey = HyperNovaKey<Self::Arith, VC>;
+    type Challenge = Vec<bool>;
+    type Proof = ([VC::Commitment; N], NIMFSProof<VC::Scalar>);
+
+    fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
+        let ck = VC::generate_key(&mut rng, ck_len)?;
+        Ok(ck)
+    }
+
+    fn generate_keys(
+        ck: Self::PublicParam,
+        ccs: Self::Arith,
+    ) -> Result<(Self::ProverKey, Self::VerifierKey, Self::DeciderKey), Error> {
+        let ck = Arc::new(ck);
+        let ccs = Arc::new(ccs);
+        Ok((
+            HyperNovaKey {
+                arith: ccs.clone(),
+                ck: ck.clone(),
+            },
+            CCS {
+                m: ccs.n_constraints(),
+                n: ccs.n_variables(),
+                l: ccs.n_public_inputs(),
+                s: ccs.s,
+                t: ccs.t,
+                d: ccs.degree(),
+                S: ccs.S.clone(),
+                c: ccs.c.clone(),
+                M: vec![],
+            },
+            HyperNovaKey { arith: ccs, ck },
+        ))
+    }
+
+    fn prove(
+        pk: &Self::ProverKey,
+        transcript: &mut impl Transcript<VC::Scalar>,
+        Ws: &[impl Borrow<Self::RW>; M],
+        Us: &[impl Borrow<Self::RU>; M],
+        ws: &[impl Borrow<Self::IW>; N],
+        us: &[impl Borrow<Self::IU>; N],
+        mut rng: impl RngCore,
+    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+        let Ws = &Ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+        let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+        let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+        let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+
+        let ccs = &pk.arith;
+
+        let mut cms = [VC::Commitment::default(); N];
+        let mut rs = [VC::Randomness::default(); N];
+        for i in 0..N {
+            let (cm, r) = VC::commit(&pk.ck, &ws[i], &mut rng)?;
+            cms[i] = cm;
+            rs[i] = r;
+        }
+
+        // absorb instances to transcript
+        transcript.add(&Us[..]);
+        transcript.add(&us[..]);
+        transcript.add(&cms[..]);
+
+        // Step 1: Get some challenges
+        let gamma = transcript.challenge_field_element();
+        let beta = transcript.challenge_field_elements(ccs.s);
+
+        let gamma_powers = pows(gamma, M * ccs.t + N);
+        let (running_gammas, incoming_gammas) = gamma_powers.split_at(M * ccs.t);
+
+        // Compute g(x)
+        let running_mles = Ws
+            .iter()
+            .zip(Us)
+            .flat_map(|(W, U)| (0..ccs.t).map(|i| ccs.mle(i, (U.u, &U.x, &W.w).into())));
+        let incoming_mles = ws
+            .iter()
+            .zip(us)
+            .flat_map(|(w, u)| (0..ccs.t).map(move |i| ccs.mle(i, (One::one(), &u, &w).into())));
+        let eq_mles = Us
+            .iter()
+            .map(|U| &U.r_x)
+            .chain([&beta])
+            .map(|r| MLE::from_evaluations_vec(ccs.s, build_eq_x_r_vec(r)));
+
+        let running_products = running_gammas
+            .iter()
+            .enumerate()
+            .map(|(i, &gamma)| (gamma, vec![i, (M + N) * ccs.t + i / ccs.t]));
+        let incoming_products = incoming_gammas.iter().enumerate().flat_map(|(k, gamma)| {
+            ccs.S.iter().zip(&ccs.c).map(move |(S_i, &c_i)| {
+                (
+                    c_i * gamma,
+                    S_i.iter()
+                        .map(|j| (M + k) * ccs.t + j)
+                        .chain([(M + N) * ccs.t + M])
+                        .collect(),
+                )
+            })
+        });
+
+        let g = VirtualPolynomial {
+            aux_info: VPAuxInfo {
+                num_variables: ccs.s,
+                max_degree: ccs.degree() + 1,
+            },
+            flattened_ml_extensions: running_mles.chain(incoming_mles).chain(eq_mles).collect(),
+            products: running_products.chain(incoming_products).collect(),
+        };
+
+        // Step 3: Run the sumcheck prover
+        let (sumcheck_proof, mles) = IOPSumCheck::prove(g, transcript)?;
+
+        // Step 2: dig into the sumcheck and extract r_x_prime
+        let r_x_prime = sumcheck_proof.point.clone();
+
+        // Step 4: compute sigmas and thetas
+        let sigmas = mles[0..ccs.t * M]
+            .iter()
+            .map(|mle| mle.fix_variables(&[])[0])
+            .collect::<Vec<_>>();
+        let thetas = mles[ccs.t * M..ccs.t * (M + N)]
+            .iter()
+            .map(|mle| mle.fix_variables(&[])[0])
+            .collect::<Vec<_>>();
+
+        // Step 6: Get the folding challenge
+        let rho_bits: Vec<bool> = transcript.challenge_bits(CHALLENGE_BITS);
+        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+
+        let rho_powers = pows(rho, M + N);
+
+        Ok((
+            RW {
+                w: Ws
+                    .iter()
+                    .map(|w| &w.w[..])
+                    .chain(ws.iter().map(|w| &w[..]))
+                    .slice_rlc(&rho_powers),
+                r: Ws.iter().map(|w| w.r).chain(rs).scalar_rlc(&rho_powers),
+            },
+            Self::RU {
+                cm: Us
+                    .iter()
+                    .map(|u| u.cm)
+                    .chain(cms.iter().copied())
+                    .scalar_rlc(&rho_powers),
+                u: Us
+                    .iter()
+                    .map(|u| u.u)
+                    .chain([VC::Scalar::one(); N])
+                    .scalar_rlc(&rho_powers),
+                x: Us
+                    .iter()
+                    .map(|u| &u.x[..])
+                    .chain(us.iter().map(|u| &u[..]))
+                    .slice_rlc(&rho_powers),
+                r_x: r_x_prime,
+                v: sigmas
+                    .chunks(ccs.t)
+                    .chain(thetas.chunks(ccs.t))
+                    .slice_rlc(&rho_powers),
+            },
+            (
+                cms,
+                NIMFSProof {
+                    sc_proof: sumcheck_proof,
+                    sigmas,
+                    thetas,
+                },
+            ),
+            rho_bits,
+        ))
+    }
+
+    fn verify(
+        ccs: &Self::VerifierKey,
+        transcript: &mut impl Transcript<VC::Scalar>,
+        Us: &[impl Borrow<Self::RU>; M],
+        us: &[impl Borrow<Self::IU>; N],
+        (cms, proof): &Self::Proof,
+    ) -> Result<Self::RU, Error> {
+        let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+        let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+
+        // absorb instances to transcript
+        transcript.add(&Us[..]);
+        transcript.add(&us[..]);
+        transcript.add(&cms[..]);
+
+        // Step 1: Get some challenges
+        let gamma = transcript.challenge_field_element();
+        let beta = transcript.challenge_field_elements(ccs.s);
+
+        let gamma_powers = pows(gamma, M * ccs.t + N);
+
+        let vp_aux_info = VPAuxInfo {
+            max_degree: ccs.degree() + 1,
+            num_variables: ccs.s,
+        };
+
+        // Step 3: Start verifying the sumcheck
+        // First, compute the expected sumcheck sum: \sum gamma^j v_j
+        let mut sum_v_j_gamma = VC::Scalar::zero();
+        for (i, U) in Us.iter().enumerate() {
+            for j in 0..U.v.len() {
+                sum_v_j_gamma += U.v[j] * gamma_powers[i * ccs.t + j];
+            }
+        }
+
+        // Verify the interactive part of the sumcheck
+        let sumcheck_subclaim =
+            IOPSumCheck::verify(sum_v_j_gamma, &proof.sc_proof, &vp_aux_info, transcript)?;
+
+        // Step 2: Dig into the sumcheck claim and extract the randomness used
+        let r_x_prime = sumcheck_subclaim.point;
+
+        // Step 5: Finish verifying sumcheck (verify the claim c)
+        let c = {
+            let e2 = eq_eval(&beta, &r_x_prime);
+            proof
+                .sigmas
+                .chunks(ccs.t)
+                .zip(Us)
+                .flat_map(|(sigmas, u)| {
+                    let e_lcccs = eq_eval(&u.r_x, &r_x_prime);
+                    sigmas.iter().map(move |sigma_j| e_lcccs * sigma_j)
+                })
+                .chain(proof.thetas.chunks(ccs.t).map(|thetas| {
+                    e2 * ccs
+                        .S
+                        .iter()
+                        .zip(&ccs.c)
+                        .map(|(S_i, &c_i)| {
+                            c_i * S_i.iter().map(|&j| thetas[j]).product::<VC::Scalar>()
+                        })
+                        .sum::<VC::Scalar>()
+                }))
+                .zip(gamma_powers.iter())
+                .map(|(val, gamma_i)| val * gamma_i)
+                .sum::<VC::Scalar>()
+        };
+
+        // check that the g(r_x') from the sumcheck proof is equal to the computed c from sigmas&thetas
+        assert_eq!(c, sumcheck_subclaim.expected_evaluation);
+
+        // Step 6: Get the folding challenge
+        let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
+        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+
+        let rho_powers = pows(rho, M + N);
+
+        Ok(Self::RU {
+            cm: Us
+                .iter()
+                .map(|u| u.cm)
+                .chain(cms.iter().copied())
+                .scalar_rlc(&rho_powers),
+            u: Us
+                .iter()
+                .map(|u| u.u)
+                .chain([VC::Scalar::one(); N])
+                .scalar_rlc(&rho_powers),
+            x: Us
+                .iter()
+                .map(|u| &u.x[..])
+                .chain(us.iter().map(|u| &u[..]))
+                .slice_rlc(&rho_powers),
+            r_x: r_x_prime,
+            v: proof
+                .sigmas
+                .chunks(ccs.t)
+                .chain(proof.thetas.chunks(ccs.t))
+                .slice_rlc(&rho_powers),
+        })
+    }
+}
+
 fn pows<F: Field>(base: F, n: usize) -> Vec<F> {
     let mut res = vec![F::one(); n];
     for i in 1..n {
@@ -470,6 +796,28 @@ mod tests {
         )?;
 
         test_folding_scheme::<HyperNova<Pedersen<G1Projective, false>>, M, N>(
+            8,
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            (0..rounds)
+                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
+                .collect(),
+            &mut rng,
+        )?;
+
+        test_folding_scheme::<HyperNova2<Pedersen<G1Projective, true>>, M, N>(
+            8,
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            (0..rounds)
+                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
+                .collect(),
+            &mut rng,
+        )?;
+
+        test_folding_scheme::<HyperNova2<Pedersen<G1Projective, false>>, M, N>(
             8,
             CircuitForTest {
                 x: Fr::rand(&mut rng),

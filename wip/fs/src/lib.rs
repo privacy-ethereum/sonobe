@@ -1,10 +1,7 @@
 pub mod hypernova;
-pub mod hypernova2;
 pub mod nova;
-pub mod nova2;
 pub mod ova;
 pub mod protogalaxy;
-pub mod protogalaxy2;
 
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::fields::fp::FpVar;
@@ -18,12 +15,8 @@ use sonobe_primitives::commitments::VectorCommitmentGadget;
 use sonobe_primitives::relations::WitnessInstanceSampler;
 use sonobe_primitives::transcripts::TranscriptVar;
 use sonobe_primitives::{
-    arithmetizations::Arith,
-    commitments::VectorCommitment,
-    relations::{Relation},
-    sumcheck::Error as SumCheckError,
-    traits::SonobeField,
-    transcripts::Transcript,
+    arithmetizations::Arith, commitments::VectorCommitment, relations::Relation,
+    sumcheck::Error as SumCheckError, traits::SonobeField, transcripts::Transcript,
 };
 
 #[derive(Debug, Error)]
@@ -48,18 +41,21 @@ pub trait FoldingWitness<VC: VectorCommitment>: Debug + Sync {
     fn openings_ref(&self) -> Vec<(&[VC::Scalar], &VC::Randomness)>;
 }
 
-impl<VC: VectorCommitment> FoldingWitness<VC> for Vec<VC::Scalar> {
-    fn openings_ref(&self) -> Vec<(&[VC::Scalar], &VC::Randomness)> {
-        vec![]
-    }
-}
-
 pub trait FoldingInstance<VC: VectorCommitment>: Debug + PartialEq + Sync {
     /// Returns the commitments contained in the committed instance.
     fn commitments(&self) -> Vec<&VC::Commitment>;
 }
 
-impl<VC: VectorCommitment> FoldingInstance<VC> for Vec<VC::Scalar> {
+pub type PlainWitness<VC> = Vec<<VC as VectorCommitment>::Scalar>;
+pub type PlainInstance<VC> = Vec<<VC as VectorCommitment>::Scalar>;
+
+impl<VC: VectorCommitment> FoldingWitness<VC> for PlainWitness<VC> {
+    fn openings_ref(&self) -> Vec<(&[VC::Scalar], &VC::Randomness)> {
+        vec![]
+    }
+}
+
+impl<VC: VectorCommitment> FoldingInstance<VC> for PlainInstance<VC> {
     fn commitments(&self) -> Vec<&VC::Commitment> {
         vec![]
     }
@@ -165,10 +161,10 @@ pub trait FoldingSchemePartialGadget<const M: usize = 1, const N: usize = 1> {
     type VC: VectorCommitmentGadget;
     type RW: FoldingWitnessVar<Self::VC, Native = <Self::Native as FoldingScheme<M, N>>::RW>;
     type RU: FoldingInstanceVar<Self::VC, Native = <Self::Native as FoldingScheme<M, N>>::RU>;
-        // + AllocVar<<Self::Native as FoldingScheme<M, N>>::RU, Self::TranscriptField>;
+    // + AllocVar<<Self::Native as FoldingScheme<M, N>>::RU, Self::TranscriptField>;
     type IW: FoldingWitnessVar<Self::VC, Native = <Self::Native as FoldingScheme<M, N>>::IW>;
     type IU: FoldingInstanceVar<Self::VC, Native = <Self::Native as FoldingScheme<M, N>>::IU>;
-        // + AllocVar<<Self::Native as FoldingScheme<M, N>>::RU, Self::TranscriptField>;
+    // + AllocVar<<Self::Native as FoldingScheme<M, N>>::RU, Self::TranscriptField>;
 
     type TranscriptField: SonobeField;
 
