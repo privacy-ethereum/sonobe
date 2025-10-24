@@ -2,27 +2,11 @@ use ark_std::{error::Error, rand::RngCore};
 
 use crate::traits::Dummy;
 
-pub trait Referenceable {
-    type Ref<'a>: Copy
-    where
-        Self: 'a;
-
-    fn reference(&self) -> Self::Ref<'_>;
-}
-
-impl<T: 'static> Referenceable for Vec<T> {
-    type Ref<'a> = &'a [T];
-
-    fn reference(&self) -> Self::Ref<'_> {
-        self
-    }
-}
-
-pub trait Relation<W: Referenceable, U: Referenceable> {
+pub trait Relation<W, U> {
     type Error: Error;
 
     /// Checks if witness `w` and instance `u` satisfy the relation `self`
-    fn check_relation(&self, w: W::Ref<'_>, u: U::Ref<'_>) -> Result<(), Self::Error>;
+    fn check_relation(&self, w: &W, u: &U) -> Result<(), Self::Error>;
 }
 
 pub trait WitnessInstanceExtractor<W, U> {

@@ -1,7 +1,7 @@
 use ark_relations::gr1cs::SynthesisError;
 use thiserror::Error;
 
-use crate::relations::{Referenceable, Relation};
+use crate::relations::{Relation};
 
 pub mod ccs;
 pub mod r1cs;
@@ -71,7 +71,7 @@ pub trait Arith: Clone {
 /// This is also the case of CCS, where `W` and `U` may be vectors of field
 /// elements, [`crate::folding::hypernova::Witness`] and [`crate::folding::hypernova::lcccs::LCCCS`],
 /// or [`crate::folding::hypernova::Witness`] and [`crate::folding::hypernova::cccs::CCCS`].
-pub trait ArithRelation<W: Referenceable, U: Referenceable>: Arith {
+pub trait ArithRelation<W: ?Sized, U: ?Sized>: Arith {
     type Evaluation;
 
     /// Evaluates the constraint system `self` at witness `w` and instance `u`.
@@ -90,7 +90,7 @@ pub trait ArithRelation<W: Referenceable, U: Referenceable>: Arith {
     ///
     /// However, we use `Self::Evaluation` to represent the evaluation result
     /// for future extensibility.
-    fn eval_relation(&self, w: W::Ref<'_>, u: U::Ref<'_>) -> Result<Self::Evaluation, Error>;
+    fn eval_relation(&self, w: &W, u: &U) -> Result<Self::Evaluation, Error>;
 
     /// Checks if the evaluation result is valid. The witness `w` and instance
     /// `u` are also parameters, because the validity check may need information
@@ -106,10 +106,10 @@ pub trait ArithRelation<W: Referenceable, U: Referenceable>: Arith {
     /// - The evaluation `v` of relaxed R1CS in ProtoGalaxy at satisfying `W`
     ///   and `U` should satisfy `e = Σ pow_i(β) v_i`, where `e` is the error
     ///   term in the committed instance.
-    fn check_evaluation(w: W::Ref<'_>, u: U::Ref<'_>, v: Self::Evaluation) -> Result<(), Error>;
+    fn check_evaluation(w: &W, u: &U, v: Self::Evaluation) -> Result<(), Error>;
 }
 
-impl<W: Referenceable, U: Referenceable, A: ArithRelation<W, U>> Relation<W, U> for A {
+impl<W, U, A: ArithRelation<W, U>> Relation<W, U> for A {
     type Error = Error;
 
     /// Checks if witness `w` and instance `u` satisfy the constraint system
@@ -117,7 +117,7 @@ impl<W: Referenceable, U: Referenceable, A: ArithRelation<W, U>> Relation<W, U> 
     /// validity of the evaluation result.
     ///
     /// Used only for testing.
-    fn check_relation(&self, w: W::Ref<'_>, u: U::Ref<'_>) -> Result<(), Self::Error> {
+    fn check_relation(&self, w: &W, u: &U) -> Result<(), Self::Error> {
         let e = self.eval_relation(w, u)?;
         Self::check_evaluation(w, u, e)
     }

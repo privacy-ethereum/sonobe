@@ -20,7 +20,7 @@ use sonobe_primitives::transcripts::TranscriptVar;
 use sonobe_primitives::{
     arithmetizations::Arith,
     commitments::VectorCommitment,
-    relations::{Referenceable, Relation},
+    relations::{Relation},
     sumcheck::Error as SumCheckError,
     traits::SonobeField,
     transcripts::Transcript,
@@ -42,7 +42,7 @@ pub enum Error {
     DomainCreationFailure,
 }
 
-pub trait FoldingWitness<VC: VectorCommitment>: Debug + Referenceable + Sync {
+pub trait FoldingWitness<VC: VectorCommitment>: Debug + Sync {
     /// Returns the reference to all openings contained in the witness, each
     /// being a tuple of the values being committed to and the randomness.
     fn openings_ref(&self) -> Vec<(&[VC::Scalar], &VC::Randomness)>;
@@ -54,7 +54,7 @@ impl<VC: VectorCommitment> FoldingWitness<VC> for Vec<VC::Scalar> {
     }
 }
 
-pub trait FoldingInstance<VC: VectorCommitment>: Debug + PartialEq + Referenceable + Sync {
+pub trait FoldingInstance<VC: VectorCommitment>: Debug + PartialEq + Sync {
     /// Returns the commitments contained in the committed instance.
     fn commitments(&self) -> Vec<&VC::Commitment>;
 }
@@ -135,11 +135,11 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
     ) -> Result<Self::RU, Error>;
 
     fn decide_running(dk: &Self::DeciderKey, W: &Self::RW, U: &Self::RU) -> Result<(), Error> {
-        Relation::<Self::RW, Self::RU>::check_relation(dk, W.reference(), U.reference())
+        Relation::<Self::RW, Self::RU>::check_relation(dk, W, U)
     }
 
     fn decide_incoming(dk: &Self::DeciderKey, w: &Self::IW, u: &Self::IU) -> Result<(), Error> {
-        Relation::<Self::IW, Self::IU>::check_relation(dk, w.reference(), u.reference())
+        Relation::<Self::IW, Self::IU>::check_relation(dk, w, u)
     }
 }
 

@@ -1,4 +1,4 @@
-use sonobe_primitives::{commitments::VectorCommitment, relations::Referenceable};
+use sonobe_primitives::{commitments::VectorCommitment, };
 
 use crate::FoldingWitness;
 
@@ -14,22 +14,6 @@ pub struct RunningWitness<VC: VectorCommitment> {
 pub struct IncomingWitness<VC: VectorCommitment> {
     pub w: Vec<VC::Scalar>,
     pub r_w: VC::Randomness,
-}
-
-impl<VC: VectorCommitment> Referenceable for RunningWitness<VC> {
-    type Ref<'a> = &'a Self;
-
-    fn reference(&self) -> Self::Ref<'_> {
-        self
-    }
-}
-
-impl<VC: VectorCommitment> Referenceable for IncomingWitness<VC> {
-    type Ref<'a> = &'a Self;
-
-    fn reference(&self) -> Self::Ref<'_> {
-        self
-    }
 }
 
 impl<VC: VectorCommitment> FoldingWitness<VC> for RunningWitness<VC> {

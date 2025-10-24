@@ -24,7 +24,7 @@ use sonobe_primitives::{
     },
     circuits::{Assignments, AssignmentsOwned},
     commitments::{VectorCommitment, VectorCommitmentGadget},
-    relations::{Referenceable, Relation, WitnessInstanceSampler},
+    relations::{Relation, WitnessInstanceSampler},
     traits::{SonobeCurve, SonobeField},
     transcripts::{Absorbable, AbsorbableGadget, Transcript, TranscriptVar},
 };
@@ -50,9 +50,9 @@ pub struct OvaKey<A, VC: VectorCommitment> {
 
 impl<A, VC> Relation<RW<VC>, RU<VC>> for OvaKey<A, VC>
 where
-    A: ArithRelation<
-        RelaxedWitness<VC::Scalar>,
-        RelaxedInstance<VC::Scalar>,
+    A: for<'a> ArithRelation<
+        RelaxedWitness<&'a [VC::Scalar]>,
+        RelaxedInstance<&'a [VC::Scalar]>,
         Evaluation = Vec<VC::Scalar>,
     >,
     VC: VectorCommitment<Scalar: Field>,
@@ -60,7 +60,10 @@ where
     type Error = Error;
 
     fn check_relation(&self, w: &RW<VC>, u: &RU<VC>) -> Result<(), Self::Error> {
-        let e = self.arith.eval_relation((&w.w, &[]), (&u.x, u.u))?;
+        let e = self.arith.eval_relation(
+            &RelaxedWitness { w: &w.w, e: &[] },
+            &RelaxedInstance { x: &u.x, u: &u.u },
+        )?;
         // TODO: handle the error properly
         assert!(VC::open(&self.ck, &[&w.w[..], &e].concat(), &w.r, &u.cm)?);
         Ok(())
@@ -74,11 +77,7 @@ where
 {
     type Error = Error;
 
-    fn check_relation(
-        &self,
-        w: <IW<VC> as Referenceable>::Ref<'_>,
-        u: <IU<VC> as Referenceable>::Ref<'_>,
-    ) -> Result<(), Self::Error> {
+    fn check_relation(&self, w: &IW<VC>, u: &IU<VC>) -> Result<(), Self::Error> {
         self.arith.check_relation(w, u)?;
         Ok(())
     }
@@ -97,9 +96,9 @@ impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<V
 
 impl<A, VC> WitnessInstanceSampler<RW<VC>, RU<VC>> for OvaKey<A, VC>
 where
-    A: ArithRelation<
-        RelaxedWitness<VC::Scalar>,
-        RelaxedInstance<VC::Scalar>,
+    A: for<'a> ArithRelation<
+        RelaxedWitness<&'a [VC::Scalar]>,
+        RelaxedInstance<&'a [VC::Scalar]>,
         Evaluation = Vec<VC::Scalar>,
     >,
     VC: VectorCommitment<Scalar: Field>,
@@ -115,7 +114,10 @@ where
         let w = (0..self.arith.n_witnesses())
             .map(|_| VC::Scalar::rand(&mut rng))
             .collect::<Vec<_>>();
-        let e = self.arith.eval_relation((&w, &[]), (&x, u))?;
+        let e = self.arith.eval_relation(
+            &RelaxedWitness { w: &w, e: &[] },
+            &RelaxedInstance { x: &x, u: &u },
+        )?;
 
         let (cm, r) = VC::commit(&self.ck, &[&w[..], &e].concat(), &mut rng)?;
         Ok((RW { w, r }, RU { x, cm, u }))

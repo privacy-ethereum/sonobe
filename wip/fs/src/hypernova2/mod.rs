@@ -11,7 +11,7 @@ use sonobe_primitives::{
     arithmetizations::{ccs::CCS, Arith, ArithRelation, Error as ArithError},
     circuits::{Assignments, AssignmentsOwned},
     commitments::VectorCommitment,
-    relations::{Referenceable, Relation, WitnessInstanceSampler},
+    relations::{Relation, WitnessInstanceSampler},
     sumcheck::{
         utils::{build_eq_x_r_vec, eq_eval, VPAuxInfo, VirtualPolynomial},
         IOPProof, IOPSumCheck,
@@ -76,11 +76,7 @@ where
 {
     type Error = Error;
 
-    fn check_relation(
-        &self,
-        w: <IW<VC> as Referenceable>::Ref<'_>,
-        u: <IU<VC> as Referenceable>::Ref<'_>,
-    ) -> Result<(), Self::Error> {
+    fn check_relation(&self, w: &IW<VC>, u: &IU<VC>) -> Result<(), Self::Error> {
         self.arith.check_relation(w, u)?;
         Ok(())
     }

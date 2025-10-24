@@ -1,13 +1,15 @@
+use std::ops::Index;
 use ark_ff::Field;
 use ark_relations::gr1cs::{ConstraintSystem, Matrix};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{cfg_into_iter, cfg_iter};
+use ark_std::iterable::Iterable;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use crate::{
     circuits::{Assignments, ConstraintSystemExt},
-    relations::{Referenceable, WitnessInstanceExtractor},
+    relations::{WitnessInstanceExtractor},
     traits::Dummy,
 };
 
@@ -142,14 +144,14 @@ impl<F: Field> TryFrom<CCS<F>> for R1CS<F> {
     }
 }
 
-impl<F: Field> ArithRelation<Vec<F>, Vec<F>> for R1CS<F> {
+impl<F: Field, W: AsRef<[F]>, U: AsRef<[F]>> ArithRelation<W, U> for R1CS<F> {
     type Evaluation = Vec<F>;
 
-    fn eval_relation(&self, w: &[F], x: &[F]) -> Result<Self::Evaluation, Error> {
+    fn eval_relation(&self, w: &W, x: &U) -> Result<Self::Evaluation, Error> {
         self.eval_assignments((F::one(), x.as_ref(), w.as_ref()).into())
     }
 
-    fn check_evaluation(_w: &[F], _x: &[F], e: Self::Evaluation) -> Result<(), Error> {
+    fn check_evaluation(_w: &W, _x: &U, e: Self::Evaluation) -> Result<(), Error> {
         cfg_into_iter!(e)
             .all(|i| i.is_zero())
             .then_some(())
@@ -168,49 +170,33 @@ impl<F: Field> WitnessInstanceExtractor<Vec<F>, Vec<F>> for R1CS<F> {
     }
 }
 
-pub struct RelaxedWitness<F> {
-    pub w: Vec<F>,
-    pub e: Vec<F>,
+pub struct RelaxedWitness<V> {
+    pub w: V,
+    pub e: V,
 }
 
-impl<F: Field> Referenceable for RelaxedWitness<F> {
-    type Ref<'a> = (&'a [F], &'a [F]);
-
-    fn reference(&self) -> Self::Ref<'_> {
-        (&self.w, &self.e)
-    }
+pub struct RelaxedInstance<V: IntoIterator> {
+    pub x: V,
+    pub u: V::Item,
 }
 
-pub struct RelaxedInstance<F> {
-    pub x: Vec<F>,
-    pub u: F,
-}
-
-impl<F: Field> Referenceable for RelaxedInstance<F> {
-    type Ref<'a> = (&'a [F], F);
-
-    fn reference(&self) -> Self::Ref<'_> {
-        (&self.x, self.u)
-    }
-}
-
-impl<F: Field> ArithRelation<RelaxedWitness<F>, RelaxedInstance<F>> for R1CS<F> {
+impl<F: Field> ArithRelation<RelaxedWitness<&[F]>, RelaxedInstance<&[F]>> for R1CS<F> {
     type Evaluation = Vec<F>;
 
     fn eval_relation(
         &self,
-        (w, _e): (&[F], &[F]),
-        (x, u): (&[F], F),
+        w: &RelaxedWitness<&[F]>,
+        u: &RelaxedInstance<&[F]>,
     ) -> Result<Self::Evaluation, Error> {
-        self.eval_assignments((u, x, w).into())
+        self.eval_assignments((*u.u, u.x, w.w).into())
     }
 
     fn check_evaluation(
-        (_w, e): (&[F], &[F]),
-        _: (&[F], F),
+        w: &RelaxedWitness<&[F]>,
+        _u: &RelaxedInstance<&[F]>,
         v: Self::Evaluation,
     ) -> Result<(), Error> {
-        cfg_iter!(e)
+        cfg_iter!(w.e)
             .zip(&v)
             .all(|(e, v)| e == v)
             .then_some(())
@@ -220,11 +206,16 @@ impl<F: Field> ArithRelation<RelaxedWitness<F>, RelaxedInstance<F>> for R1CS<F> 
     }
 }
 
-impl<F: Field> WitnessInstanceExtractor<RelaxedWitness<F>, RelaxedInstance<F>> for R1CS<F> {
+impl<F: Field> WitnessInstanceExtractor<RelaxedWitness<Vec<F>>, RelaxedInstance<Vec<F>>>
+    for R1CS<F>
+{
     type Source = Assignments<F, Vec<F>>;
     type Error = Error;
 
-    fn extract(&self, z: Self::Source) -> Result<(RelaxedWitness<F>, RelaxedInstance<F>), Error> {
+    fn extract(
+        &self,
+        z: Self::Source,
+    ) -> Result<(RelaxedWitness<Vec<F>>, RelaxedInstance<Vec<F>>), Error> {
         let (w, x) = self.extract(z)?;
         let e = vec![F::zero(); self.n_constraints()];
         Ok((RelaxedWitness { w, e }, RelaxedInstance { x, u: F::one() }))

@@ -1,7 +1,7 @@
 use ark_ff::PrimeField;
 
 use sonobe_primitives::{
-    commitments::VectorCommitment, relations::Referenceable, transcripts::Absorbable,
+    commitments::VectorCommitment, transcripts::Absorbable,
 };
 
 use crate::FoldingInstance;
@@ -15,14 +15,6 @@ pub struct RunningInstance<VC: VectorCommitment> {
 }
 
 pub type IncomingInstance<VC> = Vec<<VC as VectorCommitment>::Scalar>;
-
-impl<VC: VectorCommitment> Referenceable for RunningInstance<VC> {
-    type Ref<'a> = &'a Self;
-
-    fn reference(&self) -> Self::Ref<'_> {
-        self
-    }
-}
 
 impl<VC: VectorCommitment> FoldingInstance<VC> for RunningInstance<VC> {
     fn commitments(&self) -> Vec<&VC::Commitment> {

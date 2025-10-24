@@ -3,7 +3,7 @@ use ark_ff::{Field, PrimeField};
 use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 use sonobe_primitives::{
-    commitments::VectorCommitment, relations::Referenceable, transcripts::Absorbable,
+    commitments::VectorCommitment, transcripts::Absorbable,
 };
 use sonobe_primitives::commitments::VectorCommitmentGadget;
 use sonobe_primitives::transcripts::AbsorbableGadget;
@@ -26,14 +26,6 @@ pub struct RunningInstanceVar<VC: VectorCommitmentGadget> {
 pub type IncomingInstance<VC> = Vec<<VC as VectorCommitment>::Scalar>;
 
 pub type IncomingInstanceVar<VC> = Vec<<VC as VectorCommitmentGadget>::ScalarVar>;
-
-impl<VC: VectorCommitment> Referenceable for RunningInstance<VC> {
-    type Ref<'a> = &'a Self;
-
-    fn reference(&self) -> Self::Ref<'_> {
-        self
-    }
-}
 
 impl<VC: VectorCommitment> FoldingInstance<VC> for RunningInstance<VC> {
     fn commitments(&self) -> Vec<&VC::Commitment> {

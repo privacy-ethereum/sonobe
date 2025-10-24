@@ -135,14 +135,14 @@ impl<F: Field> Arith for CCS<F> {
     }
 }
 
-impl<F: Field> ArithRelation<Vec<F>, Vec<F>> for CCS<F> {
+impl<F: Field, W: AsRef<[F]>, U: AsRef<[F]>> ArithRelation<W, U> for CCS<F> {
     type Evaluation = Vec<F>;
 
-    fn eval_relation(&self, w: &[F], u: &[F]) -> Result<Self::Evaluation, Error> {
-        self.eval_assignments((F::one(), u, w).into())
+    fn eval_relation(&self, w: &W, u: &U) -> Result<Self::Evaluation, Error> {
+        self.eval_assignments((F::one(), u.as_ref(), w.as_ref()).into())
     }
 
-    fn check_evaluation(_w: &[F], _u: &[F], e: Self::Evaluation) -> Result<(), Error> {
+    fn check_evaluation(_w: &W, _u: &U, e: Self::Evaluation) -> Result<(), Error> {
         cfg_into_iter!(e)
             .all(|i| i.is_zero())
             .then_some(())

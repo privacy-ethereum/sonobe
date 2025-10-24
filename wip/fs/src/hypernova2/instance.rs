@@ -1,7 +1,7 @@
 use ark_ff::PrimeField;
 
 use sonobe_primitives::{
-    commitments::VectorCommitment, relations::Referenceable, transcripts::Absorbable,
+    commitments::VectorCommitment, transcripts::Absorbable,
 };
 
 use crate::FoldingInstance;
@@ -16,14 +16,6 @@ pub struct LCCCS<VC: VectorCommitment> {
 }
 
 pub type CCCS<VC> = Vec<<VC as VectorCommitment>::Scalar>;
-
-impl<VC: VectorCommitment> Referenceable for LCCCS<VC> {
-    type Ref<'a> = &'a Self;
-
-    fn reference(&self) -> Self::Ref<'_> {
-        self
-    }
-}
 
 impl<VC: VectorCommitment> FoldingInstance<VC> for LCCCS<VC> {
     fn commitments(&self) -> Vec<&VC::Commitment> {
