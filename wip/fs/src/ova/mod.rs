@@ -1,25 +1,44 @@
 use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, Field, One, PrimeField};
-use ark_std::{cfg_iter, marker::PhantomData, ops::Mul, rand::RngCore, sync::Arc, UniformRand};
+use ark_r1cs_std::boolean::Boolean;
+use ark_r1cs_std::convert::ToBitsGadget;
+use ark_r1cs_std::fields::fp::FpVar;
+use ark_relations::gr1cs::SynthesisError;
+use ark_std::{
+    borrow::Borrow,
+    cfg_iter,
+    marker::PhantomData,
+    ops::{Add, Mul},
+    rand::RngCore,
+    sync::Arc,
+    UniformRand,
+};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use sonobe_primitives::{
+    algebra::{group::PointScalarMulGadget, ops::bits::FromBitsGadget},
     arithmetizations::{
         r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
         ArithRelation,
     },
     circuits::{Assignments, AssignmentsOwned},
-    commitments::VectorCommitment,
+    commitments::{VectorCommitment, VectorCommitmentGadget},
     relations::{Referenceable, Relation, WitnessInstanceSampler},
-    traits::{Absorbable, SonobeCurve, SonobeField},
-    transcripts::Transcript,
+    traits::{SonobeCurve, SonobeField},
+    transcripts::{Absorbable, AbsorbableGadget, Transcript, TranscriptVar},
 };
 
-use crate::{Error, FoldingScheme};
+use crate::{Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget};
 
-use instance::{IncomingInstance as IU, RunningInstance as RU};
-use witness::{IncomingWitness as IW, RunningWitness as RW};
+use instance::{
+    IncomingInstance as IU, IncomingInstanceVar as IUVar, RunningInstance as RU,
+    RunningInstanceVar as RUVar,
+};
+use witness::{
+    IncomingWitness as IW, IncomingWitnessVar as IWVar, RunningWitness as RW,
+    RunningWitnessVar as RWVar,
+};
 
 pub mod instance;
 pub mod witness;
@@ -137,6 +156,7 @@ where
     type ProverKey = OvaKey<Self::Arith, VC>;
     type VerifierKey = ();
     type DeciderKey = OvaKey<Self::Arith, VC>;
+    type Challenge = Vec<bool>;
     type Proof = VC::Commitment;
 
     fn preprocess(
@@ -166,13 +186,14 @@ where
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<TF>,
-        Ws: &[Self::RW; 1],
-        Us: &[Self::RU; 1],
-        ws: &[Self::IW; 1],
-        us: &[Self::IU; 1],
+        Ws: &[impl Borrow<Self::RW>; 1],
+        Us: &[impl Borrow<Self::RU>; 1],
+        ws: &[impl Borrow<Self::IW>; 1],
+        us: &[impl Borrow<Self::IU>; 1],
         rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof), Error> {
-        let (W, U, w, u) = (&Ws[0], &Us[0], &ws[0], &us[0]);
+    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+        let (W, U) = (Ws[0].borrow(), Us[0].borrow());
+        let (w, u) = (ws[0].borrow(), us[0].borrow());
 
         // Compute the cross term `T` by following the original Nova paper.
         let z1 = Assignments::from((U.u, &U.x, &W.w));
@@ -181,30 +202,12 @@ where
             .zip(&pk.arith.B)
             .zip(&pk.arith.C)
             .map(|((a, b), c)| {
-                let az1 = a
-                    .iter()
-                    .map(|(val, col)| z1[*col] * val)
-                    .sum::<VC::Scalar>();
-                let az2 = a
-                    .iter()
-                    .map(|(val, col)| z2[*col] * val)
-                    .sum::<VC::Scalar>();
-                let bz1 = b
-                    .iter()
-                    .map(|(val, col)| z1[*col] * val)
-                    .sum::<VC::Scalar>();
-                let bz2 = b
-                    .iter()
-                    .map(|(val, col)| z2[*col] * val)
-                    .sum::<VC::Scalar>();
-                let cz1 = c
-                    .iter()
-                    .map(|(val, col)| z1[*col] * val)
-                    .sum::<VC::Scalar>();
-                let cz2 = c
-                    .iter()
-                    .map(|(val, col)| z2[*col] * val)
-                    .sum::<VC::Scalar>();
+                let az1: VC::Scalar = a.iter().map(|(val, col)| z1[*col] * val).sum();
+                let az2: VC::Scalar = a.iter().map(|(val, col)| z2[*col] * val).sum();
+                let bz1: VC::Scalar = b.iter().map(|(val, col)| z1[*col] * val).sum();
+                let bz2: VC::Scalar = b.iter().map(|(val, col)| z2[*col] * val).sum();
+                let cz1: VC::Scalar = c.iter().map(|(val, col)| z1[*col] * val).sum();
+                let cz2: VC::Scalar = c.iter().map(|(val, col)| z2[*col] * val).sum();
                 az1 * bz2 + az2 * bz1 - z2[0] * cz1 - z1[0] * cz2
             })
             .collect::<Vec<_>>();
@@ -230,17 +233,18 @@ where
                 x: cfg_iter!(U.x).zip(u).map(|(a, b)| rho * b + a).collect(),
             },
             cm,
+            rho_bits,
         ))
     }
 
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<TF>,
-        Us: &[Self::RU; 1],
-        us: &[Self::IU; 1],
+        Us: &[impl Borrow<Self::RU>; 1],
+        us: &[impl Borrow<Self::IU>; 1],
         cm: &Self::Proof,
     ) -> Result<Self::RU, Error> {
-        let (U, u) = (&Us[0], &us[0]);
+        let (U, u) = (Us[0].borrow(), us[0].borrow());
 
         let rho_bits = {
             transcript.add(&U);
@@ -255,6 +259,98 @@ where
             cm: U.cm + cm.mul(rho),
             x: cfg_iter!(U.x).zip(u).map(|(a, b)| rho * b + a).collect(),
         })
+    }
+}
+
+pub struct AbstractOvaGadget<VC, TF, const CHALLENGE_BITS: usize = 128> {
+    _vc: PhantomData<VC>,
+    _tf: PhantomData<TF>,
+}
+
+impl<VC: VectorCommitmentGadget, TF: SonobeField, const CHALLENGE_BITS: usize>
+    FoldingSchemePartialGadget<1, 1> for AbstractOvaGadget<VC, TF, CHALLENGE_BITS>
+where
+    <VC::Native as VectorCommitment>::Scalar: SonobeField + Absorbable<TF>,
+    VC::ScalarVar: AbsorbableGadget<FpVar<TF>> + FromBitsGadget<TF> + ToBitsGadget<TF>,
+    <VC::Native as VectorCommitment>::Commitment:
+        SonobeCurve<ScalarField = <VC::Native as VectorCommitment>::Scalar> + Absorbable<TF>,
+    VC::CommitmentVar: AbsorbableGadget<FpVar<TF>>,
+{
+    type Native = AbstractOva<VC::Native, TF, CHALLENGE_BITS>;
+
+    type VC = VC;
+    type RW = RWVar<VC>;
+    type RU = RUVar<VC>;
+    type IW = IWVar<VC>;
+    type IU = IUVar<VC>;
+    type TranscriptField = TF;
+    type VerifierKey = ();
+    type Challenge = Vec<Boolean<TF>>;
+    type Proof = VC::CommitmentVar;
+    type Hint = VC::CommitmentVar;
+
+    fn verify_hinted(
+        _vk: &Self::VerifierKey,
+        transcript: &mut impl TranscriptVar<Self::TranscriptField>,
+        Us: &[Self::RU; 1],
+        us: &[Self::IU; 1],
+        cm: &Self::Proof,
+        folded_cm: Self::Hint,
+    ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
+        let (U, u) = (&Us[0], &us[0]);
+
+        let rho_bits = {
+            transcript.add(&U)?;
+            transcript.add(&u)?;
+            transcript.add(cm)?;
+            transcript.challenge_bits(CHALLENGE_BITS)?
+        };
+        let rho = VC::ScalarVar::from_bits_le(&rho_bits)?;
+
+        Ok((
+            RUVar {
+                u: (U.u.clone() + &rho)
+                    .try_into()
+                    .map_err(|_| SynthesisError::Unsatisfiable)?,
+                cm: folded_cm,
+                x: U.x
+                    .iter()
+                    .zip(u)
+                    .map(|(a, b)| (b.clone() * &rho + a).try_into())
+                    .collect::<Result<_, _>>()
+                    .map_err(|_| SynthesisError::Unsatisfiable)?,
+            },
+            rho_bits,
+        ))
+    }
+}
+
+impl<VC: VectorCommitmentGadget, TF: SonobeField, const CHALLENGE_BITS: usize>
+    FoldingSchemeFullGadget<1, 1> for AbstractOvaGadget<VC, TF, CHALLENGE_BITS>
+where
+    <VC::Native as VectorCommitment>::Scalar: SonobeField + Absorbable<TF>,
+    VC::ScalarVar: AbsorbableGadget<FpVar<TF>> + FromBitsGadget<TF> + ToBitsGadget<TF>,
+    <VC::Native as VectorCommitment>::Commitment:
+        SonobeCurve<ScalarField = <VC::Native as VectorCommitment>::Scalar> + Absorbable<TF>,
+    VC::CommitmentVar: AbsorbableGadget<FpVar<TF>>
+        + PointScalarMulGadget<TF>
+        + Add<Output = VC::CommitmentVar>
+        + for<'a> Add<&'a VC::CommitmentVar, Output = VC::CommitmentVar>,
+{
+    fn verify(
+        vk: &Self::VerifierKey,
+        transcript: &mut impl TranscriptVar<Self::TranscriptField>,
+        Us: &[Self::RU; 1],
+        us: &[Self::IU; 1],
+        cm: &Self::Proof,
+    ) -> Result<Self::RU, SynthesisError>
+    where
+        VC::CommitmentVar: PointScalarMulGadget<TF>,
+    {
+        let (mut U, rho_bits) = Self::verify_hinted(vk, transcript, Us, us, cm, Us[0].cm.clone())?;
+        U.cm = U.cm + cm.mul_scalar(&rho_bits)?;
+
+        Ok(U)
     }
 }
 

@@ -1,7 +1,7 @@
 use ark_ff::Field;
 use ark_poly::DenseMultilinearExtension;
 use ark_relations::gr1cs::Matrix;
-use ark_std::{cfg_into_iter, log2};
+use ark_std::{cfg_into_iter, cfg_iter, log2};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -96,12 +96,11 @@ impl<F: Field> CCS<F> {
     pub fn mle(
         &self,
         i: usize,
-        z: Assignments<F, impl AsRef<[F]>>,
+        z: Assignments<F, impl AsRef<[F]> + Sync>,
     ) -> DenseMultilinearExtension<F> {
         DenseMultilinearExtension {
             num_vars: self.s,
-            evaluations: self.M[i]
-                .iter()
+            evaluations: cfg_iter!(self.M[i])
                 .map(|row| row.iter().map(|(val, col)| z[*col] * val).sum())
                 .chain(vec![F::zero(); (1 << self.s) - self.m])
                 .collect(),

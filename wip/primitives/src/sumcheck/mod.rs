@@ -18,7 +18,7 @@ use ark_std::{cfg_chunks, cfg_into_iter, cfg_iter, fmt::Debug};
 use rayon::prelude::*;
 use thiserror::Error;
 
-use crate::{traits::Absorbable, transcripts::Transcript};
+use crate::transcripts::{Absorbable, Transcript};
 
 use utils::{
     barycentric_weights, compute_lagrange_interpolated_poly, extrapolate, VPAuxInfo,

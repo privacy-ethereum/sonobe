@@ -1,12 +1,13 @@
 use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
 use ark_poly::{DenseMultilinearExtension as MLE, MultilinearExtension};
 use ark_std::{
-    cfg_into_iter, cfg_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
+    borrow::Borrow, cfg_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
 };
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use sonobe_primitives::{
+    algebra::ops::rlc::{ScalarRLC, SliceRLC},
     arithmetizations::{ccs::CCS, Arith, ArithRelation, Error as ArithError},
     circuits::{Assignments, AssignmentsOwned},
     commitments::VectorCommitment,
@@ -15,8 +16,8 @@ use sonobe_primitives::{
         utils::{build_eq_x_r_vec, eq_eval, VPAuxInfo, VirtualPolynomial},
         IOPProof, IOPSumCheck,
     },
-    traits::{Absorbable, ScalarRLC, SliceRLC, SonobeCurve, SonobeField},
-    transcripts::Transcript,
+    traits::{SonobeCurve, SonobeField},
+    transcripts::{Absorbable, Transcript},
 };
 
 use crate::{Error, FoldingScheme};
@@ -37,7 +38,7 @@ impl<VC: VectorCommitment<Scalar: Field>> ArithRelation<RW<VC>, RU<VC>> for CCS<
 
     fn eval_relation(&self, w: &RW<VC>, u: &RU<VC>) -> Result<Self::Evaluation, ArithError> {
         let z = Assignments::from((u.u, &u.x, &w.w));
-        Ok(cfg_into_iter!(0..self.t)
+        Ok((0..self.t)
             .map(|i| self.mle(i, z.clone()).fix_variables(&u.r_x)[0])
             .collect())
     }
@@ -162,6 +163,7 @@ where
     type ProverKey = HyperNovaKey<Self::Arith, VC>;
     type VerifierKey = CCS<VC::Scalar>;
     type DeciderKey = HyperNovaKey<Self::Arith, VC>;
+    type Challenge = Vec<bool>;
     type Proof = ([VC::Commitment; N], NIMFSProof<VC::Scalar>);
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
@@ -198,12 +200,17 @@ where
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Ws: &[Self::RW; M],
-        Us: &[Self::RU; M],
-        ws: &[Self::IW; N],
-        us: &[Self::IU; N],
+        Ws: &[impl Borrow<Self::RW>; M],
+        Us: &[impl Borrow<Self::RU>; M],
+        ws: &[impl Borrow<Self::IW>; N],
+        us: &[impl Borrow<Self::IU>; N],
         mut rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof), Error> {
+    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+        let Ws = &Ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+        let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+        let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+        let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+
         let ccs = &pk.arith;
 
         let mut cms = [VC::Commitment::default(); N];
@@ -219,69 +226,51 @@ where
         transcript.add(&us[..]);
         transcript.add(&cms[..]);
 
-        let running_mles = cfg_iter!(Ws)
-            .zip(Us)
-            .map(|(W, U)| {
-                (0..ccs.t)
-                    .map(|i| ccs.mle(i, (U.u, &U.x, &W.w).into()))
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        let incoming_mles = cfg_iter!(ws)
-            .zip(us)
-            .map(|(w, u)| {
-                (0..ccs.t)
-                    .map(|i| ccs.mle(i, (VC::Scalar::one(), &u, &w).into()))
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
         // Step 1: Get some challenges
-        let gamma: VC::Scalar = transcript.challenge_field_element();
-        let beta: Vec<VC::Scalar> = transcript.challenge_field_elements(ccs.s);
+        let gamma = transcript.challenge_field_element();
+        let beta = transcript.challenge_field_elements(ccs.s);
 
         let gamma_powers = pows(gamma, M * ccs.t + N);
         let (running_gammas, incoming_gammas) = gamma_powers.split_at(M * ccs.t);
 
         // Compute g(x)
-        let flattened_ml_extensions = running_mles
-            .into_iter()
-            .chain(incoming_mles)
-            .flatten()
-            .chain(
-                Us.iter()
-                    .map(|U| MLE::from_evaluations_vec(ccs.s, build_eq_x_r_vec(&U.r_x))),
-            )
-            .chain(vec![MLE::from_evaluations_vec(
-                ccs.s,
-                build_eq_x_r_vec(&beta),
-            )])
-            .collect::<Vec<_>>();
+        let running_mles = Ws
+            .iter()
+            .zip(Us)
+            .flat_map(|(W, U)| (0..ccs.t).map(|i| ccs.mle(i, (U.u, &U.x, &W.w).into())));
+        let incoming_mles = ws
+            .iter()
+            .zip(us)
+            .flat_map(|(w, u)| (0..ccs.t).map(move |i| ccs.mle(i, (One::one(), &u, &w).into())));
+        let eq_mles = Us
+            .iter()
+            .map(|U| &U.r_x)
+            .chain([&beta])
+            .map(|r| MLE::from_evaluations_vec(ccs.s, build_eq_x_r_vec(r)));
 
-        let products = running_gammas
+        let running_products = running_gammas
             .iter()
             .enumerate()
-            .map(|(i, &gamma)| (gamma, vec![i, (M + N) * ccs.t + i / ccs.t]))
-            .chain(incoming_gammas.iter().enumerate().flat_map(|(k, gamma)| {
-                ccs.S.iter().zip(&ccs.c).map(move |(S_i, &c_i)| {
-                    (
-                        c_i * gamma,
-                        S_i.iter()
-                            .map(|j| (M + k) * ccs.t + j)
-                            .chain(vec![(M + N) * ccs.t + M])
-                            .collect::<Vec<_>>(),
-                    )
-                })
-            }))
-            .collect::<Vec<_>>();
+            .map(|(i, &gamma)| (gamma, vec![i, (M + N) * ccs.t + i / ccs.t]));
+        let incoming_products = incoming_gammas.iter().enumerate().flat_map(|(k, gamma)| {
+            ccs.S.iter().zip(&ccs.c).map(move |(S_i, &c_i)| {
+                (
+                    c_i * gamma,
+                    S_i.iter()
+                        .map(|j| (M + k) * ccs.t + j)
+                        .chain([(M + N) * ccs.t + M])
+                        .collect(),
+                )
+            })
+        });
 
         let g = VirtualPolynomial {
             aux_info: VPAuxInfo {
                 num_variables: ccs.s,
                 max_degree: ccs.degree() + 1,
             },
-            flattened_ml_extensions,
-            products,
+            flattened_ml_extensions: running_mles.chain(incoming_mles).chain(eq_mles).collect(),
+            products: running_products.chain(incoming_products).collect(),
         };
 
         // Step 3: Run the sumcheck prover
@@ -345,24 +334,28 @@ where
                     thetas,
                 },
             ),
+            rho_bits,
         ))
     }
 
     fn verify(
         ccs: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Us: &[Self::RU; M],
-        us: &[Self::IU; N],
+        Us: &[impl Borrow<Self::RU>; M],
+        us: &[impl Borrow<Self::IU>; N],
         (cms, proof): &Self::Proof,
     ) -> Result<Self::RU, Error> {
+        let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+        let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+
         // absorb instances to transcript
         transcript.add(&Us[..]);
         transcript.add(&us[..]);
         transcript.add(&cms[..]);
 
         // Step 1: Get some challenges
-        let gamma: VC::Scalar = transcript.challenge_field_element();
-        let beta: Vec<VC::Scalar> = transcript.challenge_field_elements(ccs.s);
+        let gamma = transcript.challenge_field_element();
+        let beta = transcript.challenge_field_elements(ccs.s);
 
         let gamma_powers = pows(gamma, M * ccs.t + N);
 

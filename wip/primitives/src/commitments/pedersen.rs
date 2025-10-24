@@ -1,9 +1,30 @@
-use ark_r1cs_std::{boolean::Boolean, convert::ToBitsGadget, groups::CurveVar};
+use ark_ec::{
+    short_weierstrass::{Projective, SWCurveConfig},
+    CurveGroup,
+};
+use ark_ff::{AdditiveGroup, PrimeField};
+use ark_r1cs_std::{
+    boolean::Boolean,
+    convert::ToBitsGadget,
+    eq::EqGadget,
+    fields::{fp::FpVar, FieldVar},
+    groups::{
+        curves::short_weierstrass::{non_zero_affine::NonZeroAffineVar, ProjectiveVar},
+        CurveVar,
+    },
+    GR1CSVar,
+};
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::{iter::repeat_with, marker::PhantomData, rand::RngCore, UniformRand};
 
 use super::{Error, VectorCommitment};
-use crate::traits::{Null, SonobeCurve, CF2};
+use crate::{
+    algebra::field::{nonnative::NonNativeUintVar, nonnative2::IntVarInner},
+    commitments::{Null, VectorCommitmentGadget},
+    traits::{CF2, SonobeCurve},
+};
+use crate::algebra::field::nonnative2::NonNativeFieldVar;
+use crate::traits::CF1;
 
 #[derive(Debug, PartialEq)]
 pub struct Pedersen<C: SonobeCurve, const H: bool> {
@@ -88,21 +109,99 @@ impl<C: SonobeCurve> VectorCommitment for Pedersen<C, true> {
     }
 }
 
-pub struct PedersenGadget<C: SonobeCurve, const H: bool = false> {
+pub struct PedersenGadget<C: SonobeCurve, const H: bool> {
     _c: PhantomData<C>,
 }
 
+// fn joint_scalar_mul_be<P: SWCurveConfig<BaseField: PrimeField>>(
+//     p: &Projective<P>,
+//     q: &Projective<P>,
+//     bits1: impl Iterator<Item = Boolean<P::BaseField>>,
+//     bits2: impl Iterator<Item = Boolean<P::BaseField>>,
+// ) -> Result<ProjectiveVar<P, FpVar<P::BaseField>>, SynthesisError> {
+//     // prepare bits decomposition
+//     let mut bits1 = bits1.collect::<Vec<_>>();
+//     if bits1.len() == 0 {
+//         return Ok(ProjectiveVar::zero());
+//     }
+//     // Remove unnecessary constant zeros in the most-significant positions.
+//     bits1 = bits1
+//         .into_iter()
+//         // We iterate from the MSB down.
+//         .rev()
+//         // Skip leading zeros, if they are constants.
+//         .skip_while(|b| b.is_constant() && (b.value().unwrap() == false))
+//         .collect();
+
+//     let mut bits2 = bits2.collect::<Vec<_>>();
+//     if bits2.len() == 0 {
+//         return Ok(ProjectiveVar::zero());
+//     }
+//     // Remove unnecessary constant zeros in the most-significant positions.
+//     bits2 = bits2
+//         .into_iter()
+//         // We iterate from the MSB down.
+//         .rev()
+//         // Skip leading zeros, if they are constants.
+//         .skip_while(|b| b.is_constant() && (b.value().unwrap() == false))
+//         .collect();
+
+//     let acc = p.double().into_affine();
+//     let sum = (p + q).into_affine();
+//     let diff = (p - q).into_affine();
+
+//     let (sum_x, sum_y) = (FpVar::Constant(sum.x), FpVar::Constant(sum.y));
+//     let (diff_x, diff_y) = (FpVar::Constant(diff.x), FpVar::Constant(diff.y));
+//     let (mut x, mut y) = (FpVar::Constant(acc.x), FpVar::Constant(acc.y));
+
+//     // double-and-add loop
+//     for (bit1, bit2) in (bits1.iter().rev().skip(1).rev()).zip(bits2.iter().rev().skip(1).rev()) {
+//         let xor = *bit1 ^ *bit2;
+//         let xx = xor.select(&diff_x, &sum_x)?;
+//         let yy = xor.select(&diff_y, &sum_y)?;
+//         let yy = bit1.select(&yy, &yy.negate()?)?;
+
+//         if [&x, &y].is_constant() || ([&xx, &yy].is_constant()) {
+//             let p = NonZeroAffineVar::new(x.clone(), y.clone())
+//                 .double()?
+//                 .add_unchecked(&NonZeroAffineVar::new(xx, yy))?;
+//             x = p.x;
+//             y = p.y;
+//         } else {
+//             let lambda_1 = (&yy - &y).mul_by_inverse_unchecked(&(&xx - &x))?;
+//             let lambda_1_square = lambda_1.square()?;
+
+//             let lambda_2 = y
+//                 .mul_by_inverse_unchecked(&(&x.double()? + &xx - &lambda_1_square))?
+//                 .double()?
+//                 - lambda_1;
+
+//             let x4 = lambda_2.square()? - lambda_1_square + &xx;
+//             let y4 = lambda_2 * &(&x - &x4) - &y;
+//             x = x4;
+//             y = y4;
+//         };
+//     }
+
+//     let mut acc = NonZeroAffineVar::new(x, y);
+//     // last bit
+//     aff1_neg = aff1_neg.add_unchecked(&acc)?;
+//     acc = bits1[bits1.len() - 1].select(&acc, &aff1_neg)?;
+//     aff2_neg = aff2_neg.add_unchecked(&acc)?;
+//     acc = bits2[bits1.len() - 1].select(&acc, &aff2_neg)?;
+
+//     acc.into_projective().add_mixed(&{
+//         let mut p = diff;
+//         for _ in 0..bits1.len() - 1 {
+//             p = p.double()?;
+//         }
+//         NonZeroAffineVar::new(p.x, p.y.negate()?)
+//     })
+// }
+
 impl<C: SonobeCurve, const H: bool> PedersenGadget<C, H> {
-    pub fn commit(
-        h: &C::Var,
-        g: &[C::Var],
-        v: &[Vec<Boolean<CF2<C>>>],
-        r: &[Boolean<CF2<C>>],
-    ) -> Result<C::Var, SynthesisError> {
+    fn msm(g: &[C::Var], v: &[Vec<Boolean<CF2<C>>>]) -> Result<C::Var, SynthesisError> {
         let mut res = C::Var::zero();
-        if H {
-            res += h.scalar_mul_le(r.iter())?;
-        }
         let n = v.len();
         if n % 2 == 1 {
             res += g[n - 1].scalar_mul_le(v[n - 1].to_bits_le()?.iter())?;
@@ -121,6 +220,65 @@ impl<C: SonobeCurve, const H: bool> PedersenGadget<C, H> {
             )?;
         }
         Ok(res)
+    }
+}
+
+impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, false> {
+    type Native = Pedersen<C, false>;
+
+    type KeyVar = Vec<C::Var>;
+
+    type ScalarVar = NonNativeFieldVar<CF2<C>, CF1<C>, true>;
+
+    type IntermediateScalarVar = NonNativeFieldVar<CF2<C>, CF1<C>, false>;
+
+    type CommitmentVar = C::Var;
+
+    type RandomnessVar = ();
+
+    fn open(
+        ck: &Self::KeyVar,
+        v: &[Self::ScalarVar],
+        _r: &Self::RandomnessVar,
+        cm: &Self::CommitmentVar,
+    ) -> Result<(), SynthesisError> {
+        Self::msm(
+            ck,
+            &v.iter()
+                .map(|i| i.to_bits_le())
+                .collect::<Result<Vec<_>, _>>()?,
+        )?
+        .enforce_equal(cm)
+    }
+}
+
+impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, true> {
+    type Native = Pedersen<C, true>;
+
+    type KeyVar = (Vec<C::Var>, C::Var);
+
+    type ScalarVar = NonNativeFieldVar<CF2<C>, CF1<C>, true>;
+
+    type IntermediateScalarVar = NonNativeFieldVar<CF2<C>, CF1<C>, false>;
+
+    type CommitmentVar = C::Var;
+
+    type RandomnessVar = NonNativeFieldVar<CF2<C>, CF1<C>, true>;
+
+    fn open(
+        (g, h): &Self::KeyVar,
+        v: &[Self::ScalarVar],
+        r: &Self::RandomnessVar,
+        cm: &Self::CommitmentVar,
+    ) -> Result<(), SynthesisError> {
+        let gv = Self::msm(
+            g,
+            &v.iter()
+                .map(|i| i.to_bits_le())
+                .collect::<Result<Vec<_>, _>>()?,
+        )?;
+        let hr = h.scalar_mul_le(r.to_bits_le()?.iter())?;
+        (gv + hr).enforce_equal(cm)
     }
 }
 

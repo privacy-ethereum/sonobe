@@ -4,13 +4,13 @@ use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::{borrow::Borrow, marker::PhantomData, One};
 
 use crate::{
-    arithmetizations::ArithRelationGadget,
-    circuits::Assignments,
-    gadgets::math::{
+    algebra::ops::{
         eq::EquivalenceGadget,
         matrix::{MatrixGadget, SparseMatrixVar},
         vector::VectorGadget,
     },
+    arithmetizations::ArithRelationGadget,
+    circuits::Assignments,
 };
 
 use super::R1CS;

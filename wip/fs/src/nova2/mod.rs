@@ -1,6 +1,7 @@
 use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, Field, One, PrimeField};
 use ark_std::{
+    borrow::Borrow,
     cfg_into_iter, cfg_iter,
     marker::PhantomData,
     ops::Mul,
@@ -19,8 +20,8 @@ use sonobe_primitives::{
     circuits::AssignmentsOwned,
     commitments::VectorCommitment,
     relations::{Referenceable, Relation, WitnessInstanceSampler},
-    traits::{Absorbable, SonobeCurve, SonobeField},
-    transcripts::Transcript,
+    traits::{SonobeCurve, SonobeField},
+    transcripts::{Absorbable, Transcript},
 };
 
 use crate::{Error, FoldingScheme};
@@ -146,6 +147,7 @@ where
     type ProverKey = NovaKey<Self::Arith, VC>;
     type VerifierKey = ();
     type DeciderKey = NovaKey<Self::Arith, VC>;
+    type Challenge = Vec<bool>;
     type Proof = (VC::Commitment, VC::Commitment);
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
@@ -172,13 +174,14 @@ where
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<TF>,
-        Ws: &[Self::RW; 1],
-        Us: &[Self::RU; 1],
-        ws: &[Self::IW; 1],
-        us: &[Self::IU; 1],
+        Ws: &[impl Borrow<Self::RW>; 1],
+        Us: &[impl Borrow<Self::RU>; 1],
+        ws: &[impl Borrow<Self::IW>; 1],
+        us: &[impl Borrow<Self::IU>; 1],
         rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof), Error> {
-        let (W, U, w, u) = (&Ws[0], &Us[0], &ws[0], &us[0]);
+    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+        let (W, U) = (Ws[0].borrow(), Us[0].borrow());
+        let (w, u) = (ws[0].borrow(), us[0].borrow());
 
         // Compute the cross term `T` by following the optimized approach in
         // [Mova](https://eprint.iacr.org/2024/1220.pdf)'s section 5.2.
@@ -226,17 +229,18 @@ where
                 x: cfg_iter!(U.x).zip(u).map(|(a, b)| rho * b + a).collect(),
             },
             pi,
+            rho_bits,
         ))
     }
 
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<TF>,
-        Us: &[Self::RU; 1],
-        us: &[Self::IU; 1],
+        Us: &[impl Borrow<Self::RU>; 1],
+        us: &[impl Borrow<Self::IU>; 1],
         pi: &Self::Proof,
     ) -> Result<Self::RU, Error> {
-        let (U, u) = (&Us[0], &us[0]);
+        let (U, u) = (Us[0].borrow(), us[0].borrow());
 
         let rho_bits = {
             transcript.add(&U);

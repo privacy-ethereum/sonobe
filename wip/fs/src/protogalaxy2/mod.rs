@@ -3,17 +3,20 @@ use ark_poly::{
     univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations,
     GeneralEvaluationDomain, Polynomial,
 };
-use ark_std::{cfg_into_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand};
+use ark_std::{
+    borrow::Borrow, cfg_into_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
+};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use sonobe_primitives::{
+    algebra::ops::rlc::{ScalarRLC, SliceRLC},
     arithmetizations::{r1cs::R1CS, Arith, ArithRelation, Error as ArithError},
     circuits::{Assignments, AssignmentsOwned},
     commitments::VectorCommitment,
     relations::{Referenceable, Relation, WitnessInstanceSampler},
-    traits::{Absorbable, ScalarRLC, SliceRLC, SonobeCurve, SonobeField},
-    transcripts::Transcript,
+    traits::{SonobeCurve, SonobeField},
+    transcripts::{Absorbable, Transcript},
 };
 
 use crate::{Error, FoldingScheme};
@@ -160,9 +163,13 @@ where
     type ProverKey = ProtoGalaxyKey<Self::Arith, VC>;
     type VerifierKey = ();
     type DeciderKey = ProtoGalaxyKey<Self::Arith, VC>;
+    type Challenge = Vec<VC::Scalar>;
     type Proof = ([VC::Commitment; N], ProtoGalaxyProof<VC::Scalar>);
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
+        if !(N + 1).is_power_of_two() {
+            return Err(Error::Unsupported("N + 1 must be a power of two".into()));
+        }
         let ck = VC::generate_key(&mut rng, ck_len)?;
         Ok(ck)
     }
@@ -186,19 +193,17 @@ where
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Ws: &[Self::RW; 1],
-        Us: &[Self::RU; 1],
-        ws: &[Self::IW; N],
-        us: &[Self::IU; N],
+        Ws: &[impl Borrow<Self::RW>; 1],
+        Us: &[impl Borrow<Self::RU>; 1],
+        ws: &[impl Borrow<Self::IW>; N],
+        us: &[impl Borrow<Self::IU>; N],
         mut rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof), Error> {
-        if !(N + 1).is_power_of_two() {
-            return Err(Error::Unsupported("N + 1 must be a power of two".into()));
-        }
+    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+        let (W, U) = (Ws[0].borrow(), Us[0].borrow());
+        let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
+        let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
         let r1cs = &pk.arith;
-
-        let (W, U) = (&Ws[0], &Us[0]);
         let d = r1cs.degree();
         let t = log2(r1cs.n_constraints()) as usize;
 
@@ -356,17 +361,19 @@ where
                     k_coeffs: k_poly.coeffs,
                 },
             ),
+            lagrange_evals,
         ))
     }
 
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,
-        Us: &[Self::RU; 1],
-        us: &[Self::IU; N],
+        Us: &[impl Borrow<Self::RU>; 1],
+        us: &[impl Borrow<Self::IU>; N],
         (phis, proof): &Self::Proof,
     ) -> Result<Self::RU, Error> {
-        let U = &Us[0];
+        let U = Us[0].borrow();
+        let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
         transcript.add(&proof.f_coeffs.len());
         transcript.add(&proof.k_coeffs.len());

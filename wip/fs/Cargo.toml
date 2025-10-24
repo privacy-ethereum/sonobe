@@ -10,6 +10,7 @@ ark-crypto-primitives = { workspace = true, features = ["constraints", "sponge",
 ark-ec = { workspace = true }
 ark-ff = { workspace = true, features = ["asm"] }
 ark-poly = { workspace = true }
+ark-r1cs-std = { workspace = true }
 ark-relations = { workspace = true }
 ark-std = { workspace = true, features = ["getrandom"] }
 ark-serialize = { workspace = true }

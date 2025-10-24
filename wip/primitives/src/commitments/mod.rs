@@ -1,3 +1,6 @@
+use ark_ff::Field;
+use ark_r1cs_std::alloc::AllocVar;
+use ark_relations::gr1cs::SynthesisError;
 use ark_std::{
     fmt::Debug,
     iter::Sum,
@@ -12,7 +15,7 @@ pub mod pedersen;
 #[derive(Debug, Error)]
 pub enum Error {
     // Commitment errors
-    #[error("The message being committed to has length {1}, which exceeds the maximum supported length of {0}")]
+    #[error("The message being committed to has length {1}, exceeding the maximum supported length of {0}")]
     MessageTooLong(usize, usize),
     #[error("Blinding factor not 0 for Commitment without hiding")]
     BlindingNotZero,
@@ -55,6 +58,77 @@ pub trait VectorCommitment: 'static + Debug + PartialEq {
         r: &Self::Randomness,
         cm: &Self::Commitment,
     ) -> Result<bool, Error>;
+}
+
+pub trait VectorCommitmentGadget {
+    type Native: VectorCommitment;
+
+    type KeyVar;
+    type ScalarVar: Clone
+        + Add<Output = Self::IntermediateScalarVar>
+        + for<'a> Add<&'a Self::ScalarVar, Output = Self::IntermediateScalarVar>
+        + Mul<Output = Self::IntermediateScalarVar>
+        + for<'a> Mul<&'a Self::ScalarVar, Output = Self::IntermediateScalarVar>;
+    type IntermediateScalarVar: Clone
+        + TryInto<Self::ScalarVar>
+        + Add<Output = Self::IntermediateScalarVar>
+        + for<'a> Add<&'a Self::IntermediateScalarVar, Output = Self::IntermediateScalarVar>
+        + Mul<Output = Self::IntermediateScalarVar>
+        + for<'a> Mul<&'a Self::IntermediateScalarVar, Output = Self::IntermediateScalarVar>
+        + Add<Self::ScalarVar, Output = Self::IntermediateScalarVar>
+        + for<'a> Add<&'a Self::ScalarVar, Output = Self::IntermediateScalarVar>
+        + Mul<Self::ScalarVar, Output = Self::IntermediateScalarVar>
+        + for<'a> Mul<&'a Self::ScalarVar, Output = Self::IntermediateScalarVar>;
+    type CommitmentVar: Clone;
+    type RandomnessVar;
+
+    fn open(
+        ck: &Self::KeyVar,
+        v: &[Self::ScalarVar],
+        r: &Self::RandomnessVar,
+        cm: &Self::CommitmentVar,
+    ) -> Result<(), SynthesisError>;
+}
+
+#[derive(Clone, Copy, Default, Debug)]
+pub struct Null;
+
+impl<F> Add<F> for Null {
+    type Output = Null;
+
+    fn add(self, _: F) -> Null {
+        Null
+    }
+}
+
+impl<F> Add<F> for &Null {
+    type Output = Null;
+
+    fn add(self, _: F) -> Null {
+        Null
+    }
+}
+
+impl<F> Mul<F> for Null {
+    type Output = Self;
+
+    fn mul(self, _: F) -> Null {
+        Null
+    }
+}
+
+impl<F> Mul<F> for &Null {
+    type Output = Null;
+
+    fn mul(self, _: F) -> Null {
+        Null
+    }
+}
+
+impl Sum for Null {
+    fn sum<I: Iterator<Item = Self>>(_: I) -> Self {
+        Null
+    }
 }
 
 #[cfg(test)]

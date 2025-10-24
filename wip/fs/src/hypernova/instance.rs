@@ -1,7 +1,7 @@
 use ark_ff::PrimeField;
 
 use sonobe_primitives::{
-    commitments::VectorCommitment, relations::Referenceable, traits::Absorbable,
+    commitments::VectorCommitment, relations::Referenceable, transcripts::Absorbable,
 };
 
 use crate::FoldingInstance;

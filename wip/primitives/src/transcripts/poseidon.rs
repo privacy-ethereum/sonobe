@@ -14,7 +14,7 @@ use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 
 use crate::transcripts::{Absorbable, FieldElementSize};
 
-use super::{AbsorbNonNativeGadget, Transcript, TranscriptVar};
+use super::{AbsorbableGadget, Transcript, TranscriptVar};
 
 impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
     fn add<A: Absorbable<F> + ?Sized>(&mut self, input: &A) {
@@ -33,7 +33,7 @@ impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
                 dest.extend(unsafe { transmute_copy::<&[F], &[T]>(&self.0.as_ref()) });
             }
         }
-        let v = input.extract_absorbed();
+        let v = input.to_absorbable();
         CryptographicSponge::absorb(self, &Hack(v));
     }
 
@@ -41,67 +41,24 @@ impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
         CryptographicSponge::squeeze_bits(self, num_bits)
     }
 
-    fn get_bytes(&mut self, num_bytes: usize) -> Vec<u8> {
-        CryptographicSponge::squeeze_bytes(self, num_bytes)
-    }
-
-    fn get_field_elements_with_sizes(&mut self, sizes: &[FieldElementSize]) -> Vec<F> {
-        self.squeeze_native_field_elements_with_sizes(sizes)
-    }
-
     fn get_field_elements(&mut self, num_elements: usize) -> Vec<F> {
         self.squeeze_native_field_elements(num_elements)
     }
 }
 
-impl<F: PrimeField> TranscriptVar<F, PoseidonSponge<F>> for PoseidonSpongeVar<F> {
-    fn new_with_pp_hash(
-        config: &Self::Parameters,
-        pp_hash: &FpVar<F>,
-    ) -> Result<Self, SynthesisError> {
-        let mut sponge = Self::new(ConstraintSystemRef::None, config);
-        sponge.absorb(&pp_hash)?;
-        Ok(sponge)
+impl<F: PrimeField> TranscriptVar<F> for PoseidonSpongeVar<F> {
+    type Native = PoseidonSponge<F>;
+
+    fn add<A: AbsorbableGadget<FpVar<F>>>(&mut self, input: &A) -> Result<(), SynthesisError> {
+        self.absorb(&input.to_absorbable()?)
     }
 
-    fn absorb_point<C: CurveGroup<BaseField = F>, GC: CurveVar<C, F>>(
-        &mut self,
-        v: &GC,
-    ) -> Result<(), SynthesisError> {
-        let mut vec = v.to_constraint_field()?;
-        // The last element in the vector tells whether the point is infinity,
-        // but we can in fact avoid absorbing it without loss of soundness.
-        // This is because the `to_constraint_field` method internally invokes
-        // [`ProjectiveVar::to_afine`](https://github.com/arkworks-rs/r1cs-std/blob/4020fbc22625621baa8125ede87abaeac3c1ca26/src/groups/curves/short_weierstrass/mod.rs#L160-L195),
-        // which guarantees that an infinity point is represented as `(0, 0)`,
-        // but the y-coordinate of a non-infinity point is never 0 (for why, see
-        // https://crypto.stackexchange.com/a/108242 ).
-        vec.pop();
-        self.absorb(&vec)
-    }
-    fn absorb_nonnative<V: AbsorbNonNativeGadget<F>>(
-        &mut self,
-        v: &V,
-    ) -> Result<(), SynthesisError> {
-        self.absorb(&v.to_native_sponge_field_elements()?)
-    }
-    fn get_challenge(&mut self) -> Result<FpVar<F>, SynthesisError> {
-        let c = self.squeeze_field_elements(1)?;
-        self.absorb(&c[0])?;
-        Ok(c[0].clone())
+    fn get_bits(&mut self, num_bits: usize) -> Result<Vec<Boolean<F>>, SynthesisError> {
+        self.squeeze_bits(num_bits)
     }
 
-    /// returns the bit representation of the challenge, we use its output in-circuit for the
-    /// `GC.scalar_mul_le` method.
-    fn get_challenge_nbits(&mut self, nbits: usize) -> Result<Vec<Boolean<F>>, SynthesisError> {
-        let bits = self.squeeze_bits(nbits)?;
-        self.absorb(&Boolean::le_bits_to_fp(&bits)?)?;
-        Ok(bits)
-    }
-    fn get_challenges(&mut self, n: usize) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        let c = self.squeeze_field_elements(n)?;
-        self.absorb(&c)?;
-        Ok(c)
+    fn get_field_elements(&mut self, num_elements: usize) -> Result<Vec<FpVar<F>>, SynthesisError> {
+        self.squeeze_field_elements(num_elements)
     }
 }
 
@@ -149,8 +106,9 @@ pub mod tests {
     use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::{error::Error, test_rng};
 
+    use crate::algebra::group::nonnative::NonNativeAffineVar;
+
     use super::*;
-    use crate::gadgets::nonnative::affine::NonNativeAffineVar;
 
     // Test with value taken from https://github.com/iden3/circomlibjs/blob/43cc582b100fc3459cf78d903a6f538e5d7f38ee/test/poseidon.js#L32
     #[test]
@@ -163,8 +121,8 @@ pub mod tests {
             .into_iter()
             .map(Fr::from)
             .collect::<Vec<_>>();
-        poseidon_sponge.absorb(&v);
-        poseidon_sponge.squeeze_field_elements::<Fr>(1);
+        poseidon_sponge.add(&v);
+        poseidon_sponge.get_field_elements(1);
         assert!(
             poseidon_sponge.state[0]
                 == Fr::from_str(
@@ -193,8 +151,8 @@ pub mod tests {
             ConstraintSystem::<Fq>::new_ref(),
             || Ok(p),
         )?;
-        tr_var.absorb_point(&p_var)?;
-        let c_var = tr_var.get_challenge()?;
+        tr_var.add(&p_var)?;
+        let c_var = tr_var.challenge_field_element()?;
 
         // assert that native & gadget transcripts return the same challenge
         assert_eq!(c, c_var.value()?);
@@ -217,8 +175,8 @@ pub mod tests {
         let mut tr_var = PoseidonSpongeVar::<Fr>::new(cs.clone(), &config);
         let p_var =
             NonNativeAffineVar::<G1>::new_witness(ConstraintSystem::<Fr>::new_ref(), || Ok(p))?;
-        tr_var.absorb_nonnative(&p_var)?;
-        let c_var = tr_var.get_challenge()?;
+        tr_var.add(&p_var)?;
+        let c_var = tr_var.challenge_field_element()?;
 
         // assert that native & gadget transcripts return the same challenge
         assert_eq!(c, c_var.value()?);
@@ -237,8 +195,8 @@ pub mod tests {
         let cs = ConstraintSystem::<Fr>::new_ref();
         let mut tr_var = PoseidonSpongeVar::<Fr>::new(cs.clone(), &config);
         let v = FpVar::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(42_u32)))?;
-        tr_var.absorb(&v)?;
-        let c_var = tr_var.get_challenge()?;
+        tr_var.add(&v)?;
+        let c_var = tr_var.challenge_field_element()?;
 
         // assert that native & gadget transcripts return the same challenge
         assert_eq!(c, c_var.value()?);
@@ -261,10 +219,10 @@ pub mod tests {
         let cs = ConstraintSystem::<Fq>::new_ref();
         let mut tr_var = PoseidonSpongeVar::<Fq>::new(cs.clone(), &config);
         let v = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(42_u32)))?;
-        tr_var.absorb(&v)?;
+        tr_var.add(&v)?;
 
         // get challenge from circuit transcript
-        let c_var = tr_var.get_challenge_nbits(nbits)?;
+        let c_var = tr_var.challenge_bits(nbits)?;
 
         let p = G1::generator();
         let p_var = GVar::new_witness(cs.clone(), || Ok(p))?;

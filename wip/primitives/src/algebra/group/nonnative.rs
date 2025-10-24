@@ -1,5 +1,5 @@
 use ark_ec::{short_weierstrass::SWFlags, AffineRepr};
-use ark_ff::PrimeField;
+use ark_ff::{PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     eq::EqGadget,
@@ -9,11 +9,12 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_serialize::{CanonicalSerialize, CanonicalSerializeWithFlags};
-use ark_std::{borrow::Borrow, Zero};
+use ark_std::borrow::Borrow;
 
-use crate::traits::{AbsorbNonNativeGadget, SonobeCurve};
-
-use super::uint::NonNativeUintVar;
+use crate::{
+    algebra::{field::nonnative::NonNativeUintVar, group::SonobeCurve},
+    transcripts::AbsorbableGadget,
+};
 
 /// NonNativeAffineVar represents an elliptic curve point in Affine representation in the non-native
 /// field, over the constraint field. It is not intended to perform operations, but just to contain
@@ -52,8 +53,8 @@ impl<C: SonobeCurve> GR1CSVar<C::ScalarField> for NonNativeAffineVar<C> {
     }
 
     fn value(&self) -> Result<Self::Value, SynthesisError> {
-        let x = C::BaseField::from_le_bytes_mod_order(&self.x.value()?.to_bytes_le());
-        let y = C::BaseField::from_le_bytes_mod_order(&self.y.value()?.to_bytes_le());
+        let x = C::BaseField::from_le_bytes_mod_order(&self.x.value()?.magnitude().to_bytes_le());
+        let y = C::BaseField::from_le_bytes_mod_order(&self.y.value()?.magnitude().to_bytes_le());
         // Below is a workaround to convert the `x` and `y` coordinates to a
         // point. This is because the `SonobeCurve` trait does not provide a
         // method to construct a point from `BaseField` elements.
@@ -83,47 +84,12 @@ impl<C: SonobeCurve> GR1CSVar<C::ScalarField> for NonNativeAffineVar<C> {
 
 impl<C: SonobeCurve> EqGadget<C::ScalarField> for NonNativeAffineVar<C> {
     fn is_eq(&self, other: &Self) -> Result<Boolean<C::ScalarField>, SynthesisError> {
-        let mut result = Boolean::TRUE;
-        if self.x.0.len() != other.x.0.len() {
-            return Err(SynthesisError::Unsatisfiable);
-        }
-        if self.y.0.len() != other.y.0.len() {
-            return Err(SynthesisError::Unsatisfiable);
-        }
-        for (l, r) in self
-            .x
-            .0
-            .iter()
-            .chain(&self.y.0)
-            .zip(other.x.0.iter().chain(&other.y.0))
-        {
-            if l.ub != r.ub {
-                return Err(SynthesisError::Unsatisfiable);
-            }
-            result &= l.v.is_eq(&r.v)?;
-        }
-        Ok(result)
+        Ok(self.x.is_eq(&other.x)? & self.y.is_eq(&other.y)?)
     }
 
     fn enforce_equal(&self, other: &Self) -> Result<(), SynthesisError> {
-        if self.x.0.len() != other.x.0.len() {
-            return Err(SynthesisError::Unsatisfiable);
-        }
-        if self.y.0.len() != other.y.0.len() {
-            return Err(SynthesisError::Unsatisfiable);
-        }
-        for (l, r) in self
-            .x
-            .0
-            .iter()
-            .chain(&self.y.0)
-            .zip(other.x.0.iter().chain(&other.y.0))
-        {
-            if l.ub != r.ub {
-                return Err(SynthesisError::Unsatisfiable);
-            }
-            l.v.enforce_equal(&r.v)?;
-        }
+        self.x.enforce_equal(&other.x)?;
+        self.y.enforce_equal(&other.y)?;
         Ok(())
     }
 }
@@ -136,11 +102,9 @@ impl<C: SonobeCurve> NonNativeAffineVar<C> {
     }
 }
 
-impl<C: SonobeCurve> AbsorbNonNativeGadget<C::ScalarField> for NonNativeAffineVar<C> {
-    fn to_native_sponge_field_elements(
-        &self,
-    ) -> Result<Vec<FpVar<C::ScalarField>>, SynthesisError> {
-        [&self.x, &self.y].to_native_sponge_field_elements()
+impl<C: SonobeCurve> AbsorbableGadget<FpVar<C::ScalarField>> for NonNativeAffineVar<C> {
+    fn absorb_into(&self, dest: &mut Vec<FpVar<C::ScalarField>>) -> Result<(), SynthesisError> {
+        (&self.x, &self.y).absorb_into(dest)
     }
 }
 
@@ -151,7 +115,10 @@ mod tests {
     use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::{error::Error, UniformRand};
 
-    use crate::traits::{Absorbable, Inputize, InputizeNonNative};
+    use crate::{
+        traits::{Inputize, InputizeNonNative},
+        transcripts::Absorbable,
+    };
 
     use super::*;
 
@@ -172,10 +139,7 @@ mod tests {
         let mut rng = ark_std::test_rng();
         let p = Projective::rand(&mut rng);
         let p_var = NonNativeAffineVar::<Projective>::new_witness(cs.clone(), || Ok(p))?;
-        assert_eq!(
-            p_var.to_native_sponge_field_elements()?.value()?,
-            p.extract_absorbed()
-        );
+        assert_eq!(p_var.to_absorbable()?.value()?, p.to_absorbable());
         Ok(())
     }
 
@@ -188,7 +152,7 @@ mod tests {
         let cs = ConstraintSystem::<Fr>::new_ref();
         let p_var = NonNativeAffineVar::<Projective>::new_witness(cs.clone(), || Ok(p))?;
         assert_eq!(
-            [p_var.x.0.value()?, p_var.y.0.value()?].concat(),
+            [p_var.x.limbs.value()?, p_var.y.limbs.value()?].concat(),
             p.inputize_nonnative()
         );
 
