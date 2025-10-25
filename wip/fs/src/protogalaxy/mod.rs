@@ -115,14 +115,12 @@ impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<V
     }
 }
 
-impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<PW<VC>, PU<VC>>
-    for ProtoGalaxyKey<A, VC>
-{
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC>, PU<VC>> for ProtoGalaxyKey<A, VC> {
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
     fn sample(&self, z: Self::Source, _rng: impl RngCore) -> Result<(PW<VC>, PU<VC>), Error> {
-        Ok((z.private, z.public))
+        Ok((z.private.into(), z.public.into()))
     }
 }
 

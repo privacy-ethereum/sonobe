@@ -1,15 +1,11 @@
-use sonobe_primitives::{commitments::VectorCommitment, };
+use sonobe_primitives::commitments::VectorCommitment;
 
 use crate::FoldingWitness;
 
-#[derive(Debug, PartialEq)]
-pub struct RunningWitness<VC: VectorCommitment> {
-    pub w: Vec<VC::Scalar>,
-    pub r: VC::Randomness,
-}
+pub mod circuits;
 
 #[derive(Debug, PartialEq)]
-pub struct IncomingWitness<VC: VectorCommitment> {
+pub struct RunningWitness<VC: VectorCommitment> {
     pub w: Vec<VC::Scalar>,
     pub r: VC::Randomness,
 }
@@ -23,6 +19,12 @@ impl<VC: VectorCommitment> FoldingWitness<VC> for RunningWitness<VC> {
     )> {
         vec![(&self.w, &self.r)]
     }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IncomingWitness<VC: VectorCommitment> {
+    pub w: Vec<VC::Scalar>,
+    pub r: VC::Randomness,
 }
 
 impl<VC: VectorCommitment> FoldingWitness<VC> for IncomingWitness<VC> {

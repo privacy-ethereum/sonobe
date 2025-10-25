@@ -13,7 +13,7 @@ use sonobe_primitives::{circuits::FCircuit, commitments::VectorCommitment};
 
 use crate::IVC;
 
-mod circuit;
+mod circuits;
 
 pub struct CycleFoldBasedIVC<FS1, FS2> {
     _fs1: PhantomData<FS1>,
@@ -32,7 +32,7 @@ where
         1,
         VC: VectorCommitment<Scalar = <FS1 as FoldingScheme<1, 1>>::TranscriptField>,
     >,
-    FS2: FoldingScheme<1, 1>
+    FS2: FoldingScheme<1, 1>,
 {
     type Field = <FS1::VC as VectorCommitment>::Scalar;
 

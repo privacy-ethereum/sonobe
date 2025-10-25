@@ -79,11 +79,11 @@ impl Bound {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct IntVarInner<F: PrimeField, Cfg, const ALIGNED: bool> {
     _cfg: PhantomData<Cfg>,
-    limbs: Vec<FpVar<F>>,
-    bounds: Vec<Bound>,
+    pub limbs: Vec<FpVar<F>>,
+    pub bounds: Vec<Bound>,
 }
 
 pub type BigIntVar<F: PrimeField, const ALIGNED: bool> = IntVarInner<F, (), ALIGNED>;
@@ -542,10 +542,40 @@ impl<Base: SonobeField, Target: PrimeField> TryFrom<IntVarInner<Base, Target, fa
     }
 }
 
-// pub enum NonNativeUintVar<F: PrimeField> {
-//     Aligned(UintVarInner<F, true>),
-//     Unaligned(UintVarInner<F, false>),
-// }
+impl<F: SonobeField, Cfg> EqGadget<F> for IntVarInner<F, Cfg, true> {
+    fn is_eq(&self, other: &Self) -> Result<Boolean<F>, SynthesisError> {
+        let mut result = Boolean::TRUE;
+        if self.limbs.len() != other.limbs.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        if self.bounds.len() != other.bounds.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        for i in 0..self.limbs.len() {
+            if self.bounds[i] != other.bounds[i] {
+                return Err(SynthesisError::Unsatisfiable);
+            }
+            result &= self.limbs[i].is_eq(&other.limbs[i])?;
+        }
+        Ok(result)
+    }
+
+    fn enforce_equal(&self, other: &Self) -> Result<(), SynthesisError> {
+        if self.limbs.len() != other.limbs.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        if self.bounds.len() != other.bounds.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        for i in 0..self.limbs.len() {
+            if self.bounds[i] != other.bounds[i] {
+                return Err(SynthesisError::Unsatisfiable);
+            }
+            self.limbs[i].enforce_equal(&other.limbs[i])?;
+        }
+        Ok(())
+    }
+}
 
 impl<F: SonobeField, Cfg> FromBitsGadget<F> for IntVarInner<F, Cfg, true> {
     fn from_bits_le(bits: &[Boolean<F>]) -> Result<Self, SynthesisError> {
@@ -585,8 +615,9 @@ impl<F: SonobeField, Cfg> AbsorbableGadget<FpVar<F>> for IntVarInner<F, Cfg, tru
     }
 }
 
-
-impl<F: SonobeField, Cfg> VectorGadget<IntVarInner<F, Cfg, false>> for [IntVarInner<F, Cfg, false>] {
+impl<F: SonobeField, Cfg> VectorGadget<IntVarInner<F, Cfg, false>>
+    for [IntVarInner<F, Cfg, false>]
+{
     fn add(&self, other: &Self) -> Result<Vec<IntVarInner<F, Cfg, false>>, SynthesisError> {
         self.iter()
             .zip(other.iter())
@@ -609,7 +640,9 @@ impl<F: SonobeField, Cfg> VectorGadget<IntVarInner<F, Cfg, false>> for [IntVarIn
     }
 }
 
-impl<CF: SonobeField, Cfg> MatrixGadget<IntVarInner<CF, Cfg, false>> for SparseMatrixVar<IntVarInner<CF, Cfg, false>> {
+impl<CF: SonobeField, Cfg> MatrixGadget<IntVarInner<CF, Cfg, false>>
+    for SparseMatrixVar<IntVarInner<CF, Cfg, false>>
+{
     fn mul_vector(
         &self,
         v: &impl Index<usize, Output = IntVarInner<CF, Cfg, false>>,
@@ -639,7 +672,7 @@ impl<CF: SonobeField, Cfg> MatrixGadget<IntVarInner<CF, Cfg, false>> for SparseM
                                 })
                                 .collect::<Vec<_>>(),
                         )
-                            .filter_safe::<CF>()
+                        .filter_safe::<CF>()
                     })
                     .collect::<Option<Vec<_>>>()
                     .ok_or(SynthesisError::Unsatisfiable)?;
@@ -947,12 +980,10 @@ impl_assignment_op!(
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
-
     use ark_ff::Field;
     use ark_pallas::{Fq, Fr};
     use ark_relations::gr1cs::ConstraintSystem;
-    use ark_std::{test_rng, UniformRand};
+    use ark_std::{error::Error, test_rng, UniformRand};
     use num_bigint::RandBigInt;
 
     use super::*;

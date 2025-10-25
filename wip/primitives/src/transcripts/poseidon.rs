@@ -1,5 +1,3 @@
-use std::mem::transmute_copy;
-
 use ark_crypto_primitives::sponge::{
     constraints::CryptographicSpongeVar,
     poseidon::{
@@ -10,9 +8,10 @@ use ark_crypto_primitives::sponge::{
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{boolean::Boolean, fields::fp::FpVar, groups::CurveVar};
-use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
+use ark_relations::gr1cs::SynthesisError;
+use ark_std::mem::transmute_copy;
 
-use crate::transcripts::{Absorbable, FieldElementSize};
+use crate::transcripts::Absorbable;
 
 use super::{AbsorbableGadget, Transcript, TranscriptVar};
 
@@ -104,7 +103,7 @@ pub mod tests {
         alloc::AllocVar, groups::curves::short_weierstrass::ProjectiveVar, GR1CSVar,
     };
     use ark_relations::gr1cs::ConstraintSystem;
-    use ark_std::{error::Error, test_rng};
+    use ark_std::{error::Error, str::FromStr, test_rng};
 
     use crate::algebra::group::nonnative::NonNativeAffineVar;
 
@@ -113,8 +112,6 @@ pub mod tests {
     // Test with value taken from https://github.com/iden3/circomlibjs/blob/43cc582b100fc3459cf78d903a6f538e5d7f38ee/test/poseidon.js#L32
     #[test]
     fn check_against_circom_poseidon() -> Result<(), Box<dyn Error>> {
-        use std::str::FromStr;
-
         let config = poseidon_canonical_config::<Fr>();
         let mut poseidon_sponge: PoseidonSponge<_> = CryptographicSponge::new(&config);
         let v = vec![1, 2, 3, 4]
@@ -123,12 +120,12 @@ pub mod tests {
             .collect::<Vec<_>>();
         poseidon_sponge.add(&v);
         poseidon_sponge.get_field_elements(1);
-        assert!(
-            poseidon_sponge.state[0]
-                == Fr::from_str(
-                    "18821383157269793795438455681495246036402687001665670618754263018637548127333"
-                )
-                .unwrap()
+        assert_eq!(
+            poseidon_sponge.state[0],
+            Fr::from_str(
+                "18821383157269793795438455681495246036402687001665670618754263018637548127333"
+            )
+            .unwrap()
         );
         Ok(())
     }

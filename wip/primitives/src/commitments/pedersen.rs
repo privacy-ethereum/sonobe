@@ -18,13 +18,12 @@ use ark_relations::gr1cs::SynthesisError;
 use ark_std::{iter::repeat_with, marker::PhantomData, rand::RngCore, UniformRand};
 
 use super::{Error, VectorCommitment};
-use crate::{
-    algebra::field::{nonnative::NonNativeUintVar, nonnative2::IntVarInner},
-    commitments::{Null, VectorCommitmentGadget},
-    traits::{CF2, SonobeCurve},
-};
-use crate::algebra::field::nonnative2::NonNativeFieldVar;
 use crate::traits::CF1;
+use crate::{
+    algebra::field::nonnative2::NonNativeFieldVar,
+    commitments::{Null, VectorCommitmentGadget},
+    traits::{SonobeCurve, CF2},
+};
 
 #[derive(Debug, PartialEq)]
 pub struct Pedersen<C: SonobeCurve, const H: bool> {
@@ -225,6 +224,7 @@ impl<C: SonobeCurve, const H: bool> PedersenGadget<C, H> {
 
 impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, false> {
     type Native = Pedersen<C, false>;
+    type ConstraintField = CF2<C>;
 
     type KeyVar = Vec<C::Var>;
 
@@ -234,7 +234,7 @@ impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, false> {
 
     type CommitmentVar = C::Var;
 
-    type RandomnessVar = ();
+    type RandomnessVar = Null;
 
     fn open(
         ck: &Self::KeyVar,
@@ -254,6 +254,7 @@ impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, false> {
 
 impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, true> {
     type Native = Pedersen<C, true>;
+    type ConstraintField = CF2<C>;
 
     type KeyVar = (Vec<C::Var>, C::Var);
 

@@ -5,9 +5,7 @@ use ark_r1cs_std::{
     GR1CSVar,
 };
 use ark_relations::gr1cs::{Matrix, Namespace, SynthesisError};
-use ark_std::borrow::Borrow;
-
-use std::ops::Index;
+use ark_std::{borrow::Borrow, ops::Index};
 
 pub trait MatrixGadget<FV> {
     fn mul_vector(&self, v: &impl Index<usize, Output = FV>) -> Result<Vec<FV>, SynthesisError>;

@@ -1,8 +1,6 @@
 use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, Field, One, PrimeField};
-use ark_r1cs_std::boolean::Boolean;
-use ark_r1cs_std::convert::ToBitsGadget;
-use ark_r1cs_std::fields::fp::FpVar;
+use ark_r1cs_std::{boolean::Boolean, convert::ToBitsGadget, fields::fp::FpVar};
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::{
     borrow::Borrow,
@@ -13,9 +11,9 @@ use ark_std::{
     sync::Arc,
     UniformRand,
 };
+use instance::{circuits::RunningInstanceVar as RUVar, RunningInstance as RU};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-
 use sonobe_primitives::{
     algebra::{group::PointScalarMulGadget, ops::bits::FromBitsGadget},
     arithmetizations::{
@@ -28,16 +26,11 @@ use sonobe_primitives::{
     traits::{SonobeCurve, SonobeField},
     transcripts::{Absorbable, AbsorbableGadget, Transcript, TranscriptVar},
 };
+use witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW};
 
-use crate::{Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget};
-
-use instance::{
-    IncomingInstance as IU, IncomingInstanceVar as IUVar, RunningInstance as RU,
-    RunningInstanceVar as RUVar,
-};
-use witness::{
-    IncomingWitness as IW, IncomingWitnessVar as IWVar, RunningWitness as RW,
-    RunningWitnessVar as RWVar,
+use crate::{
+    Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget, PlainInstance as IU,
+    PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar,
 };
 
 pub mod instance;
@@ -83,14 +76,12 @@ where
     }
 }
 
-impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<VC>>
-    for OvaKey<A, VC>
-{
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC>, IU<VC>> for OvaKey<A, VC> {
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
     fn sample(&self, z: Self::Source, _rng: impl RngCore) -> Result<(IW<VC>, IU<VC>), Error> {
-        Ok((z.private, z.public))
+        Ok((z.private.into(), z.public.into()))
     }
 }
 
@@ -199,7 +190,7 @@ where
 
         // Compute the cross term `T` by following the original Nova paper.
         let z1 = Assignments::from((U.u, &U.x, &W.w));
-        let z2 = Assignments::from((VC::Scalar::one(), u, w));
+        let z2 = Assignments::from((VC::Scalar::one(), &u[..], &w[..]));
         let t = cfg_iter!(pk.arith.A)
             .zip(&pk.arith.B)
             .zip(&pk.arith.C)
@@ -226,13 +217,19 @@ where
 
         Ok((
             RW {
-                w: cfg_iter!(W.w).zip(w).map(|(a, b)| rho * b + a).collect(),
+                w: cfg_iter!(W.w)
+                    .zip(&w[..])
+                    .map(|(a, b)| rho * b + a)
+                    .collect(),
                 r: W.r + r * rho,
             },
             RU {
                 u: U.u + rho,
                 cm: U.cm + cm.mul(rho),
-                x: cfg_iter!(U.x).zip(u).map(|(a, b)| rho * b + a).collect(),
+                x: cfg_iter!(U.x)
+                    .zip(&u[..])
+                    .map(|(a, b)| rho * b + a)
+                    .collect(),
             },
             cm,
             rho_bits,
@@ -259,7 +256,10 @@ where
         Ok(RU {
             u: U.u + rho,
             cm: U.cm + cm.mul(rho),
-            x: cfg_iter!(U.x).zip(u).map(|(a, b)| rho * b + a).collect(),
+            x: cfg_iter!(U.x)
+                .zip(&u[..])
+                .map(|(a, b)| rho * b + a)
+                .collect(),
         })
     }
 }
@@ -317,7 +317,7 @@ where
                 cm: folded_cm,
                 x: U.x
                     .iter()
-                    .zip(u)
+                    .zip(&u[..])
                     .map(|(a, b)| (b.clone() * &rho + a).try_into())
                     .collect::<Result<_, _>>()
                     .map_err(|_| SynthesisError::Unsatisfiable)?,
@@ -361,15 +361,13 @@ mod tests {
     use ark_bn254::{Fq, Fr, G1Projective};
     use ark_ff::UniformRand;
     use ark_std::{error::Error, test_rng};
-
     use sonobe_primitives::{
         circuits::utils::{satisfying_assignments_for_test, CircuitForTest},
         commitments::pedersen::Pedersen,
     };
 
-    use crate::tests::test_folding_scheme;
-
     use super::*;
+    use crate::tests::test_folding_scheme;
 
     fn test_ova_opt<TF: SonobeField>(
         rounds: usize,

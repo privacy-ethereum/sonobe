@@ -1,7 +1,7 @@
 use ark_relations::gr1cs::SynthesisError;
 use thiserror::Error;
 
-use crate::relations::{Relation};
+use crate::relations::Relation;
 
 pub mod ccs;
 pub mod r1cs;

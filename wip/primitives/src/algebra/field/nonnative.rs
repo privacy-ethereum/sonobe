@@ -1101,12 +1101,10 @@ impl<CF: PrimeField> MatrixGadget<NonNativeUintVar<CF>> for SparseMatrixVar<NonN
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
-
     use ark_ff::Field;
     use ark_pallas::{Fq, Fr};
     use ark_relations::gr1cs::ConstraintSystem;
-    use ark_std::{test_rng, UniformRand};
+    use ark_std::{test_rng, UniformRand, error::Error};
     use num_bigint::RandBigInt;
 
     use super::*;

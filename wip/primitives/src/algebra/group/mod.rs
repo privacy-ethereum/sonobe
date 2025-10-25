@@ -14,15 +14,11 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::mem::swap;
-use num_bigint::{BigInt, BigUint, Sign};
+use num_bigint::{BigInt, Sign};
 use num_integer::Integer;
 
-use crate::algebra::field::nonnative2::IntVarInner;
 use crate::{
-    algebra::field::{
-        nonnative::{Bound, NonNativeUintVar},
-        SonobeField,
-    },
+    algebra::field::SonobeField,
     traits::{Inputize, InputizeNonNative},
     transcripts::{Absorbable, AbsorbableGadget},
 };
@@ -162,12 +158,12 @@ impl<C: SonobeCurve> PointScalarMulGadget<CF2<C>> for C {
         let b_is_negative =
             Boolean::new_variable_with_inferred_mode(cs.clone(), || Ok(b_sign == Sign::Minus))?;
 
-        let a = NonNativeUintVar::new_variable_with_inferred_mode(cs.clone(), || {
-            Ok((a_abs.into(), Bound::new_ub(m_sqrt.clone())))
-        })?;
-        let b = NonNativeUintVar::new_variable_with_inferred_mode(cs, || {
-            Ok((b_abs.into(), Bound::new_ub(m_sqrt)))
-        })?;
+        // let a = NonNativeUintVar::new_variable_with_inferred_mode(cs.clone(), || {
+        //     Ok((a_abs.into(), Bound::new_ub(m_sqrt.clone())))
+        // })?;
+        // let b = NonNativeUintVar::new_variable_with_inferred_mode(cs, || {
+        //     Ok((b_abs.into(), Bound::new_ub(m_sqrt)))
+        // })?;
 
         todo!()
     }

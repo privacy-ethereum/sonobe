@@ -8,7 +8,7 @@ use crate::{
     transcripts::{Absorbable, AbsorbableGadget},
 };
 
-pub mod nonnative;
+// pub mod nonnative;
 pub mod nonnative2;
 
 /// `Field` trait is a wrapper around `PrimeField` that also includes the

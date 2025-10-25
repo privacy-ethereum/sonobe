@@ -1,13 +1,12 @@
 use ark_ff::PrimeField;
-
-use sonobe_primitives::{
-    commitments::VectorCommitment, transcripts::Absorbable,
-};
+use sonobe_primitives::{commitments::VectorCommitment, transcripts::Absorbable};
 
 use crate::FoldingInstance;
 
+pub mod circuits;
+
 #[derive(Debug, PartialEq)]
-pub struct LCCCS<VC: VectorCommitment> {
+pub struct LCCCSInstance<VC: VectorCommitment> {
     pub cm: VC::Commitment,
     pub u: VC::Scalar,
     pub x: Vec<VC::Scalar>,
@@ -15,26 +14,14 @@ pub struct LCCCS<VC: VectorCommitment> {
     pub v: Vec<VC::Scalar>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct CCCS<VC: VectorCommitment> {
-    pub cm: VC::Commitment,
-    pub x: Vec<VC::Scalar>,
-}
-
-impl<VC: VectorCommitment> FoldingInstance<VC> for LCCCS<VC> {
-    fn commitments(&self) -> Vec<&VC::Commitment> {
-        vec![&self.cm]
-    }
-}
-
-impl<VC: VectorCommitment> FoldingInstance<VC> for CCCS<VC> {
+impl<VC: VectorCommitment> FoldingInstance<VC> for LCCCSInstance<VC> {
     fn commitments(&self) -> Vec<&VC::Commitment> {
         vec![&self.cm]
     }
 }
 
 impl<F: PrimeField, VC: VectorCommitment<Scalar: Absorbable<F>, Commitment: Absorbable<F>>>
-    Absorbable<F> for LCCCS<VC>
+    Absorbable<F> for LCCCSInstance<VC>
 {
     fn absorb_into(&self, dest: &mut Vec<F>) {
         self.cm.absorb_into(dest);
@@ -45,8 +32,20 @@ impl<F: PrimeField, VC: VectorCommitment<Scalar: Absorbable<F>, Commitment: Abso
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct CCCSInstance<VC: VectorCommitment> {
+    pub cm: VC::Commitment,
+    pub x: Vec<VC::Scalar>,
+}
+
+impl<VC: VectorCommitment> FoldingInstance<VC> for CCCSInstance<VC> {
+    fn commitments(&self) -> Vec<&VC::Commitment> {
+        vec![&self.cm]
+    }
+}
+
 impl<F: PrimeField, VC: VectorCommitment<Scalar: Absorbable<F>, Commitment: Absorbable<F>>>
-    Absorbable<F> for CCCS<VC>
+    Absorbable<F> for CCCSInstance<VC>
 {
     fn absorb_into(&self, dest: &mut Vec<F>) {
         self.cm.absorb_into(dest);

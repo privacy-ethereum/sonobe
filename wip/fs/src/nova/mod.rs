@@ -96,14 +96,12 @@ impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<V
     }
 }
 
-impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<PW<VC>, PU<VC>>
-    for NovaKey<A, VC>
-{
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC>, PU<VC>> for NovaKey<A, VC> {
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
     fn sample(&self, z: Self::Source, _rng: impl RngCore) -> Result<(PW<VC>, PU<VC>), Error> {
-        Ok((z.private, z.public))
+        Ok((z.private.into(), z.public.into()))
     }
 }
 
@@ -362,8 +360,8 @@ where
         // [Mova](https://eprint.iacr.org/2024/1220.pdf)'s section 5.2.
         let v = pk.arith.eval_assignments(AssignmentsOwned::from((
             U.u + VC::Scalar::one(),
-            cfg_iter!(U.x).zip(u).map(|(a, b)| *a + b).collect(),
-            cfg_iter!(W.w).zip(w).map(|(a, b)| *a + b).collect(),
+            cfg_iter!(U.x).zip(&u[..]).map(|(a, b)| *a + b).collect(),
+            cfg_iter!(W.w).zip(&w[..]).map(|(a, b)| *a + b).collect(),
         )))?;
         let t = cfg_into_iter!(v)
             .zip(&W.e)
@@ -394,14 +392,14 @@ where
             RW {
                 e: cfg_iter!(W.e).zip(&t).map(|(a, b)| rho * b + a).collect(),
                 r_e: W.r_e + r_t * rho,
-                w: cfg_iter!(W.w).zip(w).map(|(a, b)| rho * b + a).collect(),
+                w: cfg_iter!(W.w).zip(&w[..]).map(|(a, b)| rho * b + a).collect(),
                 r_w: W.r_w + r_w * rho,
             },
             RU {
                 cm_e: U.cm_e + cm_t.mul(rho),
                 u: U.u + rho,
                 cm_w: U.cm_w + cm_w.mul(rho),
-                x: cfg_iter!(U.x).zip(u).map(|(a, b)| rho * b + a).collect(),
+                x: cfg_iter!(U.x).zip(&u[..]).map(|(a, b)| rho * b + a).collect(),
             },
             pi,
             rho_bits,
@@ -431,7 +429,7 @@ where
             cm_e: U.cm_e + cm_t.mul(rho),
             u: U.u + rho,
             cm_w: U.cm_w + cm_w.mul(rho),
-            x: cfg_iter!(U.x).zip(u).map(|(a, b)| rho * b + a).collect(),
+            x: cfg_iter!(U.x).zip(&u[..]).map(|(a, b)| rho * b + a).collect(),
         })
     }
 }

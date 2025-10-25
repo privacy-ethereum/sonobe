@@ -3,17 +3,19 @@ pub mod nova;
 pub mod ova;
 pub mod protogalaxy;
 
-use ark_r1cs_std::alloc::AllocVar;
+use ark_ff::Field;
+use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
 use ark_r1cs_std::fields::fp::FpVar;
-use ark_relations::gr1cs::SynthesisError;
+use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::{borrow::Borrow, fmt::Debug, rand::RngCore};
+use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 
 use sonobe_primitives::algebra::group::PointScalarMulGadget;
 use sonobe_primitives::circuits::AssignmentsOwned;
 use sonobe_primitives::commitments::VectorCommitmentGadget;
 use sonobe_primitives::relations::WitnessInstanceSampler;
-use sonobe_primitives::transcripts::TranscriptVar;
+use sonobe_primitives::transcripts::{Absorbable, AbsorbableGadget, TranscriptVar};
 use sonobe_primitives::{
     arithmetizations::Arith, commitments::VectorCommitment, relations::Relation,
     sumcheck::Error as SumCheckError, traits::SonobeField, transcripts::Transcript,
@@ -46,8 +48,44 @@ pub trait FoldingInstance<VC: VectorCommitment>: Debug + PartialEq + Sync {
     fn commitments(&self) -> Vec<&VC::Commitment>;
 }
 
-pub type PlainWitness<VC> = Vec<<VC as VectorCommitment>::Scalar>;
-pub type PlainInstance<VC> = Vec<<VC as VectorCommitment>::Scalar>;
+#[derive(Debug, PartialEq)]
+pub struct WrappedVec<V>(Vec<V>);
+
+impl<V> Deref for WrappedVec<V> {
+    type Target = Vec<V>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<V> DerefMut for WrappedVec<V> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<V> From<Vec<V>> for WrappedVec<V> {
+    fn from(v: Vec<V>) -> Self {
+        Self(v)
+    }
+}
+
+impl<F, V: Absorbable<F>> Absorbable<F> for WrappedVec<V> {
+    fn absorb_into(&self, dest: &mut Vec<F>) {
+        self.0.absorb_into(dest)
+    }
+}
+
+impl<F, V: AbsorbableGadget<F>> AbsorbableGadget<F> for WrappedVec<V> {
+    fn absorb_into(&self, dest: &mut Vec<F>) -> Result<(), SynthesisError> {
+        self.0.absorb_into(dest)
+    }
+}
+
+pub type PlainWitness<VC> = WrappedVec<<VC as VectorCommitment>::Scalar>;
+
+pub type PlainInstance<VC> = WrappedVec<<VC as VectorCommitment>::Scalar>;
 
 impl<VC: VectorCommitment> FoldingWitness<VC> for PlainWitness<VC> {
     fn openings_ref(&self) -> Vec<(&[VC::Scalar], &VC::Randomness)> {
@@ -139,20 +177,39 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
     }
 }
 
-pub trait FoldingWitnessVar<VC: VectorCommitmentGadget> {
+pub trait FoldingWitnessVar<VC: VectorCommitmentGadget>:
+    AllocVar<Self::Native, VC::ConstraintField>
+{
     type Native: FoldingWitness<VC::Native>;
 }
 
-pub trait FoldingInstanceVar<VC: VectorCommitmentGadget> {
+pub trait FoldingInstanceVar<VC: VectorCommitmentGadget>:
+    AllocVar<Self::Native, VC::ConstraintField>
+{
     type Native: FoldingInstance<VC::Native>;
 }
 
-impl<VC: VectorCommitmentGadget> FoldingWitnessVar<VC> for Vec<VC::ScalarVar> {
-    type Native = Vec<<VC::Native as VectorCommitment>::Scalar>;
+pub type PlainWitnessVar<VC> = WrappedVec<<VC as VectorCommitmentGadget>::ScalarVar>;
+pub type PlainInstanceVar<VC> = WrappedVec<<VC as VectorCommitmentGadget>::ScalarVar>;
+
+impl<VC: VectorCommitmentGadget> FoldingWitnessVar<VC> for PlainWitnessVar<VC> {
+    type Native = PlainWitness<VC::Native>;
 }
 
-impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for Vec<VC::ScalarVar> {
-    type Native = Vec<<VC::Native as VectorCommitment>::Scalar>;
+impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for PlainInstanceVar<VC> {
+    type Native = PlainInstance<VC::Native>;
+}
+
+impl<X: AllocVar<Y, F>, Y, F: Field> AllocVar<WrappedVec<Y>, F> for WrappedVec<X> {
+    fn new_variable<T: Borrow<WrappedVec<Y>>>(
+        cs: impl Into<Namespace<F>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        mode: AllocationMode,
+    ) -> Result<Self, SynthesisError> {
+        let v = f()?;
+        let v = v.borrow();
+        Vec::new_variable(cs, || Ok(&v[..]), mode).map(|v| Self(v))
+    }
 }
 
 pub trait FoldingSchemePartialGadget<const M: usize = 1, const N: usize = 1> {

@@ -1,7 +1,4 @@
-use ark_ff::PrimeField;
-use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::SynthesisError;
-use ark_std::{any::TypeId, mem::transmute_copy};
 
 pub trait Absorbable<F> {
     fn absorb_into(&self, dest: &mut Vec<F>);

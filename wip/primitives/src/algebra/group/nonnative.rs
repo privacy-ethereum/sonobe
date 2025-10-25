@@ -12,17 +12,18 @@ use ark_serialize::{CanonicalSerialize, CanonicalSerializeWithFlags};
 use ark_std::borrow::Borrow;
 
 use crate::{
-    algebra::{field::nonnative::NonNativeUintVar, group::SonobeCurve},
+    algebra::{group::SonobeCurve},
     transcripts::AbsorbableGadget,
 };
+use crate::algebra::field::nonnative2::BigIntVar;
 
 /// NonNativeAffineVar represents an elliptic curve point in Affine representation in the non-native
 /// field, over the constraint field. It is not intended to perform operations, but just to contain
 /// the affine coordinates in order to perform hash operations of the point.
 #[derive(Debug, Clone)]
 pub struct NonNativeAffineVar<C: SonobeCurve> {
-    pub x: NonNativeUintVar<C::ScalarField>,
-    pub y: NonNativeUintVar<C::ScalarField>,
+    pub x: BigIntVar<C::ScalarField, true>,
+    pub y: BigIntVar<C::ScalarField, true>,
 }
 
 impl<C: SonobeCurve> AllocVar<C, C::ScalarField> for NonNativeAffineVar<C> {
@@ -37,8 +38,8 @@ impl<C: SonobeCurve> AllocVar<C, C::ScalarField> for NonNativeAffineVar<C> {
             let affine = val.borrow().into_affine();
             let (x, y) = affine.xy().unwrap_or_default();
 
-            let x = NonNativeUintVar::new_variable(cs.clone(), || Ok(x), mode)?;
-            let y = NonNativeUintVar::new_variable(cs.clone(), || Ok(y), mode)?;
+            let x = BigIntVar::new_variable(cs.clone(), || Ok(x), mode)?;
+            let y = BigIntVar::new_variable(cs.clone(), || Ok(y), mode)?;
 
             Ok(Self { x, y })
         })

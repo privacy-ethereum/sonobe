@@ -1,15 +1,13 @@
-use std::ops::Index;
 use ark_ff::Field;
 use ark_relations::gr1cs::{ConstraintSystem, Matrix};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::{cfg_into_iter, cfg_iter};
-use ark_std::iterable::Iterable;
+use ark_std::{cfg_into_iter, cfg_iter, iterable::Iterable};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use crate::{
     circuits::{Assignments, ConstraintSystemExt},
-    relations::{WitnessInstanceExtractor},
+    relations::WitnessInstanceExtractor,
     traits::Dummy,
 };
 

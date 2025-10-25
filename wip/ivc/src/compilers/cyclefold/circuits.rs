@@ -21,10 +21,7 @@ pub struct AugmentedCircuit<'a, FC: FCircuit, FS1, FS2> {
 
 impl<'a, FC: FCircuit, FS1, FS2> AugmentedCircuit<'a, FC, FS1, FS2>
 where
-    FS1: FoldingSchemePartialGadget<
-        1,
-        1,
-    >,
+    FS1: FoldingSchemePartialGadget<1, 1>,
     FS2: FoldingSchemeFullGadget<1, 1>,
 {
     fn compute_next_state(
@@ -46,10 +43,7 @@ where
 impl<'a, FC: FCircuit, FS1, FS2> ConstraintSynthesizer<FC::Field>
     for AugmentedCircuit<'a, FC, FS1, FS2>
 where
-    FS1: FoldingSchemePartialGadget<
-        1,
-        1,
-    >,
+    FS1: FoldingSchemePartialGadget<1, 1>,
     FS2: FoldingSchemeFullGadget<1, 1>,
 {
     fn generate_constraints(

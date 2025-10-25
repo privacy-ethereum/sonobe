@@ -1,10 +1,9 @@
 use ark_ff::PrimeField;
-
-use sonobe_primitives::{
-    commitments::VectorCommitment, transcripts::Absorbable,
-};
+use sonobe_primitives::{commitments::VectorCommitment, transcripts::Absorbable};
 
 use crate::FoldingInstance;
+
+pub mod circuits;
 
 #[derive(Debug, PartialEq)]
 pub struct RunningInstance<VC: VectorCommitment> {
@@ -14,21 +13,9 @@ pub struct RunningInstance<VC: VectorCommitment> {
     pub x: Vec<VC::Scalar>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct IncomingInstance<VC: VectorCommitment> {
-    pub cm_w: VC::Commitment,
-    pub x: Vec<VC::Scalar>,
-}
-
 impl<VC: VectorCommitment> FoldingInstance<VC> for RunningInstance<VC> {
     fn commitments(&self) -> Vec<&VC::Commitment> {
         vec![&self.cm_e, &self.cm_w]
-    }
-}
-
-impl<VC: VectorCommitment> FoldingInstance<VC> for IncomingInstance<VC> {
-    fn commitments(&self) -> Vec<&VC::Commitment> {
-        vec![&self.cm_w]
     }
 }
 
@@ -40,6 +27,18 @@ impl<F: PrimeField, VC: VectorCommitment<Scalar: Absorbable<F>, Commitment: Abso
         self.x.absorb_into(dest);
         self.cm_e.absorb_into(dest);
         self.cm_w.absorb_into(dest);
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IncomingInstance<VC: VectorCommitment> {
+    pub cm_w: VC::Commitment,
+    pub x: Vec<VC::Scalar>,
+}
+
+impl<VC: VectorCommitment> FoldingInstance<VC> for IncomingInstance<VC> {
+    fn commitments(&self) -> Vec<&VC::Commitment> {
+        vec![&self.cm_w]
     }
 }
 

@@ -1,7 +1,8 @@
 use ark_ff::Field;
-use ark_r1cs_std::alloc::AllocVar;
-use ark_relations::gr1cs::SynthesisError;
+use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
+use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::{
+    borrow::Borrow,
     fmt::Debug,
     iter::Sum,
     ops::{Add, Mul},
@@ -15,7 +16,8 @@ pub mod pedersen;
 #[derive(Debug, Error)]
 pub enum Error {
     // Commitment errors
-    #[error("The message being committed to has length {1}, exceeding the maximum supported length of {0}")]
+    #[error("The message being committed to has length {1}, exceeding the maximum supported length of {0}"
+    )]
     MessageTooLong(usize, usize),
     #[error("Blinding factor not 0 for Commitment without hiding")]
     BlindingNotZero,
@@ -62,9 +64,11 @@ pub trait VectorCommitment: 'static + Debug + PartialEq {
 
 pub trait VectorCommitmentGadget {
     type Native: VectorCommitment;
+    type ConstraintField: Field;
 
     type KeyVar;
     type ScalarVar: Clone
+        + AllocVar<<Self::Native as VectorCommitment>::Scalar, Self::ConstraintField>
         + Add<Output = Self::IntermediateScalarVar>
         + for<'a> Add<&'a Self::ScalarVar, Output = Self::IntermediateScalarVar>
         + Mul<Output = Self::IntermediateScalarVar>
@@ -79,8 +83,12 @@ pub trait VectorCommitmentGadget {
         + for<'a> Add<&'a Self::ScalarVar, Output = Self::IntermediateScalarVar>
         + Mul<Self::ScalarVar, Output = Self::IntermediateScalarVar>
         + for<'a> Mul<&'a Self::ScalarVar, Output = Self::IntermediateScalarVar>;
-    type CommitmentVar: Clone;
-    type RandomnessVar;
+    type CommitmentVar: Clone
+        + AllocVar<<Self::Native as VectorCommitment>::Commitment, Self::ConstraintField>;
+    type RandomnessVar: AllocVar<
+        <Self::Native as VectorCommitment>::Randomness,
+        Self::ConstraintField,
+    >;
 
     fn open(
         ck: &Self::KeyVar,
@@ -128,6 +136,16 @@ impl<F> Mul<F> for &Null {
 impl Sum for Null {
     fn sum<I: Iterator<Item = Self>>(_: I) -> Self {
         Null
+    }
+}
+
+impl<F: Field> AllocVar<Null, F> for Null {
+    fn new_variable<T: Borrow<Null>>(
+        _cs: impl Into<Namespace<F>>,
+        _f: impl FnOnce() -> Result<T, SynthesisError>,
+        _mode: AllocationMode,
+    ) -> Result<Self, SynthesisError> {
+        Ok(Self)
     }
 }
 

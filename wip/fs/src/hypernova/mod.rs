@@ -22,8 +22,8 @@ use sonobe_primitives::{
 
 use crate::{Error, FoldingScheme, PlainInstance as PU, PlainWitness as PW};
 
-use instance::{CCCS as IU, LCCCS as RU};
-use witness::{IncomingWitness as IW, RunningWitness as RW};
+use instance::{CCCSInstance as IU, LCCCSInstance as RU};
+use witness::{CCCSWitness as IW, LCCCSWitness as RW};
 
 pub mod instance;
 pub mod witness;
@@ -109,14 +109,14 @@ impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<V
     }
 }
 
-impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<PW<VC>, PU<VC>>
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC>, PU<VC>>
     for HyperNovaKey<A, VC>
 {
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
     fn sample(&self, z: Self::Source, _rng: impl RngCore) -> Result<(PW<VC>, PU<VC>), Error> {
-        Ok((z.private, z.public))
+        Ok((z.private.into(), z.public.into()))
     }
 }
 
@@ -557,7 +557,7 @@ where
         let incoming_mles = ws
             .iter()
             .zip(us)
-            .flat_map(|(w, u)| (0..ccs.t).map(move |i| ccs.mle(i, (One::one(), &u, &w).into())));
+            .flat_map(|(w, u)| (0..ccs.t).map(move |i| ccs.mle(i, (One::one(), &u[..], &w[..]).into())));
         let eq_mles = Us
             .iter()
             .map(|U| &U.r_x)
