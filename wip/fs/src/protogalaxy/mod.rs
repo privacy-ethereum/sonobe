@@ -6,23 +6,21 @@ use ark_poly::{
 use ark_std::{
     borrow::Borrow, cfg_into_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
 };
+use instance::{IncomingInstance as IU, RunningInstance as RU};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-
 use sonobe_primitives::{
     algebra::ops::rlc::{ScalarRLC, SliceRLC},
-    arithmetizations::{r1cs::R1CS, Arith, ArithRelation, Error as ArithError},
+    arithmetizations::{r1cs::R1CS, Arith, ArithConfig, ArithRelation, Error as ArithError},
     circuits::{Assignments, AssignmentsOwned},
     commitments::VectorCommitment,
     relations::{Relation, WitnessInstanceSampler},
-    traits::{SonobeCurve, SonobeField},
+    traits::{Dummy, SonobeCurve, SonobeField},
     transcripts::{Absorbable, Transcript},
 };
+use witness::{IncomingWitness as IW, RunningWitness as RW};
 
 use crate::{Error, FoldingScheme, PlainInstance as PU, PlainWitness as PW};
-
-use instance::{IncomingInstance as IU, RunningInstance as RU};
-use witness::{IncomingWitness as IW, RunningWitness as RW};
 
 pub mod instance;
 pub mod witness;
@@ -156,9 +154,19 @@ where
     }
 }
 
-pub struct ProtoGalaxyProof<F> {
+#[derive(Clone)]
+pub struct ProtoGalaxyProof<F, const N: usize> {
     pub f_coeffs: Vec<F>,
     pub k_coeffs: Vec<F>,
+}
+
+impl<F: Field, Cfg: ArithConfig, const N: usize> Dummy<&Cfg> for ProtoGalaxyProof<F, N> {
+    fn dummy(cfg: &Cfg) -> Self {
+        Self {
+            f_coeffs: vec![Default::default(); log2(cfg.n_constraints()) as usize],
+            k_coeffs: vec![Default::default(); cfg.degree() * N + 1],
+        }
+    }
 }
 
 pub struct ProtoGalaxy<VC> {
@@ -185,7 +193,7 @@ where
     type VerifierKey = ();
     type DeciderKey = ProtoGalaxyKey<Self::Arith, VC>;
     type Challenge = Vec<VC::Scalar>;
-    type Proof = ProtoGalaxyProof<VC::Scalar>;
+    type Proof = ProtoGalaxyProof<VC::Scalar, N>;
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         if !(N + 1).is_power_of_two() {
@@ -445,7 +453,7 @@ where
     type VerifierKey = ();
     type DeciderKey = ProtoGalaxyKey<Self::Arith, VC>;
     type Challenge = Vec<VC::Scalar>;
-    type Proof = ([VC::Commitment; N], ProtoGalaxyProof<VC::Scalar>);
+    type Proof = ([VC::Commitment; N], ProtoGalaxyProof<VC::Scalar, N>);
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         if !(N + 1).is_power_of_two() {
@@ -765,15 +773,13 @@ mod tests {
     use ark_bn254::{Fr, G1Projective};
     use ark_ff::UniformRand;
     use ark_std::{error::Error, rand::Rng, test_rng};
-
     use sonobe_primitives::{
         circuits::utils::{satisfying_assignments_for_test, CircuitForTest},
         commitments::pedersen::Pedersen,
     };
 
-    use crate::tests::test_folding_scheme;
-
     use super::*;
+    use crate::tests::test_folding_scheme;
 
     fn test_protogalaxy_opt<const N: usize>(
         rounds: usize,

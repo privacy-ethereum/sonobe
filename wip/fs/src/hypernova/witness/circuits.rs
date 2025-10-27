@@ -1,7 +1,10 @@
 use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
-use sonobe_primitives::commitments::{VectorCommitment, VectorCommitmentGadget};
+use sonobe_primitives::{
+    circuits::var::Var,
+    commitments::{VectorCommitment, VectorCommitmentGadget},
+};
 
 use super::{CCCSWitness, LCCCSWitness};
 use crate::FoldingWitnessVar;
@@ -12,7 +15,7 @@ pub struct LCCCSWitnessVar<VC: VectorCommitmentGadget> {
     pub r: VC::RandomnessVar,
 }
 
-impl<VC: VectorCommitmentGadget> FoldingWitnessVar<VC> for LCCCSWitnessVar<VC> {
+impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for LCCCSWitnessVar<VC> {
     type Native = LCCCSWitness<VC::Native>;
 }
 
@@ -40,7 +43,7 @@ pub struct CCCSWitnessVar<VC: VectorCommitmentGadget> {
     pub r: VC::RandomnessVar,
 }
 
-impl<VC: VectorCommitmentGadget> FoldingWitnessVar<VC> for CCCSWitnessVar<VC> {
+impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for CCCSWitnessVar<VC> {
     type Native = CCCSWitness<VC::Native>;
 }
 

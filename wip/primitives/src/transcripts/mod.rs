@@ -1,3 +1,4 @@
+pub use absorbable::{Absorbable, AbsorbableGadget};
 use ark_crypto_primitives::sponge::{
     constraints::CryptographicSpongeVar, CryptographicSponge, FieldElementSize,
 };
@@ -5,8 +6,6 @@ use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{boolean::Boolean, fields::fp::FpVar, groups::CurveVar};
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
-
-pub use absorbable::{Absorbable, AbsorbableGadget};
 
 pub mod absorbable;
 pub mod poseidon;
@@ -28,6 +27,10 @@ pub trait Transcript<F: PrimeField> {
 
     /// Squeeze `num_bits` bits from the sponge.
     fn get_bits(&mut self, num_bits: usize) -> Vec<bool>;
+
+    fn get_field_element(&mut self) -> F {
+        self.get_field_elements(1)[0]
+    }
 
     fn get_field_elements(&mut self, num_elements: usize) -> Vec<F>;
 
@@ -96,17 +99,22 @@ pub trait TranscriptVar<F: PrimeField> {
         Ok(sponge)
     }
 
-    fn add<A: AbsorbableGadget<FpVar<F>>>(&mut self, input: &A) -> Result<(), SynthesisError>;
+    fn add<A: AbsorbableGadget<F>>(&mut self, input: &A) -> Result<(), SynthesisError>;
 
     /// Squeeze `num_bits` bits from the sponge.
     fn get_bits(&mut self, num_bits: usize) -> Result<Vec<Boolean<F>>, SynthesisError>;
+
+    fn get_field_element(&mut self) -> Result<FpVar<F>, SynthesisError> {
+        Ok(self.get_field_elements(1)?.pop().unwrap())
+    }
 
     fn get_field_elements(&mut self, num_elements: usize) -> Result<Vec<FpVar<F>>, SynthesisError>;
 
     /// Creates a new sponge with applied domain separation.
     fn separate_domain(&self, domain: &[u8]) -> Result<Self, SynthesisError>
     where
-        Self: CryptographicSponge,
+        Self: Clone,
+        Self::Native: CryptographicSponge,
     {
         let mut new_sponge = self.clone();
 

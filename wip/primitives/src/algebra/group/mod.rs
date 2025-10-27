@@ -3,10 +3,9 @@ use ark_ec::{
     AffineRepr, CurveGroup, PrimeGroup,
 };
 use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
-use ark_r1cs_std::convert::ToBitsGadget;
 use ark_r1cs_std::{
     alloc::AllocVar,
-    convert::ToConstraintFieldGadget,
+    convert::{ToBitsGadget, ToConstraintFieldGadget},
     fields::fp::FpVar,
     groups::{curves::short_weierstrass::ProjectiveVar, CurveVar},
     prelude::Boolean,
@@ -19,7 +18,8 @@ use num_integer::Integer;
 
 use crate::{
     algebra::field::SonobeField,
-    traits::{Inputize, InputizeNonNative},
+    circuits::var::Var,
+    traits::{Dummy, Inputize, InputizeNonNative},
     transcripts::{Absorbable, AbsorbableGadget},
 };
 
@@ -39,13 +39,27 @@ pub trait SonobeCurve:
     + InputizeNonNative<Self::ScalarField>
 {
     /// The in-circuit variable type for this curve.
-    type Var: CurveVar<Self, Self::BaseField>;
+    type Var: CurveVar<Self, Self::BaseField>
+        + Var<Self::BaseField, Native = Self>
+        + AbsorbableGadget<Self::BaseField>;
+}
+
+impl<P: SWCurveConfig<ScalarField: SonobeField, BaseField: SonobeField>> Var<P::BaseField>
+    for ProjectiveVar<P, FpVar<P::BaseField>>
+{
+    type Native = Projective<P>;
 }
 
 impl<P: SWCurveConfig<ScalarField: SonobeField, BaseField: SonobeField>> SonobeCurve
     for Projective<P>
 {
     type Var = ProjectiveVar<P, FpVar<P::BaseField>>;
+}
+
+impl<T, C: SonobeCurve> Dummy<T> for C {
+    fn dummy(_: T) -> Self {
+        Default::default()
+    }
 }
 
 impl<F: PrimeField, P: SWCurveConfig<BaseField: Absorbable<F>>> Absorbable<F> for Projective<P> {
@@ -56,7 +70,7 @@ impl<F: PrimeField, P: SWCurveConfig<BaseField: Absorbable<F>>> Absorbable<F> fo
     }
 }
 
-impl<P: SWCurveConfig<BaseField: PrimeField>> AbsorbableGadget<FpVar<P::BaseField>>
+impl<P: SWCurveConfig<BaseField: PrimeField>> AbsorbableGadget<P::BaseField>
     for ProjectiveVar<P, FpVar<P::BaseField>>
 {
     fn absorb_into(&self, dest: &mut Vec<FpVar<P::BaseField>>) -> Result<(), SynthesisError> {

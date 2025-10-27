@@ -1,19 +1,32 @@
 use ark_crypto_primitives::sponge::poseidon::{PoseidonConfig, PoseidonSponge};
+use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar};
 use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError,
 };
 use ark_std::{marker::PhantomData, rand::RngCore};
-
-use sonobe_fs::FoldingScheme;
-use sonobe_primitives::circuits::ConstraintSystemExt;
-use sonobe_primitives::relations::WitnessInstanceSampler;
-use sonobe_primitives::traits::SonobeField;
-use sonobe_primitives::transcripts::Transcript;
-use sonobe_primitives::{circuits::FCircuit, commitments::VectorCommitment};
+use sonobe_fs::{FoldingInstance, FoldingInstanceVar, FoldingScheme, FoldingSchemePartialGadget};
+use sonobe_primitives::{
+    circuits::{ConstraintSystemExt, FCircuit},
+    commitments::{VectorCommitment, VectorCommitmentGadget},
+    relations::WitnessInstanceSampler,
+    traits::SonobeField,
+    transcripts::Transcript,
+};
 
 use crate::IVC;
 
 mod circuits;
+
+pub trait FoldingSchemeCycleFoldGadget<const M: usize, const N: usize>: FoldingSchemePartialGadget<M, N> {
+    type CFScalarVar;
+
+    fn to_cyclefold_inputs(
+        U: Self::RU,
+        u: Self::IU,
+        UU: Self::RU,
+        rho: Self::Challenge,
+    ) -> Result<Vec<Vec<Self::CFScalarVar>>, SynthesisError>;
+}
 
 pub struct CycleFoldBasedIVC<FS1, FS2> {
     _fs1: PhantomData<FS1>,

@@ -1,11 +1,12 @@
 use ark_ff::PrimeField;
-use sonobe_primitives::{commitments::VectorCommitment, transcripts::Absorbable};
+use ark_std::log2;
+use sonobe_primitives::{arithmetizations::{ArithConfig, ccs::CCSConfig}, commitments::VectorCommitment, traits::Dummy, transcripts::Absorbable};
 
 use crate::FoldingInstance;
 
 pub mod circuits;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LCCCSInstance<VC: VectorCommitment> {
     pub cm: VC::Commitment,
     pub u: VC::Scalar,
@@ -17,6 +18,22 @@ pub struct LCCCSInstance<VC: VectorCommitment> {
 impl<VC: VectorCommitment> FoldingInstance<VC> for LCCCSInstance<VC> {
     fn commitments(&self) -> Vec<&VC::Commitment> {
         vec![&self.cm]
+    }
+
+    fn public_inputs(&self) -> &[<VC as VectorCommitment>::Scalar] {
+        &self.x
+    }
+}
+
+impl<VC: VectorCommitment> Dummy<&CCSConfig<VC::Scalar>> for LCCCSInstance<VC> {
+    fn dummy(cfg: &CCSConfig<VC::Scalar>) -> Self {
+        Self {
+            cm: Default::default(),
+            u: Default::default(),
+            x: vec![Default::default(); cfg.n_public_inputs()],
+            r_x: vec![Default::default(); log2(cfg.n_constraints()) as usize],
+            v: vec![Default::default(); cfg.t],
+        }
     }
 }
 
@@ -32,7 +49,7 @@ impl<F: PrimeField, VC: VectorCommitment<Scalar: Absorbable<F>, Commitment: Abso
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CCCSInstance<VC: VectorCommitment> {
     pub cm: VC::Commitment,
     pub x: Vec<VC::Scalar>,
@@ -41,6 +58,19 @@ pub struct CCCSInstance<VC: VectorCommitment> {
 impl<VC: VectorCommitment> FoldingInstance<VC> for CCCSInstance<VC> {
     fn commitments(&self) -> Vec<&VC::Commitment> {
         vec![&self.cm]
+    }
+
+    fn public_inputs(&self) -> &[<VC as VectorCommitment>::Scalar] {
+        &self.x
+    }
+}
+
+impl<VC: VectorCommitment, Cfg: ArithConfig> Dummy<&Cfg> for CCCSInstance<VC> {
+    fn dummy(cfg: &Cfg) -> Self {
+        Self {
+            cm: Default::default(),
+            x: vec![Default::default(); cfg.n_public_inputs()],
+        }
     }
 }
 

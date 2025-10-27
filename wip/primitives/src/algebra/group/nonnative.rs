@@ -103,7 +103,7 @@ impl<C: SonobeCurve> NonNativeAffineVar<C> {
     }
 }
 
-impl<C: SonobeCurve> AbsorbableGadget<FpVar<C::ScalarField>> for NonNativeAffineVar<C> {
+impl<C: SonobeCurve> AbsorbableGadget<C::ScalarField> for NonNativeAffineVar<C> {
     fn absorb_into(&self, dest: &mut Vec<FpVar<C::ScalarField>>) -> Result<(), SynthesisError> {
         (&self.x, &self.y).absorb_into(dest)
     }

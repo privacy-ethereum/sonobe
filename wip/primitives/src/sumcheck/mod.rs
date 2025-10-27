@@ -159,7 +159,8 @@ impl IOPSumCheck {
                     .for_each(|(products_sum, sum)| *products_sum += sum);
             });
 
-            let prover_poly = compute_lagrange_interpolated_poly(&products_sum).coeffs;
+            let mut prover_poly = compute_lagrange_interpolated_poly(&products_sum).coeffs;
+            prover_poly.resize(poly.aux_info.max_degree + 1, F::ZERO);
             transcript.add(&prover_poly);
             prover_msgs.push(prover_poly);
 

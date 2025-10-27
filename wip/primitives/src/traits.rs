@@ -13,9 +13,15 @@ impl<T: Default + Clone> Dummy<usize> for Vec<T> {
     }
 }
 
-impl<T: Default> Dummy<()> for T {
-    fn dummy(_: ()) -> Self {
-        Default::default()
+impl<Cfg, T: Dummy<Cfg> + Copy, const N: usize> Dummy<Cfg> for [T; N] {
+    fn dummy(cfg: Cfg) -> Self {
+        [T::dummy(cfg); N]
+    }
+}
+
+impl<Cfg: Copy, A: Dummy<Cfg>, B: Dummy<Cfg>> Dummy<Cfg> for (A, B) {
+    fn dummy(cfg: Cfg) -> Self {
+        (A::dummy(cfg), B::dummy(cfg))
     }
 }
 

@@ -21,11 +21,12 @@ use super::{Error, VectorCommitment};
 use crate::traits::CF1;
 use crate::{
     algebra::field::nonnative2::NonNativeFieldVar,
-    commitments::{Null, VectorCommitmentGadget},
+    commitments::{VectorCommitmentGadget},
     traits::{SonobeCurve, CF2},
 };
+use crate::utils::null::Null;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Pedersen<C: SonobeCurve, const H: bool> {
     _c: PhantomData<C>,
 }
@@ -108,6 +109,7 @@ impl<C: SonobeCurve> VectorCommitment for Pedersen<C, true> {
     }
 }
 
+#[derive(Clone)]
 pub struct PedersenGadget<C: SonobeCurve, const H: bool> {
     _c: PhantomData<C>,
 }

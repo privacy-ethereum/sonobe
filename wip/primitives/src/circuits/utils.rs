@@ -2,9 +2,8 @@ use ark_ff::{Field, PrimeField};
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::AllocatedFp};
 use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError, Variable};
 
-use crate::arithmetizations::r1cs::R1CS;
-
 use super::Assignments;
+use crate::arithmetizations::r1cs::{R1CSConfig, R1CS};
 
 pub struct CircuitForTest<F: PrimeField> {
     pub x: F,
@@ -63,7 +62,7 @@ pub fn constraints_for_test<F: Field>() -> R1CS<F> {
         vec![(F::one(), 2)],
     ];
 
-    R1CS::<F>::new((4, 6, 1), [A, B, C])
+    R1CS::<F>::new(R1CSConfig::new(4, 6, 1), [A, B, C])
 }
 
 pub fn satisfying_assignments_for_test<F: Field>(x: F) -> Assignments<F, Vec<F>> {

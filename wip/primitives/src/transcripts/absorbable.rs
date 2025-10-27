@@ -1,3 +1,5 @@
+use ark_ff::PrimeField;
+use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::SynthesisError;
 
 pub trait Absorbable<F> {
@@ -53,43 +55,43 @@ impl<F, T: Absorbable<F>> Absorbable<F> for Vec<T> {
 /// is `F`.
 ///
 /// Matches `AbsorbGadget` in `ark-crypto-primitives`.
-pub trait AbsorbableGadget<FV> {
-    fn absorb_into(&self, dest: &mut Vec<FV>) -> Result<(), SynthesisError>;
+pub trait AbsorbableGadget<F: PrimeField> {
+    fn absorb_into(&self, dest: &mut Vec<FpVar<F>>) -> Result<(), SynthesisError>;
 
-    fn to_absorbable(&self) -> Result<Vec<FV>, SynthesisError> {
+    fn to_absorbable(&self) -> Result<Vec<FpVar<F>>, SynthesisError> {
         let mut result = Vec::new();
         self.absorb_into(&mut result)?;
         Ok(result)
     }
 }
 
-impl<FV, T: AbsorbableGadget<FV>> AbsorbableGadget<FV> for &T {
-    fn absorb_into(&self, dest: &mut Vec<FV>) -> Result<(), SynthesisError> {
-        <T as AbsorbableGadget<FV>>::absorb_into(self, dest)
+impl<F: PrimeField, T: AbsorbableGadget<F>> AbsorbableGadget<F> for &T {
+    fn absorb_into(&self, dest: &mut Vec<FpVar<F>>) -> Result<(), SynthesisError> {
+        <T as AbsorbableGadget<F>>::absorb_into(self, dest)
     }
 }
 
-impl<FV, T: AbsorbableGadget<FV>> AbsorbableGadget<FV> for (T, T) {
-    fn absorb_into(&self, dest: &mut Vec<FV>) -> Result<(), SynthesisError> {
+impl<F: PrimeField, T: AbsorbableGadget<F>> AbsorbableGadget<F> for (T, T) {
+    fn absorb_into(&self, dest: &mut Vec<FpVar<F>>) -> Result<(), SynthesisError> {
         self.0.absorb_into(dest)?;
         self.1.absorb_into(dest)
     }
 }
 
-impl<FV, T: AbsorbableGadget<FV>> AbsorbableGadget<FV> for [T] {
-    fn absorb_into(&self, dest: &mut Vec<FV>) -> Result<(), SynthesisError> {
+impl<F: PrimeField, T: AbsorbableGadget<F>> AbsorbableGadget<F> for [T] {
+    fn absorb_into(&self, dest: &mut Vec<FpVar<F>>) -> Result<(), SynthesisError> {
         self.iter().try_for_each(|t| t.absorb_into(dest))
     }
 }
 
-impl<FV, T: AbsorbableGadget<FV>, const N: usize> AbsorbableGadget<FV> for [T; N] {
-    fn absorb_into(&self, dest: &mut Vec<FV>) -> Result<(), SynthesisError> {
-        <[T] as AbsorbableGadget<FV>>::absorb_into(self, dest)
+impl<F: PrimeField, T: AbsorbableGadget<F>, const N: usize> AbsorbableGadget<F> for [T; N] {
+    fn absorb_into(&self, dest: &mut Vec<FpVar<F>>) -> Result<(), SynthesisError> {
+        <[T] as AbsorbableGadget<F>>::absorb_into(self, dest)
     }
 }
 
-impl<FV, T: AbsorbableGadget<FV>> AbsorbableGadget<FV> for Vec<T> {
-    fn absorb_into(&self, dest: &mut Vec<FV>) -> Result<(), SynthesisError> {
-        <[T] as AbsorbableGadget<FV>>::absorb_into(self, dest)
+impl<F: PrimeField, T: AbsorbableGadget<F>> AbsorbableGadget<F> for Vec<T> {
+    fn absorb_into(&self, dest: &mut Vec<FpVar<F>>) -> Result<(), SynthesisError> {
+        <[T] as AbsorbableGadget<F>>::absorb_into(self, dest)
     }
 }

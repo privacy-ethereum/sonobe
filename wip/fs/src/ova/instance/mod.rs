@@ -1,16 +1,18 @@
 use ark_ff::{Field, PrimeField};
 use ark_r1cs_std::alloc::AllocVar;
 use ark_std::borrow::Borrow;
-
-use sonobe_primitives::commitments::VectorCommitmentGadget;
-use sonobe_primitives::transcripts::AbsorbableGadget;
-use sonobe_primitives::{commitments::VectorCommitment, transcripts::Absorbable};
+use sonobe_primitives::{
+    arithmetizations::ArithConfig,
+    commitments::{VectorCommitment, VectorCommitmentGadget},
+    traits::Dummy,
+    transcripts::{Absorbable, AbsorbableGadget},
+};
 
 use crate::{FoldingInstance, FoldingInstanceVar};
 
 pub mod circuits;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RunningInstance<VC: VectorCommitment> {
     pub u: VC::Scalar,
     pub cm: VC::Commitment,
@@ -20,6 +22,20 @@ pub struct RunningInstance<VC: VectorCommitment> {
 impl<VC: VectorCommitment> FoldingInstance<VC> for RunningInstance<VC> {
     fn commitments(&self) -> Vec<&VC::Commitment> {
         vec![&self.cm]
+    }
+
+    fn public_inputs(&self) -> &[<VC as VectorCommitment>::Scalar] {
+        &self.x
+    }
+}
+
+impl<VC: VectorCommitment, Cfg: ArithConfig> Dummy<&Cfg> for RunningInstance<VC> {
+    fn dummy(cfg: &Cfg) -> Self {
+        Self {
+            u: Default::default(),
+            cm: Default::default(),
+            x: vec![Default::default(); cfg.n_public_inputs()],
+        }
     }
 }
 

@@ -1,4 +1,6 @@
+use std::fmt::Debug;
 use ark_ff::{Field, PrimeField};
+use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError, SynthesisMode,
@@ -9,6 +11,7 @@ use ark_std::{
 };
 
 pub mod utils;
+pub mod var;
 
 /// FCircuit defines the trait of the circuit of the F function, which is the one being folded (ie.
 /// inside the agmented F' function).
@@ -22,6 +25,8 @@ pub trait FCircuit {
     type Field: PrimeField;
     type ExternalInputs;
 
+    fn dummy_external_inputs(&self) -> Self::ExternalInputs;
+
     /// returns the number of elements in the state of the FCircuit, which corresponds to the
     /// FCircuit inputs.
     fn state_len(&self) -> usize;
@@ -32,7 +37,7 @@ pub trait FCircuit {
         // can hold a state if needed to store data to generate the constraints.
         &self,
         cs: ConstraintSystemRef<Self::Field>,
-        i: usize,
+        i: FpVar<Self::Field>,
         z_i: Vec<FpVar<Self::Field>>,
         external_inputs: Self::ExternalInputs, // inputs that are not part of the state
     ) -> Result<Vec<FpVar<Self::Field>>, SynthesisError>;

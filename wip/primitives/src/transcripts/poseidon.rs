@@ -48,7 +48,7 @@ impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
 impl<F: PrimeField> TranscriptVar<F> for PoseidonSpongeVar<F> {
     type Native = PoseidonSponge<F>;
 
-    fn add<A: AbsorbableGadget<FpVar<F>>>(&mut self, input: &A) -> Result<(), SynthesisError> {
+    fn add<A: AbsorbableGadget<F>>(&mut self, input: &A) -> Result<(), SynthesisError> {
         self.absorb(&input.to_absorbable()?)
     }
 

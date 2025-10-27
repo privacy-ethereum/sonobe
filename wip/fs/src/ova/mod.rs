@@ -1,7 +1,7 @@
 use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, Field, One, PrimeField};
-use ark_r1cs_std::{boolean::Boolean, convert::ToBitsGadget, fields::fp::FpVar};
-use ark_relations::gr1cs::SynthesisError;
+use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, convert::ToBitsGadget, fields::fp::FpVar};
+use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::{
     borrow::Borrow,
     cfg_iter,
@@ -20,7 +20,7 @@ use sonobe_primitives::{
         r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
         ArithRelation,
     },
-    circuits::{Assignments, AssignmentsOwned},
+    circuits::{var::Var, Assignments, AssignmentsOwned},
     commitments::{VectorCommitment, VectorCommitmentGadget},
     relations::{Relation, WitnessInstanceSampler},
     traits::{SonobeCurve, SonobeField},
@@ -269,14 +269,15 @@ pub struct AbstractOvaGadget<VC, TF, const CHALLENGE_BITS: usize = 128> {
     _tf: PhantomData<TF>,
 }
 
-impl<VC: VectorCommitmentGadget, TF: SonobeField, const CHALLENGE_BITS: usize>
-    FoldingSchemePartialGadget<1, 1> for AbstractOvaGadget<VC, TF, CHALLENGE_BITS>
+impl<VC, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingSchemePartialGadget<1, 1>
+    for AbstractOvaGadget<VC, TF, CHALLENGE_BITS>
 where
+    VC: VectorCommitmentGadget<ConstraintField = TF>,
     <VC::Native as VectorCommitment>::Scalar: SonobeField + Absorbable<TF>,
-    VC::ScalarVar: AbsorbableGadget<FpVar<TF>> + FromBitsGadget<TF> + ToBitsGadget<TF>,
+    VC::ScalarVar: AbsorbableGadget<TF> + FromBitsGadget<TF> + ToBitsGadget<TF>,
     <VC::Native as VectorCommitment>::Commitment:
         SonobeCurve<ScalarField = <VC::Native as VectorCommitment>::Scalar> + Absorbable<TF>,
-    VC::CommitmentVar: AbsorbableGadget<FpVar<TF>>,
+    VC::CommitmentVar: AbsorbableGadget<TF>,
 {
     type Native = AbstractOva<VC::Native, TF, CHALLENGE_BITS>;
 
@@ -285,7 +286,6 @@ where
     type RU = RUVar<VC>;
     type IW = IWVar<VC>;
     type IU = IUVar<VC>;
-    type TranscriptField = TF;
     type VerifierKey = ();
     type Challenge = Vec<Boolean<TF>>;
     type Proof = VC::CommitmentVar;
@@ -293,13 +293,13 @@ where
 
     fn verify_hinted(
         _vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptVar<Self::TranscriptField>,
-        Us: &[Self::RU; 1],
-        us: &[Self::IU; 1],
+        transcript: &mut impl TranscriptVar<TF>,
+        Us: &[impl Borrow<Self::RU>; 1],
+        us: &[impl Borrow<Self::IU>; 1],
         cm: &Self::Proof,
         folded_cm: Self::Hint,
     ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
-        let (U, u) = (&Us[0], &us[0]);
+        let (U, u) = (Us[0].borrow(), us[0].borrow());
 
         let rho_bits = {
             transcript.add(&U)?;
@@ -327,30 +327,35 @@ where
     }
 }
 
-impl<VC: VectorCommitmentGadget, TF: SonobeField, const CHALLENGE_BITS: usize>
-    FoldingSchemeFullGadget<1, 1> for AbstractOvaGadget<VC, TF, CHALLENGE_BITS>
+impl<VC, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingSchemeFullGadget<1, 1>
+    for AbstractOvaGadget<VC, TF, CHALLENGE_BITS>
 where
+    VC: VectorCommitmentGadget<ConstraintField = TF>,
     <VC::Native as VectorCommitment>::Scalar: SonobeField + Absorbable<TF>,
-    VC::ScalarVar: AbsorbableGadget<FpVar<TF>> + FromBitsGadget<TF> + ToBitsGadget<TF>,
+    VC::ScalarVar: AbsorbableGadget<TF> + FromBitsGadget<TF> + ToBitsGadget<TF>,
     <VC::Native as VectorCommitment>::Commitment:
         SonobeCurve<ScalarField = <VC::Native as VectorCommitment>::Scalar> + Absorbable<TF>,
-    VC::CommitmentVar: AbsorbableGadget<FpVar<TF>>
+    VC::CommitmentVar: AbsorbableGadget<TF>
         + PointScalarMulGadget<TF>
         + Add<Output = VC::CommitmentVar>
         + for<'a> Add<&'a VC::CommitmentVar, Output = VC::CommitmentVar>,
 {
     fn verify(
         vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptVar<Self::TranscriptField>,
-        Us: &[Self::RU; 1],
-        us: &[Self::IU; 1],
+        transcript: &mut impl TranscriptVar<TF>,
+        Us: &[impl Borrow<Self::RU>; 1],
+        us: &[impl Borrow<Self::IU>; 1],
         cm: &Self::Proof,
     ) -> Result<Self::RU, SynthesisError>
     where
         VC::CommitmentVar: PointScalarMulGadget<TF>,
     {
-        let (mut U, rho_bits) = Self::verify_hinted(vk, transcript, Us, us, cm, Us[0].cm.clone())?;
-        U.cm = U.cm + cm.mul_scalar(&rho_bits)?;
+        let dummy_hint = AllocVar::new_constant(
+            ConstraintSystemRef::None,
+            <VC::Native as VectorCommitment>::Commitment::default(),
+        )?;
+        let (mut U, rho_bits) = Self::verify_hinted(vk, transcript, Us, us, cm, dummy_hint)?;
+        U.cm = cm.mul_scalar(&rho_bits)? + &Us[0].borrow().cm;
 
         Ok(U)
     }

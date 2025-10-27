@@ -3,12 +3,15 @@ use ark_poly::{DenseMultilinearExtension as MLE, MultilinearExtension};
 use ark_std::{
     borrow::Borrow, cfg_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
 };
+use instance::{CCCSInstance as IU, LCCCSInstance as RU};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-
 use sonobe_primitives::{
     algebra::ops::rlc::{ScalarRLC, SliceRLC},
-    arithmetizations::{ccs::CCS, Arith, ArithRelation, Error as ArithError},
+    arithmetizations::{
+        ccs::{CCSConfig, CCS},
+        Arith, ArithConfig, ArithRelation, Error as ArithError,
+    },
     circuits::{Assignments, AssignmentsOwned},
     commitments::VectorCommitment,
     relations::{Relation, WitnessInstanceSampler},
@@ -16,14 +19,12 @@ use sonobe_primitives::{
         utils::{build_eq_x_r_vec, eq_eval, VPAuxInfo, VirtualPolynomial},
         IOPProof, IOPSumCheck,
     },
-    traits::{SonobeCurve, SonobeField},
+    traits::{Dummy, SonobeCurve, SonobeField},
     transcripts::{Absorbable, Transcript},
 };
+use witness::{CCCSWitness as IW, LCCCSWitness as RW};
 
 use crate::{Error, FoldingScheme, PlainInstance as PU, PlainWitness as PW};
-
-use instance::{CCCSInstance as IU, LCCCSInstance as RU};
-use witness::{CCCSWitness as IW, LCCCSWitness as RW};
 
 pub mod instance;
 pub mod witness;
@@ -38,8 +39,10 @@ impl<VC: VectorCommitment<Scalar: Field>> ArithRelation<RW<VC>, RU<VC>> for CCS<
 
     fn eval_relation(&self, w: &RW<VC>, u: &RU<VC>) -> Result<Self::Evaluation, ArithError> {
         let z = Assignments::from((u.u, &u.x, &w.w));
-        Ok((0..self.t)
-            .map(|i| self.mle(i, z.clone()).fix_variables(&u.r_x)[0])
+        Ok(self
+            .mles(z)
+            .iter()
+            .map(|mle| mle.fix_variables(&u.r_x)[0])
             .collect())
     }
 
@@ -109,9 +112,7 @@ impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<V
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC>, PU<VC>>
-    for HyperNovaKey<A, VC>
-{
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC>, PU<VC>> for HyperNovaKey<A, VC> {
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
@@ -156,10 +157,27 @@ where
     }
 }
 
-pub struct NIMFSProof<F> {
+#[derive(Clone)]
+pub struct NIMFSProof<F, const M: usize, const N: usize> {
     pub sc_proof: IOPProof<F>,
     pub sigmas: Vec<F>,
     pub thetas: Vec<F>,
+}
+
+impl<F: Field, const M: usize, const N: usize> Dummy<&CCSConfig<F>> for NIMFSProof<F, M, N> {
+    fn dummy(cfg: &CCSConfig<F>) -> Self {
+        let s = log2(cfg.n_constraints()) as usize;
+        let d = cfg.degree();
+        let t = cfg.t;
+        Self {
+            sc_proof: IOPProof {
+                point: vec![F::zero(); s],
+                proofs: vec![vec![F::zero(); d + 2]; s],
+            },
+            sigmas: vec![F::zero(); t * M],
+            thetas: vec![F::zero(); t * N],
+        }
+    }
 }
 
 pub struct HyperNova<VC, const CHALLENGE_BITS: usize = 128> {
@@ -184,10 +202,10 @@ where
     type Config = usize;
     type PublicParam = VC::Key;
     type ProverKey = HyperNovaKey<Self::Arith, VC>;
-    type VerifierKey = CCS<VC::Scalar>;
+    type VerifierKey = CCSConfig<VC::Scalar>;
     type DeciderKey = HyperNovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
-    type Proof = NIMFSProof<VC::Scalar>;
+    type Proof = NIMFSProof<VC::Scalar, M, N>;
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         let ck = VC::generate_key(&mut rng, ck_len)?;
@@ -205,17 +223,7 @@ where
                 arith: ccs.clone(),
                 ck: ck.clone(),
             },
-            CCS {
-                m: ccs.n_constraints(),
-                n: ccs.n_variables(),
-                l: ccs.n_public_inputs(),
-                s: ccs.s,
-                t: ccs.t,
-                d: ccs.degree(),
-                S: ccs.S.clone(),
-                c: ccs.c.clone(),
-                M: vec![],
-            },
+            ccs.config().clone(),
             HyperNovaKey { arith: ccs, ck },
         ))
     }
@@ -235,6 +243,11 @@ where
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
         let ccs = &pk.arith;
+        let d = ccs.degree();
+        let t = ccs.config().t;
+        let s = log2(ccs.n_constraints()) as usize;
+        let S = &ccs.config().S;
+        let c = &ccs.config().c;
 
         // absorb instances to transcript
         transcript.add(&Us[..]);
@@ -242,37 +255,37 @@ where
 
         // Step 1: Get some challenges
         let gamma = transcript.challenge_field_element();
-        let beta = transcript.challenge_field_elements(ccs.s);
+        let beta = transcript.challenge_field_elements(s);
 
-        let gamma_powers = pows(gamma, M * ccs.t + N);
-        let (running_gammas, incoming_gammas) = gamma_powers.split_at(M * ccs.t);
+        let gamma_powers = pows(gamma, M * t + N);
+        let (running_gammas, incoming_gammas) = gamma_powers.split_at(M * t);
 
         // Compute g(x)
         let running_mles = Ws
             .iter()
             .zip(Us)
-            .flat_map(|(W, U)| (0..ccs.t).map(|i| ccs.mle(i, (U.u, &U.x, &W.w).into())));
+            .flat_map(|(W, U)| ccs.mles((U.u, &U.x, &W.w).into()));
         let incoming_mles = ws
             .iter()
             .zip(us)
-            .flat_map(|(w, u)| (0..ccs.t).map(|i| ccs.mle(i, (One::one(), &u.x, &w.w).into())));
+            .flat_map(|(w, u)| ccs.mles((One::one(), &u.x, &w.w).into()));
         let eq_mles = Us
             .iter()
             .map(|U| &U.r_x)
             .chain([&beta])
-            .map(|r| MLE::from_evaluations_vec(ccs.s, build_eq_x_r_vec(r)));
+            .map(|r| MLE::from_evaluations_vec(s, build_eq_x_r_vec(r)));
 
         let running_products = running_gammas
             .iter()
             .enumerate()
-            .map(|(i, &gamma)| (gamma, vec![i, (M + N) * ccs.t + i / ccs.t]));
+            .map(|(i, &gamma)| (gamma, vec![i, (M + N) * t + i / t]));
         let incoming_products = incoming_gammas.iter().enumerate().flat_map(|(k, gamma)| {
-            ccs.S.iter().zip(&ccs.c).map(move |(S_i, &c_i)| {
+            S.iter().zip(c).map(move |(S_i, &c_i)| {
                 (
                     c_i * gamma,
                     S_i.iter()
-                        .map(|j| (M + k) * ccs.t + j)
-                        .chain([(M + N) * ccs.t + M])
+                        .map(|j| (M + k) * t + j)
+                        .chain([(M + N) * t + M])
                         .collect(),
                 )
             })
@@ -280,8 +293,8 @@ where
 
         let g = VirtualPolynomial {
             aux_info: VPAuxInfo {
-                num_variables: ccs.s,
-                max_degree: ccs.degree() + 1,
+                num_variables: s,
+                max_degree: d + 1,
             },
             flattened_ml_extensions: running_mles.chain(incoming_mles).chain(eq_mles).collect(),
             products: running_products.chain(incoming_products).collect(),
@@ -294,11 +307,11 @@ where
         let r_x_prime = sumcheck_proof.point.clone();
 
         // Step 4: compute sigmas and thetas
-        let sigmas = mles[0..ccs.t * M]
+        let sigmas = mles[0..t * M]
             .iter()
             .map(|mle| mle.fix_variables(&[])[0])
             .collect::<Vec<_>>();
-        let thetas = mles[ccs.t * M..ccs.t * (M + N)]
+        let thetas = mles[t * M..t * (M + N)]
             .iter()
             .map(|mle| mle.fix_variables(&[])[0])
             .collect::<Vec<_>>();
@@ -340,8 +353,8 @@ where
                     .slice_rlc(&rho_powers),
                 r_x: r_x_prime,
                 v: sigmas
-                    .chunks(ccs.t)
-                    .chain(thetas.chunks(ccs.t))
+                    .chunks(t)
+                    .chain(thetas.chunks(t))
                     .slice_rlc(&rho_powers),
             },
             NIMFSProof {
@@ -354,7 +367,7 @@ where
     }
 
     fn verify(
-        ccs: &Self::VerifierKey,
+        ccs_config: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
@@ -363,19 +376,25 @@ where
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
+        let d = ccs_config.degree();
+        let t = ccs_config.t;
+        let s = log2(ccs_config.n_constraints()) as usize;
+        let S = &ccs_config.S;
+        let c = &ccs_config.c;
+
         // absorb instances to transcript
         transcript.add(&Us[..]);
         transcript.add(&us[..]);
 
         // Step 1: Get some challenges
         let gamma = transcript.challenge_field_element();
-        let beta = transcript.challenge_field_elements(ccs.s);
+        let beta = transcript.challenge_field_elements(s);
 
-        let gamma_powers = pows(gamma, M * ccs.t + N);
+        let gamma_powers = pows(gamma, M * t + N);
 
         let vp_aux_info = VPAuxInfo {
-            max_degree: ccs.degree() + 1,
-            num_variables: ccs.s,
+            max_degree: d + 1,
+            num_variables: s,
         };
 
         // Step 3: Start verifying the sumcheck
@@ -383,7 +402,7 @@ where
         let mut sum_v_j_gamma = VC::Scalar::zero();
         for (i, U) in Us.iter().enumerate() {
             for j in 0..U.v.len() {
-                sum_v_j_gamma += U.v[j] * gamma_powers[i * ccs.t + j];
+                sum_v_j_gamma += U.v[j] * gamma_powers[i * t + j];
             }
         }
 
@@ -399,17 +418,16 @@ where
             let e2 = eq_eval(&beta, &r_x_prime);
             proof
                 .sigmas
-                .chunks(ccs.t)
+                .chunks(t)
                 .zip(Us)
                 .flat_map(|(sigmas, u)| {
                     let e_lcccs = eq_eval(&u.r_x, &r_x_prime);
                     sigmas.iter().map(move |sigma_j| e_lcccs * sigma_j)
                 })
-                .chain(proof.thetas.chunks(ccs.t).map(|thetas| {
-                    e2 * ccs
-                        .S
+                .chain(proof.thetas.chunks(t).map(|thetas| {
+                    e2 * S
                         .iter()
-                        .zip(&ccs.c)
+                        .zip(c)
                         .map(|(S_i, &c_i)| {
                             c_i * S_i.iter().map(|&j| thetas[j]).product::<VC::Scalar>()
                         })
@@ -448,8 +466,8 @@ where
             r_x: r_x_prime,
             v: proof
                 .sigmas
-                .chunks(ccs.t)
-                .chain(proof.thetas.chunks(ccs.t))
+                .chunks(t)
+                .chain(proof.thetas.chunks(t))
                 .slice_rlc(&rho_powers),
         })
     }
@@ -477,10 +495,10 @@ where
     type Config = usize;
     type PublicParam = VC::Key;
     type ProverKey = HyperNovaKey<Self::Arith, VC>;
-    type VerifierKey = CCS<VC::Scalar>;
+    type VerifierKey = CCSConfig<VC::Scalar>;
     type DeciderKey = HyperNovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
-    type Proof = ([VC::Commitment; N], NIMFSProof<VC::Scalar>);
+    type Proof = ([VC::Commitment; N], NIMFSProof<VC::Scalar, M, N>);
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         let ck = VC::generate_key(&mut rng, ck_len)?;
@@ -498,17 +516,7 @@ where
                 arith: ccs.clone(),
                 ck: ck.clone(),
             },
-            CCS {
-                m: ccs.n_constraints(),
-                n: ccs.n_variables(),
-                l: ccs.n_public_inputs(),
-                s: ccs.s,
-                t: ccs.t,
-                d: ccs.degree(),
-                S: ccs.S.clone(),
-                c: ccs.c.clone(),
-                M: vec![],
-            },
+            ccs.config().clone(),
             HyperNovaKey { arith: ccs, ck },
         ))
     }
@@ -528,6 +536,11 @@ where
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
         let ccs = &pk.arith;
+        let d = ccs.degree();
+        let t = ccs.config().t;
+        let s = log2(ccs.n_constraints()) as usize;
+        let S = &ccs.config().S;
+        let c = &ccs.config().c;
 
         let mut cms = [VC::Commitment::default(); N];
         let mut rs = [VC::Randomness::default(); N];
@@ -544,37 +557,37 @@ where
 
         // Step 1: Get some challenges
         let gamma = transcript.challenge_field_element();
-        let beta = transcript.challenge_field_elements(ccs.s);
+        let beta = transcript.challenge_field_elements(s);
 
-        let gamma_powers = pows(gamma, M * ccs.t + N);
-        let (running_gammas, incoming_gammas) = gamma_powers.split_at(M * ccs.t);
+        let gamma_powers = pows(gamma, M * t + N);
+        let (running_gammas, incoming_gammas) = gamma_powers.split_at(M * t);
 
         // Compute g(x)
         let running_mles = Ws
             .iter()
             .zip(Us)
-            .flat_map(|(W, U)| (0..ccs.t).map(|i| ccs.mle(i, (U.u, &U.x, &W.w).into())));
+            .flat_map(|(W, U)| ccs.mles((U.u, &U.x, &W.w).into()));
         let incoming_mles = ws
             .iter()
             .zip(us)
-            .flat_map(|(w, u)| (0..ccs.t).map(move |i| ccs.mle(i, (One::one(), &u[..], &w[..]).into())));
+            .flat_map(|(w, u)| ccs.mles((One::one(), &u[..], &w[..]).into()));
         let eq_mles = Us
             .iter()
             .map(|U| &U.r_x)
             .chain([&beta])
-            .map(|r| MLE::from_evaluations_vec(ccs.s, build_eq_x_r_vec(r)));
+            .map(|r| MLE::from_evaluations_vec(s, build_eq_x_r_vec(r)));
 
         let running_products = running_gammas
             .iter()
             .enumerate()
-            .map(|(i, &gamma)| (gamma, vec![i, (M + N) * ccs.t + i / ccs.t]));
+            .map(|(i, &gamma)| (gamma, vec![i, (M + N) * t + i / t]));
         let incoming_products = incoming_gammas.iter().enumerate().flat_map(|(k, gamma)| {
-            ccs.S.iter().zip(&ccs.c).map(move |(S_i, &c_i)| {
+            S.iter().zip(c).map(move |(S_i, &c_i)| {
                 (
                     c_i * gamma,
                     S_i.iter()
-                        .map(|j| (M + k) * ccs.t + j)
-                        .chain([(M + N) * ccs.t + M])
+                        .map(|j| (M + k) * t + j)
+                        .chain([(M + N) * t + M])
                         .collect(),
                 )
             })
@@ -582,8 +595,8 @@ where
 
         let g = VirtualPolynomial {
             aux_info: VPAuxInfo {
-                num_variables: ccs.s,
-                max_degree: ccs.degree() + 1,
+                num_variables: s,
+                max_degree: d + 1,
             },
             flattened_ml_extensions: running_mles.chain(incoming_mles).chain(eq_mles).collect(),
             products: running_products.chain(incoming_products).collect(),
@@ -596,11 +609,11 @@ where
         let r_x_prime = sumcheck_proof.point.clone();
 
         // Step 4: compute sigmas and thetas
-        let sigmas = mles[0..ccs.t * M]
+        let sigmas = mles[0..t * M]
             .iter()
             .map(|mle| mle.fix_variables(&[])[0])
             .collect::<Vec<_>>();
-        let thetas = mles[ccs.t * M..ccs.t * (M + N)]
+        let thetas = mles[t * M..t * (M + N)]
             .iter()
             .map(|mle| mle.fix_variables(&[])[0])
             .collect::<Vec<_>>();
@@ -638,8 +651,8 @@ where
                     .slice_rlc(&rho_powers),
                 r_x: r_x_prime,
                 v: sigmas
-                    .chunks(ccs.t)
-                    .chain(thetas.chunks(ccs.t))
+                    .chunks(t)
+                    .chain(thetas.chunks(t))
                     .slice_rlc(&rho_powers),
             },
             (
@@ -655,7 +668,7 @@ where
     }
 
     fn verify(
-        ccs: &Self::VerifierKey,
+        ccs_config: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
@@ -664,6 +677,12 @@ where
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
+        let d = ccs_config.degree();
+        let t = ccs_config.t;
+        let s = log2(ccs_config.n_constraints()) as usize;
+        let S = &ccs_config.S;
+        let c = &ccs_config.c;
+
         // absorb instances to transcript
         transcript.add(&Us[..]);
         transcript.add(&us[..]);
@@ -671,13 +690,13 @@ where
 
         // Step 1: Get some challenges
         let gamma = transcript.challenge_field_element();
-        let beta = transcript.challenge_field_elements(ccs.s);
+        let beta = transcript.challenge_field_elements(s);
 
-        let gamma_powers = pows(gamma, M * ccs.t + N);
+        let gamma_powers = pows(gamma, M * t + N);
 
         let vp_aux_info = VPAuxInfo {
-            max_degree: ccs.degree() + 1,
-            num_variables: ccs.s,
+            max_degree: d + 1,
+            num_variables: s,
         };
 
         // Step 3: Start verifying the sumcheck
@@ -685,7 +704,7 @@ where
         let mut sum_v_j_gamma = VC::Scalar::zero();
         for (i, U) in Us.iter().enumerate() {
             for j in 0..U.v.len() {
-                sum_v_j_gamma += U.v[j] * gamma_powers[i * ccs.t + j];
+                sum_v_j_gamma += U.v[j] * gamma_powers[i * t + j];
             }
         }
 
@@ -701,17 +720,16 @@ where
             let e2 = eq_eval(&beta, &r_x_prime);
             proof
                 .sigmas
-                .chunks(ccs.t)
+                .chunks(t)
                 .zip(Us)
                 .flat_map(|(sigmas, u)| {
                     let e_lcccs = eq_eval(&u.r_x, &r_x_prime);
                     sigmas.iter().map(move |sigma_j| e_lcccs * sigma_j)
                 })
-                .chain(proof.thetas.chunks(ccs.t).map(|thetas| {
-                    e2 * ccs
-                        .S
+                .chain(proof.thetas.chunks(t).map(|thetas| {
+                    e2 * S
                         .iter()
-                        .zip(&ccs.c)
+                        .zip(c)
                         .map(|(S_i, &c_i)| {
                             c_i * S_i.iter().map(|&j| thetas[j]).product::<VC::Scalar>()
                         })
@@ -750,8 +768,8 @@ where
             r_x: r_x_prime,
             v: proof
                 .sigmas
-                .chunks(ccs.t)
-                .chain(proof.thetas.chunks(ccs.t))
+                .chunks(t)
+                .chain(proof.thetas.chunks(t))
                 .slice_rlc(&rho_powers),
         })
     }
@@ -770,15 +788,13 @@ mod tests {
     use ark_bn254::{Fr, G1Projective};
     use ark_ff::UniformRand;
     use ark_std::{error::Error, rand::Rng, test_rng};
-
     use sonobe_primitives::{
         circuits::utils::{satisfying_assignments_for_test, CircuitForTest},
         commitments::pedersen::Pedersen,
     };
 
-    use crate::tests::test_folding_scheme;
-
     use super::*;
+    use crate::tests::test_folding_scheme;
 
     fn test_hypernova_opt<const M: usize, const N: usize>(
         rounds: usize,

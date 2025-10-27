@@ -1,7 +1,7 @@
 use ark_relations::gr1cs::SynthesisError;
 use thiserror::Error;
 
-use crate::relations::Relation;
+use crate::{relations::Relation, traits::Dummy};
 
 pub mod ccs;
 pub mod r1cs;
@@ -18,9 +18,7 @@ pub enum Error {
     SynthesisError(#[from] SynthesisError),
 }
 
-/// [`Arith`] is a trait about constraint systems (R1CS, CCS, etc.), where we
-/// define methods for getting information about the constraint system.
-pub trait Arith: Clone {
+pub trait ArithConfig: Clone {
     /// Returns the degree of the constraint system
     fn degree(&self) -> usize;
 
@@ -36,6 +34,40 @@ pub trait Arith: Clone {
 
     /// Returns the number of witnesses / secret inputs in the constraint system
     fn n_witnesses(&self) -> usize;
+}
+
+/// [`Arith`] is a trait about constraint systems (R1CS, CCS, etc.), where we
+/// define methods for getting information about the constraint system.
+pub trait Arith: Clone {
+    type Config: ArithConfig;
+
+    fn config(&self) -> &Self::Config;
+
+    /// Returns the degree of the constraint system
+    fn degree(&self) -> usize {
+        self.config().degree()
+    }
+
+    /// Returns the number of constraints in the constraint system
+    fn n_constraints(&self) -> usize {
+        self.config().n_constraints()
+    }
+
+    /// Returns the number of variables in the constraint system
+    fn n_variables(&self) -> usize {
+        self.config().n_variables()
+    }
+
+    /// Returns the number of public inputs / public IO / instances / statements
+    /// in the constraint system
+    fn n_public_inputs(&self) -> usize {
+        self.config().n_public_inputs()
+    }
+
+    /// Returns the number of witnesses / secret inputs in the constraint system
+    fn n_witnesses(&self) -> usize {
+        self.config().n_witnesses()
+    }
 }
 
 /// `ArithRelation` *treats a constraint system as a relation* between a witness

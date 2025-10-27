@@ -1,5 +1,7 @@
-use ark_ff::Field;
-use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
+use ark_ff::{Field, PrimeField};
+use ark_r1cs_std::{
+    GR1CSVar, alloc::{AllocVar, AllocationMode}, eq::EqGadget, fields::fp::FpVar, select::CondSelectGadget
+};
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::{
     borrow::Borrow,
@@ -9,6 +11,8 @@ use ark_std::{
     rand::RngCore,
 };
 use thiserror::Error;
+
+use crate::{circuits::var::Var, transcripts::AbsorbableGadget};
 
 pub mod pedersen;
 // TODO: add back other commitment schemes
@@ -27,12 +31,12 @@ pub enum Error {
     CommitmentVerificationFail,
 }
 
-pub trait VectorCommitment: 'static + Debug + PartialEq {
+pub trait VectorCommitment: 'static + Clone + Debug + PartialEq {
     const IS_HIDING: bool;
 
     type Key;
-    type Scalar: Clone + Copy + Debug + PartialEq + Sync;
-    type Commitment: Default + Debug + PartialEq + Sync;
+    type Scalar: Clone + Copy + Default + Debug + PartialEq + Sync;
+    type Commitment: Clone + Default + Debug + PartialEq + Sync;
     type Randomness: Clone
         + Copy
         + Default
@@ -62,13 +66,17 @@ pub trait VectorCommitment: 'static + Debug + PartialEq {
     ) -> Result<bool, Error>;
 }
 
-pub trait VectorCommitmentGadget {
+pub trait VectorCommitmentGadget: Clone {
     type Native: VectorCommitment;
-    type ConstraintField: Field;
+    type ConstraintField: PrimeField;
 
     type KeyVar;
     type ScalarVar: Clone
-        + AllocVar<<Self::Native as VectorCommitment>::Scalar, Self::ConstraintField>
+        + GR1CSVar<Self::ConstraintField>
+        + EqGadget<Self::ConstraintField>
+        + AbsorbableGadget<Self::ConstraintField>
+        + CondSelectGadget<Self::ConstraintField>
+        + Var<Self::ConstraintField, Native = <Self::Native as VectorCommitment>::Scalar>
         + Add<Output = Self::IntermediateScalarVar>
         + for<'a> Add<&'a Self::ScalarVar, Output = Self::IntermediateScalarVar>
         + Mul<Output = Self::IntermediateScalarVar>
@@ -84,10 +92,12 @@ pub trait VectorCommitmentGadget {
         + Mul<Self::ScalarVar, Output = Self::IntermediateScalarVar>
         + for<'a> Mul<&'a Self::ScalarVar, Output = Self::IntermediateScalarVar>;
     type CommitmentVar: Clone
-        + AllocVar<<Self::Native as VectorCommitment>::Commitment, Self::ConstraintField>;
-    type RandomnessVar: AllocVar<
-        <Self::Native as VectorCommitment>::Randomness,
+        + AbsorbableGadget<Self::ConstraintField>
+        + CondSelectGadget<Self::ConstraintField>
+        + Var<Self::ConstraintField, Native = <Self::Native as VectorCommitment>::Commitment>;
+    type RandomnessVar: Var<
         Self::ConstraintField,
+        Native = <Self::Native as VectorCommitment>::Randomness,
     >;
 
     fn open(
@@ -96,57 +106,6 @@ pub trait VectorCommitmentGadget {
         r: &Self::RandomnessVar,
         cm: &Self::CommitmentVar,
     ) -> Result<(), SynthesisError>;
-}
-
-#[derive(Clone, Copy, Default, Debug)]
-pub struct Null;
-
-impl<F> Add<F> for Null {
-    type Output = Null;
-
-    fn add(self, _: F) -> Null {
-        Null
-    }
-}
-
-impl<F> Add<F> for &Null {
-    type Output = Null;
-
-    fn add(self, _: F) -> Null {
-        Null
-    }
-}
-
-impl<F> Mul<F> for Null {
-    type Output = Self;
-
-    fn mul(self, _: F) -> Null {
-        Null
-    }
-}
-
-impl<F> Mul<F> for &Null {
-    type Output = Null;
-
-    fn mul(self, _: F) -> Null {
-        Null
-    }
-}
-
-impl Sum for Null {
-    fn sum<I: Iterator<Item = Self>>(_: I) -> Self {
-        Null
-    }
-}
-
-impl<F: Field> AllocVar<Null, F> for Null {
-    fn new_variable<T: Borrow<Null>>(
-        _cs: impl Into<Namespace<F>>,
-        _f: impl FnOnce() -> Result<T, SynthesisError>,
-        _mode: AllocationMode,
-    ) -> Result<Self, SynthesisError> {
-        Ok(Self)
-    }
 }
 
 #[cfg(test)]

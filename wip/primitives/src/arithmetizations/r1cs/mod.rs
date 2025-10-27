@@ -5,21 +5,63 @@ use ark_std::{cfg_into_iter, cfg_iter, iterable::Iterable};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+use super::{ccs::CCS, Arith, ArithRelation, Error};
 use crate::{
+    arithmetizations::ArithConfig,
     circuits::{Assignments, ConstraintSystemExt},
     relations::WitnessInstanceExtractor,
     traits::Dummy,
 };
 
-use super::{ccs::CCS, Arith, ArithRelation, Error};
-
 pub mod circuits;
 
 #[derive(Debug, Clone, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct R1CS<F: Field> {
-    l: usize, // io len
+pub struct R1CSConfig {
     m: usize, // number of constraints
     n: usize, // number of variables
+    l: usize, // io len
+}
+
+impl R1CSConfig {
+    pub fn new(n_constraints: usize, n_variables: usize, n_public_inputs: usize) -> Self {
+        Self {
+            m: n_constraints,
+            n: n_variables,
+            l: n_public_inputs,
+        }
+    }
+}
+
+impl ArithConfig for R1CSConfig {
+    #[inline]
+    fn degree(&self) -> usize {
+        2
+    }
+
+    #[inline]
+    fn n_constraints(&self) -> usize {
+        self.m
+    }
+
+    #[inline]
+    fn n_variables(&self) -> usize {
+        self.n
+    }
+
+    #[inline]
+    fn n_public_inputs(&self) -> usize {
+        self.l
+    }
+
+    #[inline]
+    fn n_witnesses(&self) -> usize {
+        self.n_variables() - self.n_public_inputs() - 1
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
+pub struct R1CS<F: Field> {
+    cfg: R1CSConfig,
     pub A: Matrix<F>,
     pub B: Matrix<F>,
     pub C: Matrix<F>,
@@ -58,38 +100,18 @@ impl<F: Field> R1CS<F> {
 }
 
 impl<F: Field> Arith for R1CS<F> {
-    #[inline]
-    fn degree(&self) -> usize {
-        2
-    }
+    type Config = R1CSConfig;
 
     #[inline]
-    fn n_constraints(&self) -> usize {
-        self.m
-    }
-
-    #[inline]
-    fn n_variables(&self) -> usize {
-        self.n
-    }
-
-    #[inline]
-    fn n_public_inputs(&self) -> usize {
-        self.l
-    }
-
-    #[inline]
-    fn n_witnesses(&self) -> usize {
-        self.n_variables() - self.n_public_inputs() - 1
+    fn config(&self) -> &Self::Config {
+        &self.cfg
     }
 }
 
-impl<F: Field> Dummy<(usize, usize, usize)> for R1CS<F> {
-    fn dummy((n_constraints, n_variables, n_public_inputs): (usize, usize, usize)) -> Self {
+impl<F: Field> Dummy<R1CSConfig> for R1CS<F> {
+    fn dummy(cfg: R1CSConfig) -> Self {
         Self {
-            m: n_constraints,
-            n: n_variables,
-            l: n_public_inputs,
+            cfg,
             A: vec![],
             B: vec![],
             C: vec![],
@@ -99,25 +121,15 @@ impl<F: Field> Dummy<(usize, usize, usize)> for R1CS<F> {
 
 impl<F: Field> R1CS<F> {
     pub fn empty() -> Self {
-        Self::dummy((0, 0, 0))
+        Self::dummy(R1CSConfig::new(0, 0, 0))
     }
 
-    pub fn new(
-        (n_constraints, n_variables, n_public_inputs): (usize, usize, usize),
-        matrices: [Matrix<F>; 3],
-    ) -> Self {
+    pub fn new(cfg: R1CSConfig, matrices: [Matrix<F>; 3]) -> Self {
         let mut matrices = matrices.to_vec();
         let C = matrices.pop().unwrap();
         let B = matrices.pop().unwrap();
         let A = matrices.pop().unwrap();
-        Self {
-            m: n_constraints,
-            n: n_variables,
-            l: n_public_inputs,
-            A,
-            B,
-            C,
-        }
+        Self { cfg, A, B, C }
     }
 }
 
@@ -125,14 +137,15 @@ impl<F: Field> TryFrom<CCS<F>> for R1CS<F> {
     type Error = Error;
 
     fn try_from(ccs: CCS<F>) -> Result<Self, Error> {
-        if ccs.t != 3 {
+        let n_matrices = ccs.config().t;
+        if n_matrices != 3 {
             return Err(Error::ConstraintExtractionFailure(format!(
                 "R1CS should only have 3 matrices (A, B, C) but found {} matrices",
-                ccs.t
+                n_matrices
             )));
         }
         Ok(Self::new(
-            (
+            R1CSConfig::new(
                 ccs.n_constraints(),
                 ccs.n_variables(),
                 ccs.n_public_inputs(),
@@ -242,7 +255,7 @@ impl<F: Field> ConstraintSystemExt<F> for ConstraintSystem<F> {
             )));
         }
         Ok(R1CS::new(
-            (
+            R1CSConfig::new(
                 self.num_constraints(),
                 self.num_instance_variables + self.num_witness_variables,
                 self.num_instance_variables - 1, // -1 to subtract the first '1'
@@ -267,11 +280,10 @@ pub mod tests {
     use ark_relations::gr1cs::ConstraintSynthesizer;
     use ark_std::{error::Error, test_rng};
 
+    use super::*;
     use crate::circuits::utils::{
         constraints_for_test, satisfying_assignments_for_test, CircuitForTest,
     };
-
-    use super::*;
 
     #[test]
     fn test_constraint_extraction() -> Result<(), Box<dyn Error>> {

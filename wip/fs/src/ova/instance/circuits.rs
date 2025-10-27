@@ -1,23 +1,28 @@
-use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
+use ark_r1cs_std::{
+    alloc::{AllocVar, AllocationMode},
+    boolean::Boolean,
+    fields::fp::FpVar,
+    select::CondSelectGadget,
+};
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
-
-use sonobe_primitives::commitments::VectorCommitmentGadget;
-use sonobe_primitives::transcripts::AbsorbableGadget;
-use sonobe_primitives::{commitments::VectorCommitment, transcripts::Absorbable};
-
-use crate::{FoldingInstance, FoldingInstanceVar};
+use sonobe_primitives::{
+    circuits::var::Var,
+    commitments::{VectorCommitment, VectorCommitmentGadget},
+    transcripts::{Absorbable, AbsorbableGadget},
+};
 
 use super::RunningInstance;
+use crate::{FoldingInstance, FoldingInstanceVar};
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RunningInstanceVar<VC: VectorCommitmentGadget> {
     pub u: VC::ScalarVar,
     pub cm: VC::CommitmentVar,
     pub x: Vec<VC::ScalarVar>,
 }
 
-impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for RunningInstanceVar<VC> {
+impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for RunningInstanceVar<VC> {
     type Native = RunningInstance<VC::Native>;
 }
 
@@ -40,16 +45,45 @@ impl<VC: VectorCommitmentGadget> AllocVar<RunningInstance<VC::Native>, VC::Const
     }
 }
 
-impl<FV, VC> AbsorbableGadget<FV> for RunningInstanceVar<VC>
-where
-    VC: VectorCommitmentGadget<
-        ScalarVar: AbsorbableGadget<FV>,
-        CommitmentVar: AbsorbableGadget<FV>,
-    >,
-{
-    fn absorb_into(&self, dest: &mut Vec<FV>) -> Result<(), SynthesisError> {
+impl<VC: VectorCommitmentGadget> AbsorbableGadget<VC::ConstraintField> for RunningInstanceVar<VC> {
+    fn absorb_into(
+        &self,
+        dest: &mut Vec<FpVar<VC::ConstraintField>>,
+    ) -> Result<(), SynthesisError> {
         self.u.absorb_into(dest)?;
         self.x.absorb_into(dest)?;
         self.cm.absorb_into(dest)
+    }
+}
+
+impl<VC: VectorCommitmentGadget> CondSelectGadget<VC::ConstraintField> for RunningInstanceVar<VC> {
+    fn conditionally_select(
+        cond: &Boolean<VC::ConstraintField>,
+        true_value: &Self,
+        false_value: &Self,
+    ) -> Result<Self, SynthesisError> {
+        if true_value.x.len() != false_value.x.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        Ok(Self {
+            u: cond.select(&true_value.u, &false_value.u)?,
+            x: true_value
+                .x
+                .iter()
+                .zip(&false_value.x)
+                .map(|(t, f)| cond.select(t, f))
+                .collect::<Result<_, _>>()?,
+            cm: cond.select(&true_value.cm, &false_value.cm)?,
+        })
+    }
+}
+
+impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for RunningInstanceVar<VC> {
+    fn commitments(&self) -> Vec<&VC::CommitmentVar> {
+        vec![&self.cm]
+    }
+
+    fn public_inputs(&self) -> &Vec<VC::ScalarVar> {
+        &self.x
     }
 }

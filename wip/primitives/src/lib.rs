@@ -6,3 +6,4 @@ pub mod relations;
 pub mod sumcheck;
 pub mod traits;
 pub mod transcripts;
+pub mod utils;

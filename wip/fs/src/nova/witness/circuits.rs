@@ -1,6 +1,7 @@
 use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
+use sonobe_primitives::circuits::var::Var;
 use sonobe_primitives::commitments::{VectorCommitment, VectorCommitmentGadget};
 
 use super::{IncomingWitness, RunningWitness};
@@ -14,7 +15,7 @@ pub struct RunningWitnessVar<VC: VectorCommitmentGadget> {
     pub r_w: VC::RandomnessVar,
 }
 
-impl<VC: VectorCommitmentGadget> FoldingWitnessVar<VC> for RunningWitnessVar<VC> {
+impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for RunningWitnessVar<VC> {
     type Native = RunningWitness<VC::Native>;
 }
 
@@ -44,7 +45,7 @@ pub struct IncomingWitnessVar<VC: VectorCommitmentGadget> {
     pub r_w: VC::RandomnessVar,
 }
 
-impl<VC: VectorCommitmentGadget> FoldingWitnessVar<VC> for IncomingWitnessVar<VC> {
+impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for IncomingWitnessVar<VC> {
     type Native = IncomingWitness<VC::Native>;
 }
 

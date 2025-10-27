@@ -4,8 +4,7 @@ use ark_relations::gr1cs::SynthesisError;
 use ark_std::{any::TypeId, mem::transmute_copy};
 
 use crate::{
-    traits::{Inputize, InputizeNonNative},
-    transcripts::{Absorbable, AbsorbableGadget},
+    circuits::var::Var, traits::{Inputize, InputizeNonNative}, transcripts::{Absorbable, AbsorbableGadget}
 };
 
 // pub mod nonnative;
@@ -67,11 +66,15 @@ impl<F: PrimeField, P: FpConfig<N>, const N: usize> Absorbable<F> for Fp<P, N> {
     }
 }
 
-impl<F: PrimeField> AbsorbableGadget<FpVar<F>> for FpVar<F> {
+impl<F: PrimeField> AbsorbableGadget<F> for FpVar<F> {
     fn absorb_into(&self, dest: &mut Vec<FpVar<F>>) -> Result<(), SynthesisError> {
         dest.push(self.clone());
         Ok(())
     }
+}
+
+impl<F: PrimeField> Var<F> for FpVar<F> {
+    type Native = F;
 }
 
 impl<P: FpConfig<N>, const N: usize> Inputize<Self> for Fp<P, N> {

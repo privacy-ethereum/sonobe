@@ -1,11 +1,14 @@
 use ark_ff::PrimeField;
-use sonobe_primitives::{commitments::VectorCommitment, transcripts::Absorbable};
+use sonobe_primitives::{
+    arithmetizations::ArithConfig, commitments::VectorCommitment, traits::Dummy,
+    transcripts::Absorbable,
+};
 
 use crate::FoldingInstance;
 
 pub mod circuits;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RunningInstance<VC: VectorCommitment> {
     pub cm_e: VC::Commitment,
     pub u: VC::Scalar,
@@ -16,6 +19,21 @@ pub struct RunningInstance<VC: VectorCommitment> {
 impl<VC: VectorCommitment> FoldingInstance<VC> for RunningInstance<VC> {
     fn commitments(&self) -> Vec<&VC::Commitment> {
         vec![&self.cm_e, &self.cm_w]
+    }
+
+    fn public_inputs(&self) -> &[<VC as VectorCommitment>::Scalar] {
+        &self.x
+    }
+}
+
+impl<VC: VectorCommitment, Cfg: ArithConfig> Dummy<&Cfg> for RunningInstance<VC> {
+    fn dummy(cfg: &Cfg) -> Self {
+        Self {
+            cm_e: Default::default(),
+            u: Default::default(),
+            cm_w: Default::default(),
+            x: vec![Default::default(); cfg.n_public_inputs()],
+        }
     }
 }
 
@@ -30,7 +48,7 @@ impl<F: PrimeField, VC: VectorCommitment<Scalar: Absorbable<F>, Commitment: Abso
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct IncomingInstance<VC: VectorCommitment> {
     pub cm_w: VC::Commitment,
     pub x: Vec<VC::Scalar>,
@@ -39,6 +57,19 @@ pub struct IncomingInstance<VC: VectorCommitment> {
 impl<VC: VectorCommitment> FoldingInstance<VC> for IncomingInstance<VC> {
     fn commitments(&self) -> Vec<&VC::Commitment> {
         vec![&self.cm_w]
+    }
+
+    fn public_inputs(&self) -> &[<VC as VectorCommitment>::Scalar] {
+        &self.x
+    }
+}
+
+impl<VC: VectorCommitment, Cfg: ArithConfig> Dummy<&Cfg> for IncomingInstance<VC> {
+    fn dummy(cfg: &Cfg) -> Self {
+        Self {
+            cm_w: Default::default(),
+            x: vec![Default::default(); cfg.n_public_inputs()],
+        }
     }
 }
 

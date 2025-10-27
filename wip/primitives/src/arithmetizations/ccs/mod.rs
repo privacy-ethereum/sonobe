@@ -5,35 +5,64 @@ use ark_std::{cfg_into_iter, cfg_iter, log2};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crate::circuits::Assignments;
-
 use super::{r1cs::R1CS, Arith, ArithRelation, Error};
+use crate::{arithmetizations::ArithConfig, circuits::Assignments};
 
 pub mod circuits;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CCSConfig<F> {
+    /// m: number of rows in M_i (such that M_i \in F^{m, n})
+    m: usize,
+    /// n = |z|, number of cols in M_i
+    n: usize,
+    /// l = |io|, size of public input/output
+    l: usize,
+    /// d: max degree in each variable
+    d: usize,
+    /// t = |M|, number of matrices
+    pub t: usize,
+    /// vector of multisets
+    pub S: Vec<Vec<usize>>,
+    /// vector of coefficients
+    pub c: Vec<F>,
+}
+
+impl<F: Clone> ArithConfig for CCSConfig<F> {
+    #[inline]
+    fn degree(&self) -> usize {
+        self.d
+    }
+
+    #[inline]
+    fn n_constraints(&self) -> usize {
+        self.m
+    }
+
+    #[inline]
+    fn n_variables(&self) -> usize {
+        self.n
+    }
+
+    #[inline]
+    fn n_public_inputs(&self) -> usize {
+        self.l
+    }
+
+    #[inline]
+    fn n_witnesses(&self) -> usize {
+        self.n_variables() - self.n_public_inputs() - 1
+    }
+}
 
 /// CCS represents the Customizable Constraint Systems structure defined in
 /// the [CCS paper](https://eprint.iacr.org/2023/552)
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CCS<F: Field> {
-    /// m: number of rows in M_i (such that M_i \in F^{m, n})
-    pub m: usize,
-    /// n = |z|, number of cols in M_i
-    pub n: usize,
-    /// l = |io|, size of public input/output
-    pub l: usize,
-    /// t = |M|, number of matrices
-    pub t: usize,
-    /// d: max degree in each variable
-    pub d: usize,
-    /// s = log(m), dimension of x
-    pub s: usize,
+    cfg: CCSConfig<F>,
 
     /// vector of matrices
     pub M: Vec<Matrix<F>>,
-    /// vector of multisets
-    pub S: Vec<Vec<usize>>,
-    /// vector of coefficients
-    pub c: Vec<F>,
 }
 
 impl<F: Field> CCS<F> {
@@ -64,15 +93,16 @@ impl<F: Field> CCS<F> {
         // Specifically, we independently compute each entry of the resulting
         // vector, and collect them at the end.
         // We parallelize the outer loop over rows (when the `parallel` feature
-        // is enabled), because `m`, the number of constraints in the CCS, is
-        // typically large in practice.
-        Ok(cfg_into_iter!(0..self.m)
+        // is enabled), since the number of constraints in the CCS is typically
+        // large in practice.
+        Ok(cfg_into_iter!(0..self.n_constraints())
             .map(|row| {
                 // The row-th entry of the resulting vector is:
                 // $\sum_{j=0}^{q - 1} (c_j * \prod_{i \in S_j} (M_i[row] * z))$
-                self.S
+                self.cfg
+                    .S
                     .iter()
-                    .zip(&self.c)
+                    .zip(&self.cfg.c)
                     .map(|(s, &c)| {
                         // Each term in the sum is:
                         // $c_j * \prod_{i \in S_j} (M_i[row] * z)$
@@ -93,45 +123,42 @@ impl<F: Field> CCS<F> {
             .collect())
     }
 
-    pub fn mle(
+    fn mle(
         &self,
         i: usize,
         z: Assignments<F, impl AsRef<[F]> + Sync>,
     ) -> DenseMultilinearExtension<F> {
+        let s = log2(self.n_constraints()) as usize;
         DenseMultilinearExtension {
-            num_vars: self.s,
+            num_vars: s,
             evaluations: cfg_iter!(self.M[i])
                 .map(|row| row.iter().map(|(val, col)| z[*col] * val).sum())
-                .chain(vec![F::zero(); (1 << self.s) - self.m])
+                .chain(vec![F::zero(); (1 << s) - self.n_constraints()])
                 .collect(),
         }
+    }
+
+    pub fn mles(
+        &self,
+        z: Assignments<F, impl AsRef<[F]> + Sync>,
+    ) -> Vec<DenseMultilinearExtension<F>> {
+        let s = log2(self.n_constraints()) as usize;
+        (0..self.cfg.t).map(|i| DenseMultilinearExtension {
+            num_vars: s,
+            evaluations: cfg_iter!(self.M[i])
+                .map(|row| row.iter().map(|(val, col)| z[*col] * val).sum())
+                .chain(vec![F::zero(); (1 << s) - self.n_constraints()])
+                .collect(),
+        }).collect()
     }
 }
 
 impl<F: Field> Arith for CCS<F> {
-    #[inline]
-    fn degree(&self) -> usize {
-        self.d
-    }
+    type Config = CCSConfig<F>;
 
     #[inline]
-    fn n_constraints(&self) -> usize {
-        self.m
-    }
-
-    #[inline]
-    fn n_variables(&self) -> usize {
-        self.n
-    }
-
-    #[inline]
-    fn n_public_inputs(&self) -> usize {
-        self.l
-    }
-
-    #[inline]
-    fn n_witnesses(&self) -> usize {
-        self.n_variables() - self.n_public_inputs() - 1
+    fn config(&self) -> &Self::Config {
+        &self.cfg
     }
 }
 
@@ -157,15 +184,15 @@ impl<F: Field> From<R1CS<F>> for CCS<F> {
         let m = r1cs.n_constraints();
         let n = r1cs.n_variables();
         CCS {
-            m,
-            n,
-            l: r1cs.n_public_inputs(),
-            s: log2(m) as usize,
-            t: 3,
-            d: r1cs.degree(),
-
-            S: vec![vec![0, 1], vec![2]],
-            c: vec![F::one(), F::one().neg()],
+            cfg: CCSConfig {
+                m,
+                n,
+                l: r1cs.n_public_inputs(),
+                t: 3,
+                d: r1cs.degree(),
+                S: vec![vec![0, 1], vec![2]],
+                c: vec![F::one(), F::one().neg()],
+            },
             M: vec![r1cs.A, r1cs.B, r1cs.C],
         }
     }

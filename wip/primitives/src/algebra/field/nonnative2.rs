@@ -19,16 +19,17 @@ use num_bigint::{BigInt, BigUint, Sign};
 use num_integer::Integer;
 use num_traits::Signed;
 
-use crate::algebra::ops::bits::{FromBitsGadget, ToBitsGadgetExt};
 use crate::{
     algebra::{
         field::SonobeField,
         ops::{
+            bits::{FromBitsGadget, ToBitsGadgetExt},
             eq::EquivalenceGadget,
             matrix::{MatrixGadget, SparseMatrixVar},
             vector::VectorGadget,
         },
     },
+    circuits::var::Var,
     transcripts::AbsorbableGadget,
 };
 
@@ -590,7 +591,36 @@ impl<F: SonobeField, Cfg> FromBitsGadget<F> for IntVarInner<F, Cfg, true> {
     }
 }
 
-impl<F: SonobeField, Cfg> ToBitsGadget<F> for IntVarInner<F, Cfg, true> {
+impl<F: PrimeField, Cfg: Clone> CondSelectGadget<F> for IntVarInner<F, Cfg, true> {
+    fn conditionally_select(
+        cond: &Boolean<F>,
+        true_value: &Self,
+        false_value: &Self,
+    ) -> Result<Self, SynthesisError> {
+        if true_value.limbs.len() != false_value.limbs.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        if true_value.bounds.len() != false_value.bounds.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        let mut limbs = vec![];
+        let mut bounds = vec![];
+        for i in 0..true_value.limbs.len() {
+            if true_value.bounds[i] != false_value.bounds[i] {
+                return Err(SynthesisError::Unsatisfiable);
+            }
+            limbs.push(cond.select(&true_value.limbs[i], &false_value.limbs[i])?);
+            bounds.push(true_value.bounds[i].clone());
+        }
+        Ok(Self {
+            _cfg: PhantomData,
+            limbs,
+            bounds,
+        })
+    }
+}
+
+impl<F: PrimeField, Cfg> ToBitsGadget<F> for IntVarInner<F, Cfg, true> {
     fn to_bits_le(&self) -> Result<Vec<Boolean<F>>, SynthesisError> {
         for bound in &self.bounds {
             assert!(bound.0 >= BigInt::zero());
@@ -605,7 +635,7 @@ impl<F: SonobeField, Cfg> ToBitsGadget<F> for IntVarInner<F, Cfg, true> {
     }
 }
 
-impl<F: SonobeField, Cfg> AbsorbableGadget<FpVar<F>> for IntVarInner<F, Cfg, true> {
+impl<F: PrimeField, Cfg> AbsorbableGadget<F> for IntVarInner<F, Cfg, true> {
     fn absorb_into(&self, dest: &mut Vec<FpVar<F>>) -> Result<(), SynthesisError> {
         let bits_per_limb = F::MODULUS_BIT_SIZE as usize - 1;
 
@@ -850,6 +880,10 @@ impl<F: SonobeField, Cfg> IntVarInner<F, Cfg, true> {
     fn constant(x: BigInt) -> Self {
         Self::new_constant(ConstraintSystemRef::None, (x.clone(), Bound(x.clone(), x))).unwrap()
     }
+}
+
+impl<Base: SonobeField, Target: SonobeField> Var<Base> for IntVarInner<Base, Target, true> {
+    type Native = Target;
 }
 
 macro_rules! impl_binary_op {
