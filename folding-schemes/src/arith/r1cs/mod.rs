@@ -90,9 +90,9 @@ impl<F: PrimeField, W: AsRef<[F]>, U: AsRef<[F]>> ArithRelation<W, U> for R1CS<F
 impl<F: PrimeField> ArithSerializer for R1CS<F> {
     fn params_to_le_bytes(&self) -> Vec<u8> {
         [
-            self.l.to_le_bytes(),
-            self.A.n_rows.to_le_bytes(),
-            self.A.n_cols.to_le_bytes(),
+            (self.l as u64).to_le_bytes(),
+            (self.A.n_rows as u64).to_le_bytes(),
+            (self.A.n_cols as u64).to_le_bytes(),
         ]
         .concat()
     }

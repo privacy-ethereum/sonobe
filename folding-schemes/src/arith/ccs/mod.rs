@@ -110,12 +110,12 @@ impl<F: PrimeField, W: AsRef<[F]>, U: AsRef<[F]>> ArithRelation<W, U> for CCS<F>
 impl<F: PrimeField> ArithSerializer for CCS<F> {
     fn params_to_le_bytes(&self) -> Vec<u8> {
         [
-            self.l.to_le_bytes(),
-            self.m.to_le_bytes(),
-            self.n.to_le_bytes(),
-            self.t.to_le_bytes(),
-            self.q.to_le_bytes(),
-            self.d.to_le_bytes(),
+            (self.l as u64).to_le_bytes(),
+            (self.m as u64).to_le_bytes(),
+            (self.n as u64).to_le_bytes(),
+            (self.t as u64).to_le_bytes(),
+            (self.q as u64).to_le_bytes(),
+            (self.d as u64).to_le_bytes(),
         ]
         .concat()
     }
