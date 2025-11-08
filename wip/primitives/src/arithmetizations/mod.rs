@@ -1,7 +1,9 @@
+use std::fmt::Debug;
+
 use ark_relations::gr1cs::SynthesisError;
 use thiserror::Error;
 
-use crate::{relations::Relation, traits::Dummy};
+use crate::relations::Relation;
 
 pub mod ccs;
 pub mod r1cs;
@@ -14,11 +16,13 @@ pub enum Error {
     UnsatisfiedAssignments(String),
     #[error("Failed to extract constraints from the constraint system: {0}")]
     ConstraintExtractionFailure(String),
-    #[error("Synthesis error: {0}")]
+    #[error(transparent)]
     SynthesisError(#[from] SynthesisError),
 }
 
-pub trait ArithConfig: Clone {
+pub trait ArithConfig: Clone + Debug + PartialEq {
+    fn empty() -> Self;
+
     /// Returns the degree of the constraint system
     fn degree(&self) -> usize;
 
@@ -34,6 +38,8 @@ pub trait ArithConfig: Clone {
 
     /// Returns the number of witnesses / secret inputs in the constraint system
     fn n_witnesses(&self) -> usize;
+
+    fn set_n_public_inputs(&mut self, l: usize);
 }
 
 /// [`Arith`] is a trait about constraint systems (R1CS, CCS, etc.), where we
@@ -42,6 +48,10 @@ pub trait Arith: Clone {
     type Config: ArithConfig;
 
     fn config(&self) -> &Self::Config;
+
+    fn config_mut(&mut self) -> &mut Self::Config;
+
+    fn empty() -> Self;
 
     /// Returns the degree of the constraint system
     fn degree(&self) -> usize {

@@ -18,12 +18,11 @@ use ark_std::{cfg_chunks, cfg_into_iter, cfg_iter, fmt::Debug};
 use rayon::prelude::*;
 use thiserror::Error;
 
-use crate::transcripts::{Absorbable, Transcript};
-
-use utils::{
+use self::utils::{
     barycentric_weights, compute_lagrange_interpolated_poly, extrapolate, VPAuxInfo,
     VirtualPolynomial,
 };
+use crate::transcripts::{Absorbable, Transcript};
 
 pub mod utils;
 
@@ -64,7 +63,7 @@ pub struct SumCheckSubClaim<F: PrimeField> {
 pub struct IOPSumCheck;
 
 impl IOPSumCheck {
-    pub fn prove<F: PrimeField + Absorbable<F>>(
+    pub fn prove<F: PrimeField + Absorbable>(
         mut poly: VirtualPolynomial<F>,
         transcript: &mut impl Transcript<F>,
     ) -> Result<(IOPProof<F>, Vec<DenseMultilinearExtension<F>>), Error> {
@@ -183,7 +182,7 @@ impl IOPSumCheck {
         ))
     }
 
-    pub fn verify<F: PrimeField + Absorbable<F>>(
+    pub fn verify<F: PrimeField + Absorbable>(
         claimed_sum: F,
         proof: &IOPProof<F>,
         aux_info: &VPAuxInfo,
@@ -241,15 +240,14 @@ impl IOPSumCheck {
 
 #[cfg(test)]
 pub mod tests {
-    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use ark_crypto_primitives::sponge::poseidon::PoseidonSponge;
     use ark_ff::Field;
     use ark_pallas::Fr;
     use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
     use ark_std::{test_rng, One, Zero};
 
-    use crate::transcripts::poseidon::poseidon_canonical_config;
-
     use super::*;
+    use crate::transcripts::poseidon::poseidon_canonical_config;
 
     #[test]
     pub fn sumcheck_poseidon() -> Result<(), Error> {
@@ -264,7 +262,7 @@ pub mod tests {
         // test with zero poly
         let poly_mle = DenseMultilinearExtension::from_evaluations_vec(
             n_vars,
-            vec![Fr::zero(); 2u32.pow(n_vars as u32) as usize],
+            vec![Fr::zero(); 2usize.pow(n_vars as u32)],
         );
         let virtual_poly = VirtualPolynomial::new_from_mle(poly_mle, Fr::ONE);
         sumcheck_poseidon_opt(virtual_poly)?;

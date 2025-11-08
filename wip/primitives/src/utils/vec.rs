@@ -4,13 +4,13 @@ use ark_r1cs_std::{
     fields::fp::FpVar,
     prelude::Boolean,
     select::CondSelectGadget,
+    GR1CSVar,
 };
-use ark_relations::gr1cs::{Namespace, SynthesisError};
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{
     borrow::Borrow,
     fmt::Debug,
     ops::{Deref, DerefMut},
-    rand::RngCore,
 };
 
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
     transcripts::{Absorbable, AbsorbableGadget},
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WrappedVec<V>(Vec<V>);
 
 impl<V> Deref for WrappedVec<V> {
@@ -43,8 +43,8 @@ impl<V> From<Vec<V>> for WrappedVec<V> {
     }
 }
 
-impl<F, V: Absorbable<F>> Absorbable<F> for WrappedVec<V> {
-    fn absorb_into(&self, dest: &mut Vec<F>) {
+impl<V: Absorbable> Absorbable for WrappedVec<V> {
+    fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
         self.0.absorb_into(dest)
     }
 }
@@ -83,6 +83,18 @@ impl<F: PrimeField, X: CondSelectGadget<F>> CondSelectGadget<F> for WrappedVec<X
                 .map(|(t, f)| cond.select(t, f))
                 .collect::<Result<_, _>>()?,
         ))
+    }
+}
+
+impl<F: Field, V: Var<F>> GR1CSVar<F> for WrappedVec<V> {
+    type Value = WrappedVec<V::Native>;
+
+    fn cs(&self) -> ConstraintSystemRef<F> {
+        self.0.cs()
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        self.0.value().map(WrappedVec)
     }
 }
 

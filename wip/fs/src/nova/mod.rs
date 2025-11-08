@@ -11,27 +11,28 @@ use ark_std::{
 };
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-
 use sonobe_primitives::{
     arithmetizations::{
         r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
         ArithRelation,
     },
     circuits::AssignmentsOwned,
-    commitments::VectorCommitment,
+    commitments::{GroupBasedVectorCommitment, VectorCommitment},
     relations::{Relation, WitnessInstanceSampler},
-    traits::{SonobeCurve, SonobeField},
+    traits::{SonobeCurve, SonobeField, CF2},
     transcripts::{Absorbable, Transcript},
 };
 
+use self::{
+    instance::{IncomingInstance as IU, RunningInstance as RU},
+    witness::{IncomingWitness as IW, RunningWitness as RW},
+};
 use crate::{Error, FoldingScheme, PlainInstance as PU, PlainWitness as PW};
-
-use instance::{IncomingInstance as IU, RunningInstance as RU};
-use witness::{IncomingWitness as IW, RunningWitness as RW};
 
 pub mod instance;
 pub mod witness;
 
+#[derive(Clone)]
 pub struct NovaKey<A, VC: VectorCommitment> {
     arith: Arc<A>,
     ck: Arc<VC::Key>,
@@ -70,14 +71,14 @@ where
     }
 }
 
-impl<A, VC> Relation<PW<VC>, PU<VC>> for NovaKey<A, VC>
+impl<A, VC> Relation<PW<VC::Scalar>, PU<VC::Scalar>> for NovaKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
     VC: VectorCommitment,
 {
     type Error = Error;
 
-    fn check_relation(&self, w: &PW<VC>, u: &PU<VC>) -> Result<(), Self::Error> {
+    fn check_relation(&self, w: &PW<VC::Scalar>, u: &PU<VC::Scalar>) -> Result<(), Self::Error> {
         self.arith.check_relation(w, u)?;
         Ok(())
     }
@@ -96,11 +97,17 @@ impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<V
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC>, PU<VC>> for NovaKey<A, VC> {
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scalar>>
+    for NovaKey<A, VC>
+{
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
-    fn sample(&self, z: Self::Source, _rng: impl RngCore) -> Result<(PW<VC>, PU<VC>), Error> {
+    fn sample(
+        &self,
+        z: Self::Source,
+        _rng: impl RngCore,
+    ) -> Result<(PW<VC::Scalar>, PU<VC::Scalar>), Error> {
         Ok((z.private.into(), z.public.into()))
     }
 }
@@ -148,17 +155,11 @@ pub struct AbstractNova<VC, TF, const CHALLENGE_BITS: usize = 128> {
 pub type Nova<VC, const CHALLENGE_BITS: usize = 128> =
     AbstractNova<VC, <VC as VectorCommitment>::Scalar, CHALLENGE_BITS>;
 
-pub type CycleFoldNova<VC, const CHALLENGE_BITS: usize = 128> = AbstractNova<
-    VC,
-    <<<VC as VectorCommitment>::Commitment as CurveGroup>::BaseField as Field>::BasePrimeField,
-    CHALLENGE_BITS,
->;
+pub type CycleFoldNova<VC, const CHALLENGE_BITS: usize = 128> =
+    AbstractNova<VC, CF2<<VC as VectorCommitment>::Commitment>, CHALLENGE_BITS>;
 
-impl<VC: VectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingScheme<1, 1>
-    for AbstractNova<VC, TF, CHALLENGE_BITS>
-where
-    VC::Scalar: SonobeField + Absorbable<TF>,
-    VC::Commitment: SonobeCurve<ScalarField = VC::Scalar> + Absorbable<TF>,
+impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
+    FoldingScheme<1, 1> for AbstractNova<VC, TF, CHALLENGE_BITS>
 {
     type VC = VC;
     type RW = RW<VC>;
@@ -198,6 +199,7 @@ where
         ))
     }
 
+    #[allow(non_snake_case)]
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<TF>,
@@ -256,6 +258,7 @@ where
         ))
     }
 
+    #[allow(non_snake_case)]
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<TF>,
@@ -294,23 +297,17 @@ pub struct AbstractNova2<VC, TF, const CHALLENGE_BITS: usize = 128> {
 pub type Nova2<VC, const CHALLENGE_BITS: usize = 128> =
     AbstractNova2<VC, <VC as VectorCommitment>::Scalar, CHALLENGE_BITS>;
 
-pub type CycleFoldNova2<VC, const CHALLENGE_BITS: usize = 128> = AbstractNova<
-    VC,
-    <<<VC as VectorCommitment>::Commitment as CurveGroup>::BaseField as Field>::BasePrimeField,
-    CHALLENGE_BITS,
->;
+pub type CycleFoldNova2<VC, const CHALLENGE_BITS: usize = 128> =
+    AbstractNova2<VC, CF2<<VC as VectorCommitment>::Commitment>, CHALLENGE_BITS>;
 
-impl<VC: VectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingScheme<1, 1>
+impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingScheme<1, 1>
     for AbstractNova2<VC, TF, CHALLENGE_BITS>
-where
-    VC::Scalar: SonobeField + Absorbable<TF>,
-    VC::Commitment: SonobeCurve<ScalarField = VC::Scalar> + Absorbable<TF>,
 {
     type VC = VC;
     type RW = RW<VC>;
     type RU = RU<VC>;
-    type IW = PW<VC>;
-    type IU = PU<VC>;
+    type IW = PW<VC::Scalar>;
+    type IU = PU<VC::Scalar>;
 
     type TranscriptField = TF;
     type Arith = R1CS<VC::Scalar>;
@@ -344,6 +341,7 @@ where
         ))
     }
 
+    #[allow(non_snake_case)]
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<TF>,
@@ -392,20 +390,27 @@ where
             RW {
                 e: cfg_iter!(W.e).zip(&t).map(|(a, b)| rho * b + a).collect(),
                 r_e: W.r_e + r_t * rho,
-                w: cfg_iter!(W.w).zip(&w[..]).map(|(a, b)| rho * b + a).collect(),
+                w: cfg_iter!(W.w)
+                    .zip(&w[..])
+                    .map(|(a, b)| rho * b + a)
+                    .collect(),
                 r_w: W.r_w + r_w * rho,
             },
             RU {
                 cm_e: U.cm_e + cm_t.mul(rho),
                 u: U.u + rho,
                 cm_w: U.cm_w + cm_w.mul(rho),
-                x: cfg_iter!(U.x).zip(&u[..]).map(|(a, b)| rho * b + a).collect(),
+                x: cfg_iter!(U.x)
+                    .zip(&u[..])
+                    .map(|(a, b)| rho * b + a)
+                    .collect(),
             },
             pi,
             rho_bits,
         ))
     }
 
+    #[allow(non_snake_case)]
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<TF>,
@@ -429,7 +434,10 @@ where
             cm_e: U.cm_e + cm_t.mul(rho),
             u: U.u + rho,
             cm_w: U.cm_w + cm_w.mul(rho),
-            x: cfg_iter!(U.x).zip(&u[..]).map(|(a, b)| rho * b + a).collect(),
+            x: cfg_iter!(U.x)
+                .zip(&u[..])
+                .map(|(a, b)| rho * b + a)
+                .collect(),
         })
     }
 }
@@ -439,15 +447,13 @@ mod tests {
     use ark_bn254::{Fq, Fr, G1Projective};
     use ark_ff::UniformRand;
     use ark_std::{error::Error, test_rng};
-
     use sonobe_primitives::{
         circuits::utils::{satisfying_assignments_for_test, CircuitForTest},
         commitments::pedersen::Pedersen,
     };
 
-    use crate::tests::test_folding_scheme;
-
     use super::*;
+    use crate::tests::test_folding_scheme;
 
     fn test_nova_opt<TF: SonobeField>(
         rounds: usize,

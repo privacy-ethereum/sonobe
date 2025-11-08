@@ -1,13 +1,12 @@
-use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
-use ark_relations::gr1cs::{Namespace, SynthesisError};
-use ark_std::borrow::Borrow;
-use sonobe_primitives::{
-    circuits::var::Var,
-    commitments::{VectorCommitment, VectorCommitmentGadget},
+use ark_r1cs_std::{
+    alloc::{AllocVar, AllocationMode},
+    GR1CSVar,
 };
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
+use ark_std::borrow::Borrow;
+use sonobe_primitives::{circuits::var::Var, commitments::VectorCommitmentGadget};
 
 use super::{CCCSWitness, LCCCSWitness};
-use crate::FoldingWitnessVar;
 
 #[derive(Debug, PartialEq)]
 pub struct LCCCSWitnessVar<VC: VectorCommitmentGadget> {
@@ -37,6 +36,21 @@ impl<VC: VectorCommitmentGadget> AllocVar<LCCCSWitness<VC::Native>, VC::Constrai
     }
 }
 
+impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for LCCCSWitnessVar<VC> {
+    type Value = LCCCSWitness<VC::Native>;
+
+    fn cs(&self) -> ConstraintSystemRef<VC::ConstraintField> {
+        self.w.cs().or(self.r.cs())
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(LCCCSWitness {
+            w: self.w.value()?,
+            r: self.r.value()?,
+        })
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct CCCSWitnessVar<VC: VectorCommitmentGadget> {
     pub w: Vec<VC::ScalarVar>,
@@ -61,6 +75,21 @@ impl<VC: VectorCommitmentGadget> AllocVar<CCCSWitness<VC::Native>, VC::Constrain
         Ok(Self {
             w: AllocVar::new_variable(cs.clone(), || Ok(&w[..]), mode)?,
             r: AllocVar::new_variable(cs.clone(), || Ok(r), mode)?,
+        })
+    }
+}
+
+impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for CCCSWitnessVar<VC> {
+    type Value = CCCSWitness<VC::Native>;
+
+    fn cs(&self) -> ConstraintSystemRef<VC::ConstraintField> {
+        self.w.cs().or(self.r.cs())
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(CCCSWitness {
+            w: self.w.value()?,
+            r: self.r.value()?,
         })
     }
 }

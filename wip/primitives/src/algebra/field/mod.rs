@@ -1,23 +1,25 @@
-use ark_ff::{BigInteger, Fp, FpConfig, PrimeField};
+use ark_ff::{BigInteger, Field, Fp, FpConfig, PrimeField};
 use ark_r1cs_std::fields::{fp::FpVar, FieldVar};
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::{any::TypeId, mem::transmute_copy};
 
 use crate::{
-    circuits::var::Var, traits::{Inputize, InputizeNonNative}, transcripts::{Absorbable, AbsorbableGadget}
+    circuits::var::Var,
+    traits::{Inputize, InputizeEmulated},
+    transcripts::{Absorbable, AbsorbableGadget},
 };
 
 // pub mod nonnative;
-pub mod nonnative2;
+pub mod emulated;
 
 /// `Field` trait is a wrapper around `PrimeField` that also includes the
 /// necessary bounds for the field to be used conveniently in folding schemes.
 pub trait SonobeField:
-    PrimeField<BasePrimeField = Self> + Absorbable<Self> + Inputize<Self>
+    PrimeField<BasePrimeField = Self> + Absorbable + Inputize<Self>
 {
     const BITS_PER_LIMB: usize;
     /// The in-circuit variable type for this field.
-    type Var: FieldVar<Self, Self>;
+    type Var: FieldVar<Self, Self> + AbsorbableGadget<Self>;
 }
 
 impl<P: FpConfig<N>, const N: usize> SonobeField for Fp<P, N> {
@@ -43,8 +45,8 @@ impl<P: FpConfig<N>, const N: usize> SonobeField for Fp<P, N> {
     type Var = FpVar<Self>;
 }
 
-impl<F: PrimeField, P: FpConfig<N>, const N: usize> Absorbable<F> for Fp<P, N> {
-    fn absorb_into(&self, dest: &mut Vec<F>) {
+impl<P: FpConfig<N>, const N: usize> Absorbable for Fp<P, N> {
+    fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
         if TypeId::of::<F>() == TypeId::of::<Self>() {
             // Safe because `F` and `Self` have the same type
             // TODO (@winderica): specialization when???
@@ -85,10 +87,10 @@ impl<P: FpConfig<N>, const N: usize> Inputize<Self> for Fp<P, N> {
     }
 }
 
-impl<F: SonobeField, P: SonobeField> InputizeNonNative<F> for P {
+impl<F: SonobeField, P: SonobeField> InputizeEmulated<F> for P {
     /// Returns the internal representation in the same order as how the value
     /// is allocated in `NonNativeUintVar::new_input`.
-    fn inputize_nonnative(&self) -> Vec<F> {
+    fn inputize_emulated(&self) -> Vec<F> {
         self.into_bigint()
             .to_bits_le()
             .chunks(F::BITS_PER_LIMB)

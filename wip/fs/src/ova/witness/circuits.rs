@@ -1,13 +1,12 @@
-use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
-use ark_relations::gr1cs::{Namespace, SynthesisError};
-use ark_std::borrow::Borrow;
-use sonobe_primitives::{
-    circuits::var::Var,
-    commitments::{VectorCommitment, VectorCommitmentGadget},
+use ark_r1cs_std::{
+    alloc::{AllocVar, AllocationMode},
+    GR1CSVar,
 };
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
+use ark_std::borrow::Borrow;
+use sonobe_primitives::{circuits::var::Var, commitments::VectorCommitmentGadget};
 
 use super::RunningWitness;
-use crate::FoldingWitnessVar;
 
 #[derive(Debug, PartialEq)]
 pub struct RunningWitnessVar<VC: VectorCommitmentGadget> {
@@ -33,6 +32,21 @@ impl<VC: VectorCommitmentGadget> AllocVar<RunningWitness<VC::Native>, VC::Constr
         Ok(Self {
             w: AllocVar::new_variable(cs.clone(), || Ok(&w[..]), mode)?,
             r: AllocVar::new_variable(cs.clone(), || Ok(r), mode)?,
+        })
+    }
+}
+
+impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for RunningWitnessVar<VC> {
+    type Value = RunningWitness<VC::Native>;
+
+    fn cs(&self) -> ConstraintSystemRef<VC::ConstraintField> {
+        self.w.cs().or(self.r.cs())
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(RunningWitness {
+            w: self.w.value()?,
+            r: self.r.value()?,
         })
     }
 }

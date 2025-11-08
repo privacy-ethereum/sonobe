@@ -1,10 +1,8 @@
-use ark_ff::{Field, PrimeField};
-use ark_r1cs_std::{
-    GR1CSVar, alloc::{AllocVar, AllocationMode}, eq::EqGadget, fields::fp::FpVar, select::CondSelectGadget
-};
-use ark_relations::gr1cs::{Namespace, SynthesisError};
+use ark_ec::PrimeGroup;
+use ark_ff::PrimeField;
+use ark_r1cs_std::{eq::EqGadget, select::CondSelectGadget, GR1CSVar};
+use ark_relations::gr1cs::SynthesisError;
 use ark_std::{
-    borrow::Borrow,
     fmt::Debug,
     iter::Sum,
     ops::{Add, Mul},
@@ -12,7 +10,11 @@ use ark_std::{
 };
 use thiserror::Error;
 
-use crate::{circuits::var::Var, transcripts::AbsorbableGadget};
+use crate::{
+    circuits::var::Var,
+    traits::{SonobeCurve, SonobeField, CF1},
+    transcripts::{Absorbable, AbsorbableGadget},
+};
 
 pub mod pedersen;
 // TODO: add back other commitment schemes
@@ -20,8 +22,7 @@ pub mod pedersen;
 #[derive(Debug, Error)]
 pub enum Error {
     // Commitment errors
-    #[error("The message being committed to has length {1}, exceeding the maximum supported length of {0}"
-    )]
+    #[error("The message being committed to has length {1}, exceeding the maximum supported length ({0})")]
     MessageTooLong(usize, usize),
     #[error("Blinding factor not 0 for Commitment without hiding")]
     BlindingNotZero,
@@ -31,16 +32,18 @@ pub enum Error {
     CommitmentVerificationFail,
 }
 
-pub trait VectorCommitment: 'static + Clone + Debug + PartialEq {
+pub trait VectorCommitment: 'static + Clone + Debug + PartialEq + Eq {
     const IS_HIDING: bool;
 
-    type Key;
-    type Scalar: Clone + Copy + Default + Debug + PartialEq + Sync;
-    type Commitment: Clone + Default + Debug + PartialEq + Sync;
+    type Key: Clone;
+    type Scalar: Clone + Copy + Default + Debug + PartialEq + Eq + Sync + Absorbable;
+    type Commitment: Clone + Default + Debug + PartialEq + Eq + Sync + Absorbable;
     type Randomness: Clone
         + Copy
         + Default
         + Debug
+        + PartialEq
+        + Eq
         + Sync
         + Add<Self::Scalar, Output = Self::Randomness>
         + Mul<Self::Scalar, Output = Self::Randomness>
@@ -66,9 +69,22 @@ pub trait VectorCommitment: 'static + Clone + Debug + PartialEq {
     ) -> Result<bool, Error>;
 }
 
+pub trait GroupBasedVectorCommitment:
+    VectorCommitment<Commitment: SonobeCurve, Scalar = CF1<<Self as VectorCommitment>::Commitment>>
+{
+}
+
+impl<VC> GroupBasedVectorCommitment for VC where
+    VC: VectorCommitment<
+        Commitment: SonobeCurve,
+        Scalar = CF1<<Self as VectorCommitment>::Commitment>,
+    >
+{
+}
+
 pub trait VectorCommitmentGadget: Clone {
     type Native: VectorCommitment;
-    type ConstraintField: PrimeField;
+    type ConstraintField: SonobeField;
 
     type KeyVar;
     type ScalarVar: Clone

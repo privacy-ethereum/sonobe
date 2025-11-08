@@ -1,6 +1,6 @@
 use std::fmt::Debug;
+
 use ark_ff::{Field, PrimeField};
-use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError, SynthesisMode,
@@ -160,11 +160,16 @@ impl<F: Field, C: ConstraintSynthesizer<F>> ConstraintSystemBuilder<F, C> {
     }
 }
 
-pub trait ConstraintSystemExt<F: Field>: Sized {
-    type Error;
-    type Arith;
+pub trait ConstraintSystemExt<F> {
+    fn assignments(&self) -> Result<Assignments<F, Vec<F>>, SynthesisError>;
+}
 
-    fn constraints(&self) -> Result<Self::Arith, Self::Error>;
+impl<F: Field> ConstraintSystemExt<F> for ConstraintSystem<F> {
+    fn assignments(&self) -> Result<Assignments<F, Vec<F>>, SynthesisError> {
+        let witness = self.witness_assignment()?.to_vec();
+        // skip the first element which is '1'
+        let instance = self.instance_assignment()?[1..].to_vec();
 
-    fn assignments(&self) -> Result<Assignments<F, Vec<F>>, Self::Error>;
+        Ok((F::one(), instance, witness).into())
+    }
 }

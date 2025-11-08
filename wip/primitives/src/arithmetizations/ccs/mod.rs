@@ -1,37 +1,56 @@
+use std::fmt::Debug;
+
 use ark_ff::Field;
 use ark_poly::DenseMultilinearExtension;
-use ark_relations::gr1cs::Matrix;
-use ark_std::{cfg_into_iter, cfg_iter, log2};
+use ark_relations::gr1cs::{ConstraintSystem, Matrix};
+use ark_std::{borrow::Borrow, cfg_into_iter, cfg_iter, log2, marker::PhantomData};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use super::{r1cs::R1CS, Arith, ArithRelation, Error};
-use crate::{arithmetizations::ArithConfig, circuits::Assignments};
+use crate::{
+    arithmetizations::{r1cs::R1CSConfig, ArithConfig},
+    circuits::Assignments,
+};
 
 pub mod circuits;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct CCSConfig<F> {
+pub trait CCSVariant: Clone + Debug + PartialEq + Sync {
+    fn n_matrices() -> usize;
+
+    fn degree() -> usize;
+
+    fn multisets_vec() -> Vec<Vec<usize>>;
+
+    fn coefficients_vec<F: Field>() -> Vec<F>;
+}
+
+#[allow(non_snake_case)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CCSConfig<V: CCSVariant> {
+    _v: PhantomData<V>,
     /// m: number of rows in M_i (such that M_i \in F^{m, n})
     m: usize,
     /// n = |z|, number of cols in M_i
     n: usize,
     /// l = |io|, size of public input/output
     l: usize,
-    /// d: max degree in each variable
-    d: usize,
-    /// t = |M|, number of matrices
-    pub t: usize,
-    /// vector of multisets
-    pub S: Vec<Vec<usize>>,
-    /// vector of coefficients
-    pub c: Vec<F>,
 }
 
-impl<F: Clone> ArithConfig for CCSConfig<F> {
+impl<V: CCSVariant> ArithConfig for CCSConfig<V> {
+    #[inline]
+    fn empty() -> Self {
+        Self {
+            _v: PhantomData,
+            m: 0,
+            n: 0,
+            l: 0,
+        }
+    }
+
     #[inline]
     fn degree(&self) -> usize {
-        self.d
+        V::degree()
     }
 
     #[inline]
@@ -53,19 +72,43 @@ impl<F: Clone> ArithConfig for CCSConfig<F> {
     fn n_witnesses(&self) -> usize {
         self.n_variables() - self.n_public_inputs() - 1
     }
+
+    #[inline]
+    fn set_n_public_inputs(&mut self, l: usize) {
+        self.l = l;
+    }
+}
+
+impl<Cfg: Borrow<R1CSConfig>, V: CCSVariant> From<Cfg> for CCSConfig<V> {
+    fn from(cfg: Cfg) -> Self {
+        let cfg = cfg.borrow();
+        Self {
+            _v: PhantomData,
+            m: cfg.n_constraints(),
+            n: cfg.n_variables(),
+            l: cfg.n_public_inputs(),
+        }
+    }
+}
+
+impl<F: Field, V: CCSVariant> From<&ConstraintSystem<F>> for CCSConfig<V> {
+    fn from(cs: &ConstraintSystem<F>) -> Self {
+        R1CSConfig::from(cs).into()
+    }
 }
 
 /// CCS represents the Customizable Constraint Systems structure defined in
 /// the [CCS paper](https://eprint.iacr.org/2023/552)
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct CCS<F: Field> {
-    cfg: CCSConfig<F>,
+#[allow(non_snake_case)]
+#[derive(Clone)]
+pub struct CCS<F: Field, V: CCSVariant> {
+    cfg: CCSConfig<V>,
 
     /// vector of matrices
     pub M: Vec<Matrix<F>>,
 }
 
-impl<F: Field> CCS<F> {
+impl<F: Field, V: CCSVariant> CCS<F, V> {
     /// Evaluates the CCS relation at a given vector of assignments `z`
     pub fn eval_assignments(
         &self,
@@ -84,6 +127,9 @@ impl<F: Field> CCS<F> {
             ));
         }
 
+        let S = &V::multisets_vec();
+        let c = &V::coefficients_vec::<F>();
+
         // Recall that the evaluation of CCS at z is defined as:
         // $\sum_{j=0}^{q - 1} (c_j * \prod_{i \in S_j} (M_i * z))$,
         // where $\prod$ denotes the Hadamard product.
@@ -99,10 +145,8 @@ impl<F: Field> CCS<F> {
             .map(|row| {
                 // The row-th entry of the resulting vector is:
                 // $\sum_{j=0}^{q - 1} (c_j * \prod_{i \in S_j} (M_i[row] * z))$
-                self.cfg
-                    .S
-                    .iter()
-                    .zip(&self.cfg.c)
+                S.iter()
+                    .zip(c)
                     .map(|(s, &c)| {
                         // Each term in the sum is:
                         // $c_j * \prod_{i \in S_j} (M_i[row] * z)$
@@ -123,46 +167,46 @@ impl<F: Field> CCS<F> {
             .collect())
     }
 
-    fn mle(
-        &self,
-        i: usize,
-        z: Assignments<F, impl AsRef<[F]> + Sync>,
-    ) -> DenseMultilinearExtension<F> {
-        let s = log2(self.n_constraints()) as usize;
-        DenseMultilinearExtension {
-            num_vars: s,
-            evaluations: cfg_iter!(self.M[i])
-                .map(|row| row.iter().map(|(val, col)| z[*col] * val).sum())
-                .chain(vec![F::zero(); (1 << s) - self.n_constraints()])
-                .collect(),
-        }
-    }
-
     pub fn mles(
         &self,
         z: Assignments<F, impl AsRef<[F]> + Sync>,
     ) -> Vec<DenseMultilinearExtension<F>> {
         let s = log2(self.n_constraints()) as usize;
-        (0..self.cfg.t).map(|i| DenseMultilinearExtension {
-            num_vars: s,
-            evaluations: cfg_iter!(self.M[i])
-                .map(|row| row.iter().map(|(val, col)| z[*col] * val).sum())
-                .chain(vec![F::zero(); (1 << s) - self.n_constraints()])
-                .collect(),
-        }).collect()
+        (0..V::n_matrices())
+            .map(|i| DenseMultilinearExtension {
+                num_vars: s,
+                evaluations: cfg_iter!(self.M[i])
+                    .map(|row| row.iter().map(|(val, col)| z[*col] * val).sum())
+                    .chain(vec![F::zero(); (1 << s) - self.n_constraints()])
+                    .collect(),
+            })
+            .collect()
     }
 }
 
-impl<F: Field> Arith for CCS<F> {
-    type Config = CCSConfig<F>;
+impl<F: Field, V: CCSVariant> Arith for CCS<F, V> {
+    type Config = CCSConfig<V>;
+
+    #[inline]
+    fn empty() -> Self {
+        Self {
+            cfg: CCSConfig::empty(),
+            M: vec![vec![]; V::n_matrices()],
+        }
+    }
 
     #[inline]
     fn config(&self) -> &Self::Config {
         &self.cfg
     }
+
+    #[inline]
+    fn config_mut(&mut self) -> &mut Self::Config {
+        &mut self.cfg
+    }
 }
 
-impl<F: Field, W: AsRef<[F]>, U: AsRef<[F]>> ArithRelation<W, U> for CCS<F> {
+impl<F: Field, W: AsRef<[F]>, U: AsRef<[F]>, V: CCSVariant> ArithRelation<W, U> for CCS<F, V> {
     type Evaluation = Vec<F>;
 
     fn eval_relation(&self, w: &W, u: &U) -> Result<Self::Evaluation, Error> {
@@ -179,22 +223,24 @@ impl<F: Field, W: AsRef<[F]>, U: AsRef<[F]>> ArithRelation<W, U> for CCS<F> {
     }
 }
 
-impl<F: Field> From<R1CS<F>> for CCS<F> {
+impl<F: Field> From<R1CS<F>> for CCS<F, R1CSConfig> {
     fn from(r1cs: R1CS<F>) -> Self {
-        let m = r1cs.n_constraints();
-        let n = r1cs.n_variables();
-        CCS {
-            cfg: CCSConfig {
-                m,
-                n,
-                l: r1cs.n_public_inputs(),
-                t: 3,
-                d: r1cs.degree(),
-                S: vec![vec![0, 1], vec![2]],
-                c: vec![F::one(), F::one().neg()],
-            },
+        Self {
+            cfg: r1cs.config().into(),
             M: vec![r1cs.A, r1cs.B, r1cs.C],
         }
+    }
+}
+
+impl<F: Field> From<&ConstraintSystem<F>> for CCS<F, R1CSConfig> {
+    fn from(cs: &ConstraintSystem<F>) -> Self {
+        R1CS::from(cs).into()
+    }
+}
+
+impl<F: Field> From<ConstraintSystem<F>> for CCS<F, R1CSConfig> {
+    fn from(cs: ConstraintSystem<F>) -> Self {
+        Self::from(&cs)
     }
 }
 

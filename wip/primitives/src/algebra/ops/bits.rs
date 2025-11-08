@@ -2,8 +2,10 @@ use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar, GR1CSVar};
 use ark_relations::gr1cs::SynthesisError;
 
+use crate::algebra::field::emulated::Bound;
+
 pub trait FromBitsGadget<F: PrimeField>: Sized {
-    fn from_bits_le(bits: &[Boolean<F>]) -> Result<Self, SynthesisError>;
+    fn from_bits_le(bits: &[Boolean<F>], bound: Bound) -> Result<Self, SynthesisError>;
 }
 
 pub trait ToBitsGadgetExt<F: PrimeField>: Sized {
@@ -15,7 +17,7 @@ pub trait ToBitsGadgetExt<F: PrimeField>: Sized {
     }
 }
 impl<F: PrimeField> FromBitsGadget<F> for FpVar<F> {
-    fn from_bits_le(bits: &[Boolean<F>]) -> Result<Self, SynthesisError> {
+    fn from_bits_le(bits: &[Boolean<F>], _bound: Bound) -> Result<Self, SynthesisError> {
         Boolean::le_bits_to_fp(bits)
     }
 }

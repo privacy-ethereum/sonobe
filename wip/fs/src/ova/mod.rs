@@ -1,6 +1,8 @@
 use ark_ec::CurveGroup;
-use ark_ff::{BigInteger, Field, One, PrimeField};
-use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, convert::ToBitsGadget, fields::fp::FpVar};
+use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
+use ark_r1cs_std::{
+    alloc::AllocVar, boolean::Boolean, convert::ToBitsGadget, groups::CurveVar, GR1CSVar,
+};
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::{
     borrow::Borrow,
@@ -11,23 +13,26 @@ use ark_std::{
     sync::Arc,
     UniformRand,
 };
-use instance::{circuits::RunningInstanceVar as RUVar, RunningInstance as RU};
+use num_bigint::BigInt;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use sonobe_primitives::{
-    algebra::{group::PointScalarMulGadget, ops::bits::FromBitsGadget},
+    algebra::{field::emulated::Bound, ops::bits::FromBitsGadget},
     arithmetizations::{
         r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
-        ArithRelation,
+        Arith, ArithRelation,
     },
-    circuits::{var::Var, Assignments, AssignmentsOwned},
-    commitments::{VectorCommitment, VectorCommitmentGadget},
+    circuits::{Assignments, AssignmentsOwned},
+    commitments::{GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget},
     relations::{Relation, WitnessInstanceSampler},
-    traits::{SonobeCurve, SonobeField},
+    traits::{SonobeCurve, SonobeField, CF2},
     transcripts::{Absorbable, AbsorbableGadget, Transcript, TranscriptVar},
 };
-use witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW};
 
+use self::{
+    instance::{circuits::RunningInstanceVar as RUVar, RunningInstance as RU},
+    witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW},
+};
 use crate::{
     Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget, PlainInstance as IU,
     PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar,
@@ -36,9 +41,10 @@ use crate::{
 pub mod instance;
 pub mod witness;
 
+#[derive(Clone)]
 pub struct OvaKey<A, VC: VectorCommitment> {
-    arith: Arc<A>,
-    ck: Arc<VC::Key>,
+    pub arith: Arc<A>,
+    pub ck: Arc<VC::Key>,
 }
 
 impl<A, VC> Relation<RW<VC>, RU<VC>> for OvaKey<A, VC>
@@ -63,24 +69,30 @@ where
     }
 }
 
-impl<A, VC> Relation<IW<VC>, IU<VC>> for OvaKey<A, VC>
+impl<A, VC> Relation<IW<VC::Scalar>, IU<VC::Scalar>> for OvaKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
     VC: VectorCommitment,
 {
     type Error = Error;
 
-    fn check_relation(&self, w: &IW<VC>, u: &IU<VC>) -> Result<(), Self::Error> {
+    fn check_relation(&self, w: &IW<VC::Scalar>, u: &IU<VC::Scalar>) -> Result<(), Self::Error> {
         self.arith.check_relation(w, u)?;
         Ok(())
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC>, IU<VC>> for OvaKey<A, VC> {
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC::Scalar>, IU<VC::Scalar>>
+    for OvaKey<A, VC>
+{
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
-    fn sample(&self, z: Self::Source, _rng: impl RngCore) -> Result<(IW<VC>, IU<VC>), Error> {
+    fn sample(
+        &self,
+        z: Self::Source,
+        _rng: impl RngCore,
+    ) -> Result<(IW<VC::Scalar>, IU<VC::Scalar>), Error> {
         Ok((z.private.into(), z.public.into()))
     }
 }
@@ -123,29 +135,23 @@ pub struct AbstractOva<VC, TF, const CHALLENGE_BITS: usize = 128> {
 pub type Ova<VC, const CHALLENGE_BITS: usize = 128> =
     AbstractOva<VC, <VC as VectorCommitment>::Scalar, CHALLENGE_BITS>;
 
-pub type CycleFoldOva<VC, const CHALLENGE_BITS: usize = 128> = AbstractOva<
-    VC,
-    <<<VC as VectorCommitment>::Commitment as CurveGroup>::BaseField as Field>::BasePrimeField,
-    CHALLENGE_BITS,
->;
+pub type CycleFoldOva<VC, const CHALLENGE_BITS: usize = 128> =
+    AbstractOva<VC, CF2<<VC as VectorCommitment>::Commitment>, CHALLENGE_BITS>;
 
-impl<VC: VectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingScheme<1, 1>
-    for AbstractOva<VC, TF, CHALLENGE_BITS>
-where
-    VC::Scalar: SonobeField + Absorbable<TF>,
-    VC::Commitment: SonobeCurve<ScalarField = VC::Scalar> + Absorbable<TF>,
+impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
+    FoldingScheme<1, 1> for AbstractOva<VC, TF, CHALLENGE_BITS>
 {
     type VC = VC;
     type RW = RW<VC>;
     type RU = RU<VC>;
-    type IW = IW<VC>;
-    type IU = IU<VC>;
+    type IW = IW<VC::Scalar>;
+    type IU = IU<VC::Scalar>;
 
     type TranscriptField = TF;
     type Arith = R1CS<VC::Scalar>;
 
     type Config = (usize, usize);
-    type PublicParam = VC::Key;
+    type PublicParam = (VC::Key, usize);
     type ProverKey = OvaKey<Self::Arith, VC>;
     type VerifierKey = ();
     type DeciderKey = OvaKey<Self::Arith, VC>;
@@ -157,15 +163,16 @@ where
         mut rng: impl RngCore,
     ) -> Result<Self::PublicParam, Error> {
         let ck = VC::generate_key(&mut rng, n_constraints + n_witnesses)?;
-        Ok(ck)
+        Ok((ck, n_witnesses + n_constraints))
     }
 
     fn generate_keys(
-        ck: Self::PublicParam,
+        (ck, n): Self::PublicParam,
         r1cs: Self::Arith,
     ) -> Result<(Self::ProverKey, Self::VerifierKey, Self::DeciderKey), Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
+        assert!(n >= r1cs.n_constraints() + r1cs.n_witnesses());
         Ok((
             OvaKey {
                 arith: r1cs.clone(),
@@ -176,6 +183,7 @@ where
         ))
     }
 
+    #[allow(non_snake_case)]
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<TF>,
@@ -236,6 +244,7 @@ where
         ))
     }
 
+    #[allow(non_snake_case)]
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<TF>,
@@ -264,22 +273,17 @@ where
     }
 }
 
-pub struct AbstractOvaGadget<VC, TF, const CHALLENGE_BITS: usize = 128> {
+pub struct AbstractOvaGadget<VC, const CHALLENGE_BITS: usize = 128> {
     _vc: PhantomData<VC>,
-    _tf: PhantomData<TF>,
 }
 
-impl<VC, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingSchemePartialGadget<1, 1>
-    for AbstractOvaGadget<VC, TF, CHALLENGE_BITS>
+impl<VC, const CHALLENGE_BITS: usize> FoldingSchemePartialGadget<1, 1>
+    for AbstractOvaGadget<VC, CHALLENGE_BITS>
 where
-    VC: VectorCommitmentGadget<ConstraintField = TF>,
-    <VC::Native as VectorCommitment>::Scalar: SonobeField + Absorbable<TF>,
-    VC::ScalarVar: AbsorbableGadget<TF> + FromBitsGadget<TF> + ToBitsGadget<TF>,
-    <VC::Native as VectorCommitment>::Commitment:
-        SonobeCurve<ScalarField = <VC::Native as VectorCommitment>::Scalar> + Absorbable<TF>,
-    VC::CommitmentVar: AbsorbableGadget<TF>,
+    VC: VectorCommitmentGadget<Native: GroupBasedVectorCommitment>,
+    VC::ScalarVar: FromBitsGadget<VC::ConstraintField>,
 {
-    type Native = AbstractOva<VC::Native, TF, CHALLENGE_BITS>;
+    type Native = AbstractOva<VC::Native, VC::ConstraintField, CHALLENGE_BITS>;
 
     type VC = VC;
     type RW = RWVar<VC>;
@@ -287,34 +291,42 @@ where
     type IW = IWVar<VC>;
     type IU = IUVar<VC>;
     type VerifierKey = ();
-    type Challenge = Vec<Boolean<TF>>;
+    type Challenge = Vec<Boolean<VC::ConstraintField>>;
     type Proof = VC::CommitmentVar;
-    type Hint = VC::CommitmentVar;
 
+    #[allow(non_snake_case)]
     fn verify_hinted(
         _vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptVar<TF>,
+        transcript: &mut impl TranscriptVar<VC::ConstraintField>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; 1],
-        cm: &Self::Proof,
-        folded_cm: Self::Hint,
+        proof: &Self::Proof,
     ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
         let (U, u) = (Us[0].borrow(), us[0].borrow());
 
         let rho_bits = {
             transcript.add(&U)?;
             transcript.add(&u)?;
-            transcript.add(cm)?;
+            transcript.add(proof)?;
             transcript.challenge_bits(CHALLENGE_BITS)?
         };
-        let rho = VC::ScalarVar::from_bits_le(&rho_bits)?;
+        let rho = VC::ScalarVar::from_bits_le(
+            &rho_bits,
+            Bound(
+                BigInt::zero(),
+                (BigInt::one() << CHALLENGE_BITS) - BigInt::one(),
+            ),
+        )?;
 
         Ok((
             RUVar {
                 u: (U.u.clone() + &rho)
                     .try_into()
                     .map_err(|_| SynthesisError::Unsatisfiable)?,
-                cm: folded_cm,
+                cm: VC::CommitmentVar::new_witness(U.cm.cs().or(proof.cs()).or(rho.cs()), || {
+                    Ok(U.cm.value().unwrap_or_default()
+                        + proof.value().unwrap_or_default() * rho.value().unwrap_or_default())
+                })?,
                 x: U.x
                     .iter()
                     .zip(&u[..])
@@ -327,37 +339,60 @@ where
     }
 }
 
-impl<VC, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingSchemeFullGadget<1, 1>
-    for AbstractOvaGadget<VC, TF, CHALLENGE_BITS>
+impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeFullGadget<1, 1>
+    for AbstractOvaGadget<VC, CHALLENGE_BITS>
 where
-    VC: VectorCommitmentGadget<ConstraintField = TF>,
-    <VC::Native as VectorCommitment>::Scalar: SonobeField + Absorbable<TF>,
-    VC::ScalarVar: AbsorbableGadget<TF> + FromBitsGadget<TF> + ToBitsGadget<TF>,
-    <VC::Native as VectorCommitment>::Commitment:
-        SonobeCurve<ScalarField = <VC::Native as VectorCommitment>::Scalar> + Absorbable<TF>,
-    VC::CommitmentVar: AbsorbableGadget<TF>
-        + PointScalarMulGadget<TF>
+    VC: VectorCommitmentGadget<Native: GroupBasedVectorCommitment>,
+    VC::ScalarVar: FromBitsGadget<VC::ConstraintField>,
+    VC::CommitmentVar: CurveVar<<VC::Native as VectorCommitment>::Commitment, VC::ConstraintField>
         + Add<Output = VC::CommitmentVar>
         + for<'a> Add<&'a VC::CommitmentVar, Output = VC::CommitmentVar>,
 {
+    #[allow(non_snake_case)]
     fn verify(
-        vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptVar<TF>,
+        _vk: &Self::VerifierKey,
+        transcript: &mut impl TranscriptVar<VC::ConstraintField>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; 1],
-        cm: &Self::Proof,
-    ) -> Result<Self::RU, SynthesisError>
-    where
-        VC::CommitmentVar: PointScalarMulGadget<TF>,
-    {
-        let dummy_hint = AllocVar::new_constant(
-            ConstraintSystemRef::None,
-            <VC::Native as VectorCommitment>::Commitment::default(),
-        )?;
-        let (mut U, rho_bits) = Self::verify_hinted(vk, transcript, Us, us, cm, dummy_hint)?;
-        U.cm = cm.mul_scalar(&rho_bits)? + &Us[0].borrow().cm;
+        proof: &Self::Proof,
+    ) -> Result<Self::RU, SynthesisError> {
+        let (U, u) = (Us[0].borrow(), us[0].borrow());
+        let cs = U.cs();
 
-        Ok(U)
+        let rho_bits = {
+            transcript.add(&U)?;
+            transcript.add(&u)?;
+            transcript.add(proof)?;
+            transcript.challenge_bits(CHALLENGE_BITS)?
+        };
+        println!("{}", cs.num_constraints());
+        if !cs.is_in_setup_mode() {
+            assert!(cs.is_satisfied().unwrap());
+        }
+        let rho = VC::ScalarVar::from_bits_le(
+            &rho_bits,
+            Bound(
+                BigInt::zero(),
+                (BigInt::one() << CHALLENGE_BITS) - BigInt::one(),
+            ),
+        )?;
+        println!("{}", cs.num_constraints());
+        if !cs.is_in_setup_mode() {
+            assert!(cs.is_satisfied().unwrap());
+        }
+
+        Ok(RUVar {
+            u: (U.u.clone() + &rho)
+                .try_into()
+                .map_err(|_| SynthesisError::Unsatisfiable)?,
+            cm: proof.scalar_mul_le(rho_bits.iter())? + &Us[0].borrow().cm,
+            x: U.x
+                .iter()
+                .zip(&u[..])
+                .map(|(a, b)| (b.clone() * &rho + a).try_into())
+                .collect::<Result<_, _>>()
+                .map_err(|_| SynthesisError::Unsatisfiable)?,
+        })
     }
 }
 

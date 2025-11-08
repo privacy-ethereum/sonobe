@@ -1,18 +1,14 @@
-use ark_ff::{Field, PrimeField};
-use ark_r1cs_std::alloc::AllocVar;
-use ark_std::borrow::Borrow;
+use ark_ff::PrimeField;
 use sonobe_primitives::{
-    arithmetizations::ArithConfig,
-    commitments::{VectorCommitment, VectorCommitmentGadget},
-    traits::Dummy,
-    transcripts::{Absorbable, AbsorbableGadget},
+    arithmetizations::ArithConfig, commitments::VectorCommitment, traits::Dummy,
+    transcripts::Absorbable,
 };
 
-use crate::{FoldingInstance, FoldingInstanceVar};
+use crate::FoldingInstance;
 
 pub mod circuits;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunningInstance<VC: VectorCommitment> {
     pub u: VC::Scalar,
     pub cm: VC::Commitment,
@@ -20,12 +16,18 @@ pub struct RunningInstance<VC: VectorCommitment> {
 }
 
 impl<VC: VectorCommitment> FoldingInstance<VC> for RunningInstance<VC> {
+    const N_COMMITMENTS: usize = 1;
+
     fn commitments(&self) -> Vec<&VC::Commitment> {
         vec![&self.cm]
     }
 
-    fn public_inputs(&self) -> &[<VC as VectorCommitment>::Scalar] {
+    fn public_inputs(&self) -> &[VC::Scalar] {
         &self.x
+    }
+
+    fn public_inputs_mut(&mut self) -> &mut [VC::Scalar] {
+        &mut self.x
     }
 }
 
@@ -39,10 +41,8 @@ impl<VC: VectorCommitment, Cfg: ArithConfig> Dummy<&Cfg> for RunningInstance<VC>
     }
 }
 
-impl<F: PrimeField, VC: VectorCommitment<Scalar: Absorbable<F>, Commitment: Absorbable<F>>>
-    Absorbable<F> for RunningInstance<VC>
-{
-    fn absorb_into(&self, dest: &mut Vec<F>) {
+impl<VC: VectorCommitment> Absorbable for RunningInstance<VC> {
+    fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
         self.u.absorb_into(dest);
         self.x.absorb_into(dest);
         self.cm.absorb_into(dest);

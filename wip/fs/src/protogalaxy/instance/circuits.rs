@@ -3,17 +3,16 @@ use ark_r1cs_std::{
     fields::fp::FpVar,
     prelude::Boolean,
     select::CondSelectGadget,
+    GR1CSVar,
 };
-use ark_relations::gr1cs::{Namespace, SynthesisError};
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
 use sonobe_primitives::{
-    circuits::var::Var,
-    commitments::{VectorCommitment, VectorCommitmentGadget},
-    transcripts::{Absorbable, AbsorbableGadget},
+    circuits::var::Var, commitments::VectorCommitmentGadget, transcripts::AbsorbableGadget,
 };
 
 use super::{IncomingInstance, RunningInstance};
-use crate::{FoldingInstance, FoldingInstanceVar};
+use crate::FoldingInstanceVar;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunningInstanceVar<VC: VectorCommitmentGadget> {
@@ -43,6 +42,27 @@ impl<VC: VectorCommitmentGadget> AllocVar<RunningInstance<VC::Native>, VC::Const
             betas: AllocVar::new_variable(cs.clone(), || Ok(&betas[..]), mode)?,
             e: AllocVar::new_variable(cs.clone(), || Ok(e), mode)?,
             x: AllocVar::new_variable(cs.clone(), || Ok(&x[..]), mode)?,
+        })
+    }
+}
+
+impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for RunningInstanceVar<VC> {
+    type Value = RunningInstance<VC::Native>;
+
+    fn cs(&self) -> ConstraintSystemRef<VC::ConstraintField> {
+        self.phi
+            .cs()
+            .or(self.betas.cs())
+            .or(self.e.cs())
+            .or(self.x.cs())
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(RunningInstance {
+            phi: self.phi.value()?,
+            betas: self.betas.value()?,
+            e: self.e.value()?,
+            x: self.x.value()?,
         })
     }
 }
@@ -98,6 +118,20 @@ impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for RunningInstanceVar<V
     fn public_inputs(&self) -> &Vec<VC::ScalarVar> {
         &self.x
     }
+
+    fn new_witness_with_public_inputs(
+        cs: impl Into<Namespace<VC::ConstraintField>>,
+        u: &Self::Native,
+        x: Vec<VC::ScalarVar>,
+    ) -> Result<Self, SynthesisError> {
+        let cs = cs.into().cs();
+        Ok(Self {
+            phi: AllocVar::new_witness(cs.clone(), || Ok(&u.phi))?,
+            betas: AllocVar::new_witness(cs.clone(), || Ok(&u.betas[..]))?,
+            e: AllocVar::new_witness(cs.clone(), || Ok(&u.e))?,
+            x,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -124,6 +158,21 @@ impl<VC: VectorCommitmentGadget> AllocVar<IncomingInstance<VC::Native>, VC::Cons
         Ok(Self {
             phi: AllocVar::new_variable(cs.clone(), || Ok(phi), mode)?,
             x: AllocVar::new_variable(cs.clone(), || Ok(&x[..]), mode)?,
+        })
+    }
+}
+
+impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for IncomingInstanceVar<VC> {
+    type Value = IncomingInstance<VC::Native>;
+
+    fn cs(&self) -> ConstraintSystemRef<VC::ConstraintField> {
+        self.phi.cs().or(self.x.cs())
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(IncomingInstance {
+            phi: self.phi.value()?,
+            x: self.x.value()?,
         })
     }
 }
@@ -166,5 +215,17 @@ impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for IncomingInstanceVar<
 
     fn public_inputs(&self) -> &Vec<VC::ScalarVar> {
         &self.x
+    }
+
+    fn new_witness_with_public_inputs(
+        cs: impl Into<Namespace<VC::ConstraintField>>,
+        u: &Self::Native,
+        x: Vec<VC::ScalarVar>,
+    ) -> Result<Self, SynthesisError> {
+        let cs = cs.into().cs();
+        Ok(Self {
+            phi: AllocVar::new_witness(cs.clone(), || Ok(&u.phi))?,
+            x,
+        })
     }
 }

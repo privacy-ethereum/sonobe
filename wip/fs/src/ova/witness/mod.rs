@@ -1,25 +1,33 @@
+use sonobe_primitives::{arithmetizations::ArithConfig, commitments::VectorCommitment, traits::Dummy};
+
+use crate::FoldingWitness;
+
 pub mod circuits;
 
-use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
-use ark_relations::gr1cs::{Namespace, SynthesisError};
-use ark_std::borrow::Borrow;
-use sonobe_primitives::commitments::{VectorCommitment, VectorCommitmentGadget};
-
-use crate::{FoldingWitness, FoldingWitnessVar};
-
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunningWitness<VC: VectorCommitment> {
     pub w: Vec<VC::Scalar>,
     pub r: VC::Randomness,
 }
 
 impl<VC: VectorCommitment> FoldingWitness<VC> for RunningWitness<VC> {
-    fn openings_ref(
+    const N_OPENINGS: usize = 1;
+
+    fn openings(
         &self,
     ) -> Vec<(
-        &[<VC as VectorCommitment>::Scalar],
-        &<VC as VectorCommitment>::Randomness,
+        &[VC::Scalar],
+        &VC::Randomness,
     )> {
         vec![(&self.w, &self.r)]
+    }
+}
+
+impl<VC: VectorCommitment, Cfg: ArithConfig> Dummy<&Cfg> for RunningWitness<VC> {
+    fn dummy(cfg: &Cfg) -> Self {
+        Self {
+            w: vec![Default::default(); cfg.n_witnesses()],
+            r: Default::default(),
+        }
     }
 }

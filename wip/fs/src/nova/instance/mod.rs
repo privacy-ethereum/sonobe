@@ -8,7 +8,7 @@ use crate::FoldingInstance;
 
 pub mod circuits;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunningInstance<VC: VectorCommitment> {
     pub cm_e: VC::Commitment,
     pub u: VC::Scalar,
@@ -17,12 +17,18 @@ pub struct RunningInstance<VC: VectorCommitment> {
 }
 
 impl<VC: VectorCommitment> FoldingInstance<VC> for RunningInstance<VC> {
+    const N_COMMITMENTS: usize = 2;
+
     fn commitments(&self) -> Vec<&VC::Commitment> {
         vec![&self.cm_e, &self.cm_w]
     }
 
-    fn public_inputs(&self) -> &[<VC as VectorCommitment>::Scalar] {
+    fn public_inputs(&self) -> &[VC::Scalar] {
         &self.x
+    }
+
+    fn public_inputs_mut(&mut self) -> &mut [VC::Scalar] {
+        &mut self.x
     }
 }
 
@@ -37,10 +43,8 @@ impl<VC: VectorCommitment, Cfg: ArithConfig> Dummy<&Cfg> for RunningInstance<VC>
     }
 }
 
-impl<F: PrimeField, VC: VectorCommitment<Scalar: Absorbable<F>, Commitment: Absorbable<F>>>
-    Absorbable<F> for RunningInstance<VC>
-{
-    fn absorb_into(&self, dest: &mut Vec<F>) {
+impl<VC: VectorCommitment> Absorbable for RunningInstance<VC> {
+    fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
         self.u.absorb_into(dest);
         self.x.absorb_into(dest);
         self.cm_e.absorb_into(dest);
@@ -48,19 +52,25 @@ impl<F: PrimeField, VC: VectorCommitment<Scalar: Absorbable<F>, Commitment: Abso
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IncomingInstance<VC: VectorCommitment> {
     pub cm_w: VC::Commitment,
     pub x: Vec<VC::Scalar>,
 }
 
 impl<VC: VectorCommitment> FoldingInstance<VC> for IncomingInstance<VC> {
+    const N_COMMITMENTS: usize = 1;
+
     fn commitments(&self) -> Vec<&VC::Commitment> {
         vec![&self.cm_w]
     }
 
-    fn public_inputs(&self) -> &[<VC as VectorCommitment>::Scalar] {
+    fn public_inputs(&self) -> &[VC::Scalar] {
         &self.x
+    }
+
+    fn public_inputs_mut(&mut self) -> &mut [VC::Scalar] {
+        &mut self.x
     }
 }
 
@@ -73,10 +83,8 @@ impl<VC: VectorCommitment, Cfg: ArithConfig> Dummy<&Cfg> for IncomingInstance<VC
     }
 }
 
-impl<F: PrimeField, VC: VectorCommitment<Scalar: Absorbable<F>, Commitment: Absorbable<F>>>
-    Absorbable<F> for IncomingInstance<VC>
-{
-    fn absorb_into(&self, dest: &mut Vec<F>) {
+impl<VC: VectorCommitment> Absorbable for IncomingInstance<VC> {
+    fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
         self.x.absorb_into(dest);
         self.cm_w.absorb_into(dest);
     }

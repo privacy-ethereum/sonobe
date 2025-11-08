@@ -19,11 +19,11 @@ use num_integer::Integer;
 use crate::{
     algebra::field::SonobeField,
     circuits::var::Var,
-    traits::{Dummy, Inputize, InputizeNonNative},
+    traits::{Dummy, Inputize, InputizeEmulated},
     transcripts::{Absorbable, AbsorbableGadget},
 };
 
-pub mod nonnative;
+pub mod emulated;
 
 pub type CF1<C> = <C as PrimeGroup>::ScalarField;
 pub type CF2<C> = <<C as CurveGroup>::BaseField as Field>::BasePrimeField;
@@ -34,9 +34,9 @@ pub type CI2<C> = <<<C as CurveGroup>::BaseField as Field>::BasePrimeField as Pr
 /// necessary bounds for the curve to be used conveniently in folding schemes.
 pub trait SonobeCurve:
     CurveGroup<ScalarField: SonobeField, BaseField: SonobeField>
-    + Absorbable<Self::BaseField>
+    + Absorbable
     + Inputize<Self::BaseField>
-    + InputizeNonNative<Self::ScalarField>
+    + InputizeEmulated<Self::ScalarField>
 {
     /// The in-circuit variable type for this curve.
     type Var: CurveVar<Self, Self::BaseField>
@@ -62,8 +62,8 @@ impl<T, C: SonobeCurve> Dummy<T> for C {
     }
 }
 
-impl<F: PrimeField, P: SWCurveConfig<BaseField: Absorbable<F>>> Absorbable<F> for Projective<P> {
-    fn absorb_into(&self, dest: &mut Vec<F>) {
+impl<P: SWCurveConfig<BaseField: Absorbable>> Absorbable for Projective<P> {
+    fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
         let affine = self.into_affine();
         let (x, y) = affine.xy().unwrap_or_default();
         [x, y].absorb_into(dest);
@@ -101,15 +101,15 @@ impl<P: SWCurveConfig<BaseField: SonobeField>> Inputize<P::BaseField> for Projec
 }
 
 impl<P: SWCurveConfig<BaseField: SonobeField, ScalarField: SonobeField>>
-    InputizeNonNative<P::ScalarField> for Projective<P>
+    InputizeEmulated<P::ScalarField> for Projective<P>
 {
     /// Returns the internal representation in the same order as how the value
     /// is allocated in `NonNativeAffineVar::new_input`.
-    fn inputize_nonnative(&self) -> Vec<P::ScalarField> {
+    fn inputize_emulated(&self) -> Vec<P::ScalarField> {
         let affine = self.into_affine();
         let (x, y) = affine.xy().unwrap_or_default();
 
-        [x, y].inputize_nonnative()
+        [x, y].inputize_emulated()
     }
 }
 
@@ -142,43 +142,39 @@ fn lattice_reduction_2x2(
     (b1, b2)
 }
 
-pub trait PointScalarMulGadget<F: PrimeField>: Sized {
-    fn mul_scalar(&self, scalar: &impl ToBitsGadget<F>) -> Result<Self, SynthesisError>;
-}
+// impl<C: SonobeCurve> PointScalarMulGadget<CF2<C>> for C {
+//     fn mul_scalar(&self, scalar: &impl ToBitsGadget<CF2<C>>) -> Result<Self, SynthesisError> {
+//         let scalar = scalar.to_bits_le()?;
 
-impl<C: SonobeCurve> PointScalarMulGadget<CF2<C>> for C {
-    fn mul_scalar(&self, scalar: &impl ToBitsGadget<CF2<C>>) -> Result<Self, SynthesisError> {
-        let scalar = scalar.to_bits_le()?;
+//         let cs = scalar.cs();
 
-        let cs = scalar.cs();
+//         let m = BigInt::from_biguint(Sign::Plus, CF1::<C>::MODULUS.into());
+//         let m_sqrt = m.sqrt();
 
-        let m = BigInt::from_biguint(Sign::Plus, CF1::<C>::MODULUS.into());
-        let m_sqrt = m.sqrt();
+//         let (a, b) = lattice_reduction_2x2(
+//             (m, Zero::zero()),
+//             (
+//                 CI2::<C>::from_bits_le(&scalar.value().unwrap_or_default())
+//                     .into()
+//                     .into(),
+//                 One::one(),
+//             ),
+//         )
+//         .0;
+//         let (a_sign, a_abs) = a.into_parts();
+//         let (b_sign, b_abs) = b.into_parts();
+//         let a_is_negative =
+//             Boolean::new_variable_with_inferred_mode(cs.clone(), || Ok(a_sign == Sign::Minus))?;
+//         let b_is_negative =
+//             Boolean::new_variable_with_inferred_mode(cs.clone(), || Ok(b_sign == Sign::Minus))?;
 
-        let (a, b) = lattice_reduction_2x2(
-            (m, Zero::zero()),
-            (
-                CI2::<C>::from_bits_le(&scalar.value().unwrap_or_default())
-                    .into()
-                    .into(),
-                One::one(),
-            ),
-        )
-        .0;
-        let (a_sign, a_abs) = a.into_parts();
-        let (b_sign, b_abs) = b.into_parts();
-        let a_is_negative =
-            Boolean::new_variable_with_inferred_mode(cs.clone(), || Ok(a_sign == Sign::Minus))?;
-        let b_is_negative =
-            Boolean::new_variable_with_inferred_mode(cs.clone(), || Ok(b_sign == Sign::Minus))?;
+//         // let a = NonNativeUintVar::new_variable_with_inferred_mode(cs.clone(), || {
+//         //     Ok((a_abs.into(), Bound::new_ub(m_sqrt.clone())))
+//         // })?;
+//         // let b = NonNativeUintVar::new_variable_with_inferred_mode(cs, || {
+//         //     Ok((b_abs.into(), Bound::new_ub(m_sqrt)))
+//         // })?;
 
-        // let a = NonNativeUintVar::new_variable_with_inferred_mode(cs.clone(), || {
-        //     Ok((a_abs.into(), Bound::new_ub(m_sqrt.clone())))
-        // })?;
-        // let b = NonNativeUintVar::new_variable_with_inferred_mode(cs, || {
-        //     Ok((b_abs.into(), Bound::new_ub(m_sqrt)))
-        // })?;
-
-        todo!()
-    }
-}
+//         todo!()
+//     }
+// }

@@ -3,6 +3,7 @@ use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::{borrow::Borrow, marker::PhantomData, One};
 
+use super::R1CS;
 use crate::{
     algebra::ops::{
         eq::EquivalenceGadget,
@@ -13,12 +14,11 @@ use crate::{
     circuits::Assignments,
 };
 
-use super::R1CS;
-
 /// An in-circuit representation of the `R1CS` struct.
 ///
 /// `M` is for the modulo operation involved in the satisfiability check when
 /// the underlying `FVar` is `NonNativeUintVar`.
+#[allow(non_snake_case)]
 #[derive(Debug, Clone)]
 pub struct R1CSMatricesVar<M, FVar> {
     _m: PhantomData<M>,
@@ -53,6 +53,7 @@ where
     SparseMatrixVar<FVar>: MatrixGadget<FVar>,
     [FVar]: VectorGadget<FVar>,
 {
+    #[allow(non_snake_case)]
     pub fn eval_assignments(
         &self,
         z: Assignments<FVar, impl AsRef<[FVar]>>,

@@ -1,32 +1,16 @@
-use ark_ec::{
-    short_weierstrass::{Projective, SWCurveConfig},
-    CurveGroup,
-};
-use ark_ff::{AdditiveGroup, PrimeField};
-use ark_r1cs_std::{
-    boolean::Boolean,
-    convert::ToBitsGadget,
-    eq::EqGadget,
-    fields::{fp::FpVar, FieldVar},
-    groups::{
-        curves::short_weierstrass::{non_zero_affine::NonZeroAffineVar, ProjectiveVar},
-        CurveVar,
-    },
-    GR1CSVar,
-};
+use ark_r1cs_std::{boolean::Boolean, convert::ToBitsGadget, eq::EqGadget, fields::fp::FpVar, groups::CurveVar};
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::{iter::repeat_with, marker::PhantomData, rand::RngCore, UniformRand};
 
 use super::{Error, VectorCommitment};
-use crate::traits::CF1;
 use crate::{
-    algebra::field::nonnative2::NonNativeFieldVar,
-    commitments::{VectorCommitmentGadget},
-    traits::{SonobeCurve, CF2},
+    algebra::{field::emulated::EmulatedFieldVar, group::emulated::EmulatedAffineVar},
+    commitments::VectorCommitmentGadget,
+    traits::{CF1, CF2, SonobeCurve},
+    utils::null::Null,
 };
-use crate::utils::null::Null;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pedersen<C: SonobeCurve, const H: bool> {
     _c: PhantomData<C>,
 }
@@ -230,9 +214,9 @@ impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, false> {
 
     type KeyVar = Vec<C::Var>;
 
-    type ScalarVar = NonNativeFieldVar<CF2<C>, CF1<C>, true>;
+    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>, true>;
 
-    type IntermediateScalarVar = NonNativeFieldVar<CF2<C>, CF1<C>, false>;
+    type IntermediateScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>, false>;
 
     type CommitmentVar = C::Var;
 
@@ -260,13 +244,13 @@ impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, true> {
 
     type KeyVar = (Vec<C::Var>, C::Var);
 
-    type ScalarVar = NonNativeFieldVar<CF2<C>, CF1<C>, true>;
+    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>, true>;
 
-    type IntermediateScalarVar = NonNativeFieldVar<CF2<C>, CF1<C>, false>;
+    type IntermediateScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>, false>;
 
     type CommitmentVar = C::Var;
 
-    type RandomnessVar = NonNativeFieldVar<CF2<C>, CF1<C>, true>;
+    type RandomnessVar = EmulatedFieldVar<CF2<C>, CF1<C>, true>;
 
     fn open(
         (g, h): &Self::KeyVar,
@@ -285,14 +269,66 @@ impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, true> {
     }
 }
 
+#[derive(Clone)]
+pub struct PedersenEmulatedGadget<C: SonobeCurve, const H: bool> {
+    _c: PhantomData<C>,
+}
+
+impl<C: SonobeCurve> VectorCommitmentGadget for PedersenEmulatedGadget<C, false> {
+    type Native = Pedersen<C, false>;
+    type ConstraintField = CF1<C>;
+
+    type KeyVar = Vec<EmulatedAffineVar<C>>;
+
+    type ScalarVar = FpVar<CF1<C>>;
+
+    type IntermediateScalarVar = FpVar<CF1<C>>;
+
+    type CommitmentVar = EmulatedAffineVar<C>;
+
+    type RandomnessVar = Null;
+
+    fn open(
+        ck: &Self::KeyVar,
+        v: &[Self::ScalarVar],
+        _r: &Self::RandomnessVar,
+        cm: &Self::CommitmentVar,
+    ) -> Result<(), SynthesisError> {
+        unimplemented!()
+    }
+}
+
+impl<C: SonobeCurve> VectorCommitmentGadget for PedersenEmulatedGadget<C, true> {
+    type Native = Pedersen<C, true>;
+    type ConstraintField = CF1<C>;
+
+    type KeyVar = (Vec<EmulatedAffineVar<C>>, EmulatedAffineVar<C>);
+
+    type ScalarVar = FpVar<CF1<C>>;
+
+    type IntermediateScalarVar = FpVar<CF1<C>>;
+
+    type CommitmentVar = EmulatedAffineVar<C>;
+
+    type RandomnessVar = FpVar<CF1<C>>;
+
+    fn open(
+        (g, h): &Self::KeyVar,
+        v: &[Self::ScalarVar],
+        r: &Self::RandomnessVar,
+        cm: &Self::CommitmentVar,
+    ) -> Result<(), SynthesisError> {
+        unimplemented!()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ark_bn254::G1Projective;
     use ark_std::{error::Error, rand::Rng, test_rng};
 
-    use crate::commitments::tests::test_commitment_correctness;
-
     use super::*;
+    use crate::commitments::tests::test_commitment_correctness;
 
     #[test]
     fn test_pedersen_commitment() -> Result<(), Box<dyn Error>> {

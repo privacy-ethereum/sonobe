@@ -1,18 +1,16 @@
 use ark_ff::Field;
-use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
-use ark_relations::gr1cs::{Namespace, SynthesisError};
+use ark_r1cs_std::{GR1CSVar, alloc::{AllocVar, AllocationMode}};
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{
     borrow::Borrow,
     fmt::Debug,
     iter::Sum,
     ops::{Add, Mul},
-    rand::RngCore,
 };
-use thiserror::Error;
 
 use crate::circuits::var::Var;
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct Null;
 
 impl<F> Add<F> for Null {
@@ -64,5 +62,17 @@ impl<F: Field> AllocVar<Null, F> for Null {
         _mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
         Ok(Self)
+    }
+}
+
+impl<F: Field> GR1CSVar<F> for Null {
+    type Value = Null;
+
+    fn cs(&self) -> ConstraintSystemRef<F> {
+        ConstraintSystemRef::None
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(Null)
     }
 }

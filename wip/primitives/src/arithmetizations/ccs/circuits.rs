@@ -6,19 +6,19 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
 
-use crate::algebra::ops::matrix::SparseMatrixVar;
-
-use super::CCS;
+use super::{CCS, CCSVariant};
+use crate::{algebra::ops::matrix::SparseMatrixVar};
 
 /// CCSMatricesVar contains the matrices 'M' of the CCS without the rest of CCS parameters.
+#[allow(non_snake_case)]
 #[derive(Debug, Clone)]
 pub struct CCSMatricesVar<F: PrimeField> {
     // we only need native representation, so the constraint field==F
     pub M: Vec<SparseMatrixVar<FpVar<F>>>,
 }
 
-impl<F: PrimeField> AllocVar<CCS<F>, F> for CCSMatricesVar<F> {
-    fn new_variable<T: Borrow<CCS<F>>>(
+impl<F: PrimeField, V: CCSVariant> AllocVar<CCS<F, V>, F> for CCSMatricesVar<F> {
+    fn new_variable<T: Borrow<CCS<F, V>>>(
         cs: impl Into<Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         _mode: AllocationMode,
@@ -30,7 +30,7 @@ impl<F: PrimeField> AllocVar<CCS<F>, F> for CCSMatricesVar<F> {
                     .borrow()
                     .M
                     .iter()
-                    .map(|M| SparseMatrixVar::<FpVar<F>>::new_constant(cs.clone(), M.clone()))
+                    .map(|m| SparseMatrixVar::new_constant(cs.clone(), m))
                     .collect::<Result<_, _>>()?,
             })
         })

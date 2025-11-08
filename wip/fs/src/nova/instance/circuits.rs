@@ -1,17 +1,18 @@
-use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
-use ark_r1cs_std::fields::fp::FpVar;
-use ark_r1cs_std::prelude::Boolean;
-use ark_r1cs_std::select::CondSelectGadget;
-use ark_relations::gr1cs::{Namespace, SynthesisError};
+use ark_r1cs_std::{
+    alloc::{AllocVar, AllocationMode},
+    fields::fp::FpVar,
+    prelude::Boolean,
+    select::CondSelectGadget,
+    GR1CSVar,
+};
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
 use sonobe_primitives::{
-    circuits::var::Var,
-    commitments::{VectorCommitment, VectorCommitmentGadget},
-    transcripts::{Absorbable, AbsorbableGadget},
+    circuits::var::Var, commitments::VectorCommitmentGadget, transcripts::AbsorbableGadget,
 };
 
 use super::{IncomingInstance, RunningInstance};
-use crate::{FoldingInstance, FoldingInstanceVar};
+use crate::FoldingInstanceVar;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunningInstanceVar<VC: VectorCommitmentGadget> {
@@ -45,8 +46,32 @@ impl<VC: VectorCommitmentGadget> AllocVar<RunningInstance<VC::Native>, VC::Const
     }
 }
 
+impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for RunningInstanceVar<VC> {
+    type Value = RunningInstance<VC::Native>;
+
+    fn cs(&self) -> ConstraintSystemRef<VC::ConstraintField> {
+        self.cm_e
+            .cs()
+            .or(self.u.cs())
+            .or(self.cm_w.cs())
+            .or(self.x.cs())
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(RunningInstance {
+            cm_e: self.cm_e.value()?,
+            u: self.u.value()?,
+            cm_w: self.cm_w.value()?,
+            x: self.x.value()?,
+        })
+    }
+}
+
 impl<VC: VectorCommitmentGadget> AbsorbableGadget<VC::ConstraintField> for RunningInstanceVar<VC> {
-    fn absorb_into(&self, dest: &mut Vec<FpVar<VC::ConstraintField>>) -> Result<(), SynthesisError> {
+    fn absorb_into(
+        &self,
+        dest: &mut Vec<FpVar<VC::ConstraintField>>,
+    ) -> Result<(), SynthesisError> {
         self.u.absorb_into(dest)?;
         self.x.absorb_into(dest)?;
         self.cm_e.absorb_into(dest)?;
@@ -85,6 +110,20 @@ impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for RunningInstanceVar<V
     fn public_inputs(&self) -> &Vec<VC::ScalarVar> {
         &self.x
     }
+
+    fn new_witness_with_public_inputs(
+        cs: impl Into<Namespace<VC::ConstraintField>>,
+        u: &Self::Native,
+        x: Vec<VC::ScalarVar>,
+    ) -> Result<Self, SynthesisError> {
+        let cs = cs.into().cs();
+        Ok(Self {
+            cm_e: AllocVar::new_witness(cs.clone(), || Ok(&u.cm_e))?,
+            u: AllocVar::new_witness(cs.clone(), || Ok(&u.u))?,
+            cm_w: AllocVar::new_witness(cs.clone(), || Ok(&u.cm_w))?,
+            x,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -115,8 +154,26 @@ impl<VC: VectorCommitmentGadget> AllocVar<IncomingInstance<VC::Native>, VC::Cons
     }
 }
 
+impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for IncomingInstanceVar<VC> {
+    type Value = IncomingInstance<VC::Native>;
+
+    fn cs(&self) -> ConstraintSystemRef<VC::ConstraintField> {
+        self.cm_w.cs().or(self.x.cs())
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(IncomingInstance {
+            cm_w: self.cm_w.value()?,
+            x: self.x.value()?,
+        })
+    }
+}
+
 impl<VC: VectorCommitmentGadget> AbsorbableGadget<VC::ConstraintField> for IncomingInstanceVar<VC> {
-    fn absorb_into(&self, dest: &mut Vec<FpVar<VC::ConstraintField>>) -> Result<(), SynthesisError> {
+    fn absorb_into(
+        &self,
+        dest: &mut Vec<FpVar<VC::ConstraintField>>,
+    ) -> Result<(), SynthesisError> {
         self.x.absorb_into(dest)?;
         self.cm_w.absorb_into(dest)
     }
@@ -150,5 +207,17 @@ impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for IncomingInstanceVar<
 
     fn public_inputs(&self) -> &Vec<VC::ScalarVar> {
         &self.x
+    }
+
+    fn new_witness_with_public_inputs(
+        cs: impl Into<Namespace<VC::ConstraintField>>,
+        u: &Self::Native,
+        x: Vec<VC::ScalarVar>,
+    ) -> Result<Self, SynthesisError> {
+        let cs = cs.into().cs();
+        Ok(Self {
+            cm_w: AllocVar::new_witness(cs.clone(), || Ok(&u.cm_w))?,
+            x,
+        })
     }
 }

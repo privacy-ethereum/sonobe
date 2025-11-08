@@ -3,17 +3,17 @@ use ark_poly::{DenseMultilinearExtension as MLE, MultilinearExtension};
 use ark_std::{
     borrow::Borrow, cfg_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
 };
-use instance::{CCCSInstance as IU, LCCCSInstance as RU};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use sonobe_primitives::{
     algebra::ops::rlc::{ScalarRLC, SliceRLC},
     arithmetizations::{
-        ccs::{CCSConfig, CCS},
+        ccs::{CCSConfig, CCSVariant, CCS},
+        r1cs::R1CSConfig,
         Arith, ArithConfig, ArithRelation, Error as ArithError,
     },
     circuits::{Assignments, AssignmentsOwned},
-    commitments::VectorCommitment,
+    commitments::{GroupBasedVectorCommitment, VectorCommitment},
     relations::{Relation, WitnessInstanceSampler},
     sumcheck::{
         utils::{build_eq_x_r_vec, eq_eval, VPAuxInfo, VirtualPolynomial},
@@ -22,19 +22,25 @@ use sonobe_primitives::{
     traits::{Dummy, SonobeCurve, SonobeField},
     transcripts::{Absorbable, Transcript},
 };
-use witness::{CCCSWitness as IW, LCCCSWitness as RW};
 
+use self::{
+    instance::{CCCSInstance as IU, LCCCSInstance as RU},
+    witness::{CCCSWitness as IW, LCCCSWitness as RW},
+};
 use crate::{Error, FoldingScheme, PlainInstance as PU, PlainWitness as PW};
 
 pub mod instance;
 pub mod witness;
 
+#[derive(Clone)]
 pub struct HyperNovaKey<A, VC: VectorCommitment> {
     arith: Arc<A>,
     ck: Arc<VC::Key>,
 }
 
-impl<VC: VectorCommitment<Scalar: Field>> ArithRelation<RW<VC>, RU<VC>> for CCS<VC::Scalar> {
+impl<VC: VectorCommitment<Scalar: Field>, V: CCSVariant> ArithRelation<RW<VC>, RU<VC>>
+    for CCS<VC::Scalar, V>
+{
     type Evaluation = Vec<VC::Scalar>;
 
     fn eval_relation(&self, w: &RW<VC>, u: &RU<VC>) -> Result<Self::Evaluation, ArithError> {
@@ -86,14 +92,14 @@ where
     }
 }
 
-impl<A, VC> Relation<PW<VC>, PU<VC>> for HyperNovaKey<A, VC>
+impl<A, VC> Relation<PW<VC::Scalar>, PU<VC::Scalar>> for HyperNovaKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
     VC: VectorCommitment,
 {
     type Error = Error;
 
-    fn check_relation(&self, w: &PW<VC>, u: &PU<VC>) -> Result<(), Self::Error> {
+    fn check_relation(&self, w: &PW<VC::Scalar>, u: &PU<VC::Scalar>) -> Result<(), Self::Error> {
         self.arith.check_relation(w, u)?;
         Ok(())
     }
@@ -112,11 +118,17 @@ impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<V
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC>, PU<VC>> for HyperNovaKey<A, VC> {
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scalar>>
+    for HyperNovaKey<A, VC>
+{
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
-    fn sample(&self, z: Self::Source, _rng: impl RngCore) -> Result<(PW<VC>, PU<VC>), Error> {
+    fn sample(
+        &self,
+        z: Self::Source,
+        _rng: impl RngCore,
+    ) -> Result<(PW<VC::Scalar>, PU<VC::Scalar>), Error> {
         Ok((z.private.into(), z.public.into()))
     }
 }
@@ -129,6 +141,7 @@ where
     type Source = ();
     type Error = Error;
 
+    #[allow(non_snake_case)]
     fn sample(&self, _: Self::Source, mut rng: impl RngCore) -> Result<(RW<VC>, RU<VC>), Error> {
         let u = VC::Scalar::rand(&mut rng);
         let x = (0..self.arith.n_public_inputs())
@@ -164,11 +177,13 @@ pub struct NIMFSProof<F, const M: usize, const N: usize> {
     pub thetas: Vec<F>,
 }
 
-impl<F: Field, const M: usize, const N: usize> Dummy<&CCSConfig<F>> for NIMFSProof<F, M, N> {
-    fn dummy(cfg: &CCSConfig<F>) -> Self {
+impl<F: Field, const M: usize, const N: usize, V: CCSVariant> Dummy<&CCSConfig<V>>
+    for NIMFSProof<F, M, N>
+{
+    fn dummy(cfg: &CCSConfig<V>) -> Self {
         let s = log2(cfg.n_constraints()) as usize;
         let d = cfg.degree();
-        let t = cfg.t;
+        let t = V::n_matrices();
         Self {
             sc_proof: IOPProof {
                 point: vec![F::zero(); s],
@@ -180,15 +195,18 @@ impl<F: Field, const M: usize, const N: usize> Dummy<&CCSConfig<F>> for NIMFSPro
     }
 }
 
-pub struct HyperNova<VC, const CHALLENGE_BITS: usize = 128> {
+pub struct HyperNova<VC, V: CCSVariant = R1CSConfig, const CHALLENGE_BITS: usize = 128> {
     _vc: PhantomData<VC>,
+    _v: PhantomData<V>,
 }
 
-impl<VC: VectorCommitment, const M: usize, const N: usize, const CHALLENGE_BITS: usize>
-    FoldingScheme<M, N> for HyperNova<VC, CHALLENGE_BITS>
-where
-    VC::Scalar: SonobeField,
-    VC::Commitment: SonobeCurve<ScalarField = VC::Scalar> + Absorbable<VC::Scalar>,
+impl<
+        VC: GroupBasedVectorCommitment,
+        V: CCSVariant,
+        const M: usize,
+        const N: usize,
+        const CHALLENGE_BITS: usize,
+    > FoldingScheme<M, N> for HyperNova<VC, V, CHALLENGE_BITS>
 {
     type VC = VC;
     type RW = RW<VC>;
@@ -197,12 +215,12 @@ where
     type IU = IU<VC>;
 
     type TranscriptField = VC::Scalar;
-    type Arith = CCS<VC::Scalar>;
+    type Arith = CCS<VC::Scalar, V>;
 
     type Config = usize;
     type PublicParam = VC::Key;
     type ProverKey = HyperNovaKey<Self::Arith, VC>;
-    type VerifierKey = CCSConfig<VC::Scalar>;
+    type VerifierKey = ();
     type DeciderKey = HyperNovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
     type Proof = NIMFSProof<VC::Scalar, M, N>;
@@ -223,11 +241,12 @@ where
                 arith: ccs.clone(),
                 ck: ck.clone(),
             },
-            ccs.config().clone(),
+            (),
             HyperNovaKey { arith: ccs, ck },
         ))
     }
 
+    #[allow(non_snake_case)]
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<VC::Scalar>,
@@ -244,10 +263,10 @@ where
 
         let ccs = &pk.arith;
         let d = ccs.degree();
-        let t = ccs.config().t;
         let s = log2(ccs.n_constraints()) as usize;
-        let S = &ccs.config().S;
-        let c = &ccs.config().c;
+        let t = V::n_matrices();
+        let S = &V::multisets_vec();
+        let c = &V::coefficients_vec::<VC::Scalar>();
 
         // absorb instances to transcript
         transcript.add(&Us[..]);
@@ -366,8 +385,9 @@ where
         ))
     }
 
+    #[allow(non_snake_case)]
     fn verify(
-        ccs_config: &Self::VerifierKey,
+        _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
@@ -376,11 +396,11 @@ where
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
-        let d = ccs_config.degree();
-        let t = ccs_config.t;
-        let s = log2(ccs_config.n_constraints()) as usize;
-        let S = &ccs_config.S;
-        let c = &ccs_config.c;
+        let d = V::degree();
+        let s = proof.sc_proof.point.len();
+        let t = V::n_matrices();
+        let S = &V::multisets_vec();
+        let c = &V::coefficients_vec::<VC::Scalar>();
 
         // absorb instances to transcript
         transcript.add(&Us[..]);
@@ -473,29 +493,32 @@ where
     }
 }
 
-pub struct HyperNova2<VC, const CHALLENGE_BITS: usize = 128> {
+pub struct HyperNova2<VC, V: CCSVariant = R1CSConfig, const CHALLENGE_BITS: usize = 128> {
     _vc: PhantomData<VC>,
+    _v: PhantomData<V>,
 }
 
-impl<VC: VectorCommitment, const M: usize, const N: usize, const CHALLENGE_BITS: usize>
-    FoldingScheme<M, N> for HyperNova2<VC, CHALLENGE_BITS>
-where
-    VC::Scalar: SonobeField,
-    VC::Commitment: SonobeCurve<ScalarField = VC::Scalar> + Absorbable<VC::Scalar>,
+impl<
+        VC: GroupBasedVectorCommitment,
+        V: CCSVariant,
+        const M: usize,
+        const N: usize,
+        const CHALLENGE_BITS: usize,
+    > FoldingScheme<M, N> for HyperNova2<VC, V, CHALLENGE_BITS>
 {
     type VC = VC;
     type RW = RW<VC>;
     type RU = RU<VC>;
-    type IW = PW<VC>;
-    type IU = PU<VC>;
+    type IW = PW<VC::Scalar>;
+    type IU = PU<VC::Scalar>;
 
     type TranscriptField = VC::Scalar;
-    type Arith = CCS<VC::Scalar>;
+    type Arith = CCS<VC::Scalar, V>;
 
     type Config = usize;
     type PublicParam = VC::Key;
     type ProverKey = HyperNovaKey<Self::Arith, VC>;
-    type VerifierKey = CCSConfig<VC::Scalar>;
+    type VerifierKey = ();
     type DeciderKey = HyperNovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
     type Proof = ([VC::Commitment; N], NIMFSProof<VC::Scalar, M, N>);
@@ -516,11 +539,12 @@ where
                 arith: ccs.clone(),
                 ck: ck.clone(),
             },
-            ccs.config().clone(),
+            (),
             HyperNovaKey { arith: ccs, ck },
         ))
     }
 
+    #[allow(non_snake_case)]
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<VC::Scalar>,
@@ -537,15 +561,15 @@ where
 
         let ccs = &pk.arith;
         let d = ccs.degree();
-        let t = ccs.config().t;
         let s = log2(ccs.n_constraints()) as usize;
-        let S = &ccs.config().S;
-        let c = &ccs.config().c;
+        let t = V::n_matrices();
+        let S = &V::multisets_vec();
+        let c = &V::coefficients_vec::<VC::Scalar>();
 
         let mut cms = [VC::Commitment::default(); N];
         let mut rs = [VC::Randomness::default(); N];
         for i in 0..N {
-            let (cm, r) = VC::commit(&pk.ck, &ws[i], &mut rng)?;
+            let (cm, r) = VC::commit(&pk.ck, ws[i], &mut rng)?;
             cms[i] = cm;
             rs[i] = r;
         }
@@ -667,8 +691,9 @@ where
         ))
     }
 
+    #[allow(non_snake_case)]
     fn verify(
-        ccs_config: &Self::VerifierKey,
+        _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
@@ -677,11 +702,11 @@ where
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
-        let d = ccs_config.degree();
-        let t = ccs_config.t;
-        let s = log2(ccs_config.n_constraints()) as usize;
-        let S = &ccs_config.S;
-        let c = &ccs_config.c;
+        let d = V::degree();
+        let s = proof.sc_proof.point.len();
+        let t = V::n_matrices();
+        let S = &V::multisets_vec();
+        let c = &V::coefficients_vec::<VC::Scalar>();
 
         // absorb instances to transcript
         transcript.add(&Us[..]);

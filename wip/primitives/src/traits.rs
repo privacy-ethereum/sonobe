@@ -49,14 +49,14 @@ impl<F, T: Inputize<F>> Inputize<F> for [T] {
 /// Note that we require this trait because we need to distinguish between some
 /// data types that are represented both natively and non-natively in-circuit
 /// (e.g., field elements can have type `FpVar` and `NonNativeUintVar`).
-pub trait InputizeNonNative<F> {
-    fn inputize_nonnative(&self) -> Vec<F>;
+pub trait InputizeEmulated<F> {
+    fn inputize_emulated(&self) -> Vec<F>;
 }
 
-impl<F, T: InputizeNonNative<F>> InputizeNonNative<F> for [T] {
-    fn inputize_nonnative(&self) -> Vec<F> {
+impl<F, T: InputizeEmulated<F>> InputizeEmulated<F> for [T] {
+    fn inputize_emulated(&self) -> Vec<F> {
         self.iter()
-            .flat_map(InputizeNonNative::<F>::inputize_nonnative)
+            .flat_map(InputizeEmulated::<F>::inputize_emulated)
             .collect()
     }
 }

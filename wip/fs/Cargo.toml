@@ -14,6 +14,7 @@ ark-r1cs-std = { workspace = true }
 ark-relations = { workspace = true }
 ark-std = { workspace = true, features = ["getrandom"] }
 ark-serialize = { workspace = true }
+num-bigint = { workspace = true, features = ["rand"] }
 thiserror = { workspace = true }
 rayon = { workspace = true }
 

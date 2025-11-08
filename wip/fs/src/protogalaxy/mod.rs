@@ -6,25 +6,28 @@ use ark_poly::{
 use ark_std::{
     borrow::Borrow, cfg_into_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
 };
-use instance::{IncomingInstance as IU, RunningInstance as RU};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use sonobe_primitives::{
     algebra::ops::rlc::{ScalarRLC, SliceRLC},
     arithmetizations::{r1cs::R1CS, Arith, ArithConfig, ArithRelation, Error as ArithError},
     circuits::{Assignments, AssignmentsOwned},
-    commitments::VectorCommitment,
+    commitments::{GroupBasedVectorCommitment, VectorCommitment},
     relations::{Relation, WitnessInstanceSampler},
     traits::{Dummy, SonobeCurve, SonobeField},
     transcripts::{Absorbable, Transcript},
 };
-use witness::{IncomingWitness as IW, RunningWitness as RW};
 
+use self::{
+    instance::{IncomingInstance as IU, RunningInstance as RU},
+    witness::{IncomingWitness as IW, RunningWitness as RW},
+};
 use crate::{Error, FoldingScheme, PlainInstance as PU, PlainWitness as PW};
 
 pub mod instance;
 pub mod witness;
 
+#[derive(Clone)]
 pub struct ProtoGalaxyKey<A, VC: VectorCommitment> {
     arith: Arc<A>,
     ck: Arc<VC::Key>,
@@ -87,14 +90,14 @@ where
     }
 }
 
-impl<A, VC> Relation<PW<VC>, PU<VC>> for ProtoGalaxyKey<A, VC>
+impl<A, VC> Relation<PW<VC::Scalar>, PU<VC::Scalar>> for ProtoGalaxyKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
     VC: VectorCommitment,
 {
     type Error = Error;
 
-    fn check_relation(&self, w: &PW<VC>, u: &PU<VC>) -> Result<(), Self::Error> {
+    fn check_relation(&self, w: &PW<VC::Scalar>, u: &PU<VC::Scalar>) -> Result<(), Self::Error> {
         self.arith.check_relation(w, u)?;
         Ok(())
     }
@@ -113,11 +116,17 @@ impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<V
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC>, PU<VC>> for ProtoGalaxyKey<A, VC> {
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scalar>>
+    for ProtoGalaxyKey<A, VC>
+{
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
-    fn sample(&self, z: Self::Source, _rng: impl RngCore) -> Result<(PW<VC>, PU<VC>), Error> {
+    fn sample(
+        &self,
+        z: Self::Source,
+        _rng: impl RngCore,
+    ) -> Result<(PW<VC::Scalar>, PU<VC::Scalar>), Error> {
         Ok((z.private.into(), z.public.into()))
     }
 }
@@ -173,11 +182,7 @@ pub struct ProtoGalaxy<VC> {
     _vc: PhantomData<VC>,
 }
 
-impl<VC: VectorCommitment, const N: usize> FoldingScheme<1, N> for ProtoGalaxy<VC>
-where
-    VC::Scalar: SonobeField,
-    VC::Commitment: SonobeCurve<ScalarField = VC::Scalar> + Absorbable<VC::Scalar>,
-{
+impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for ProtoGalaxy<VC> {
     type VC = VC;
     type RW = RW<VC>;
     type RU = RU<VC>;
@@ -212,6 +217,7 @@ where
         Ok((r1cs.clone(), (), ProtoGalaxyKey { arith: r1cs, ck }))
     }
 
+    #[allow(non_snake_case)]
     fn prove(
         r1cs: &Self::ProverKey,
         transcript: &mut impl Transcript<VC::Scalar>,
@@ -374,6 +380,7 @@ where
         ))
     }
 
+    #[allow(non_snake_case)]
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,
@@ -433,16 +440,12 @@ pub struct ProtoGalaxy2<VC> {
     _vc: PhantomData<VC>,
 }
 
-impl<VC: VectorCommitment, const N: usize> FoldingScheme<1, N> for ProtoGalaxy2<VC>
-where
-    VC::Scalar: SonobeField,
-    VC::Commitment: SonobeCurve<ScalarField = VC::Scalar> + Absorbable<VC::Scalar>,
-{
+impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for ProtoGalaxy2<VC> {
     type VC = VC;
     type RW = RW<VC>;
     type RU = RU<VC>;
-    type IW = PW<VC>;
-    type IU = PU<VC>;
+    type IW = PW<VC::Scalar>;
+    type IU = PU<VC::Scalar>;
 
     type TranscriptField = VC::Scalar;
     type Arith = R1CS<VC::Scalar>;
@@ -479,6 +482,7 @@ where
         ))
     }
 
+    #[allow(non_snake_case)]
     fn prove(
         pk: &Self::ProverKey,
         transcript: &mut impl Transcript<VC::Scalar>,
@@ -499,7 +503,7 @@ where
         let mut phis = [VC::Commitment::default(); N];
         let mut rs = [VC::Randomness::default(); N];
         for i in 0..N {
-            let (cm, r) = VC::commit(&pk.ck, &ws[i], &mut rng)?;
+            let (cm, r) = VC::commit(&pk.ck, ws[i], &mut rng)?;
             phis[i] = cm;
             rs[i] = r;
         }
@@ -654,6 +658,7 @@ where
         ))
     }
 
+    #[allow(non_snake_case)]
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl Transcript<VC::Scalar>,

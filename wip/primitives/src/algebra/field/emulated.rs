@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use ark_ff::{BigInteger, One, PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
@@ -24,7 +26,6 @@ use crate::{
         field::SonobeField,
         ops::{
             bits::{FromBitsGadget, ToBitsGadgetExt},
-            eq::EquivalenceGadget,
             matrix::{MatrixGadget, SparseMatrixVar},
             vector::VectorGadget,
         },
@@ -80,6 +81,20 @@ impl Bound {
     }
 }
 
+fn compose<F: SonobeField, V: Borrow<[F]>>(limbs: V) -> BigInt {
+    let mut r = BigInt::zero();
+
+    for &limb in limbs.borrow().iter().rev() {
+        r <<= F::BITS_PER_LIMB;
+        r += if limb.into_bigint() > F::MODULUS_MINUS_ONE_DIV_TWO {
+            BigInt::from_biguint(Sign::Minus, (-limb).into())
+        } else {
+            BigInt::from_biguint(Sign::Plus, limb.into())
+        };
+    }
+    r
+}
+
 #[derive(Debug, Clone)]
 pub struct IntVarInner<F: PrimeField, Cfg, const ALIGNED: bool> {
     _cfg: PhantomData<Cfg>,
@@ -87,11 +102,10 @@ pub struct IntVarInner<F: PrimeField, Cfg, const ALIGNED: bool> {
     pub bounds: Vec<Bound>,
 }
 
-pub type BigIntVar<F: PrimeField, const ALIGNED: bool> = IntVarInner<F, (), ALIGNED>;
-pub type NonNativeFieldVar<Base: PrimeField, Target: PrimeField, const ALIGNED: bool> =
-    IntVarInner<Base, Target, ALIGNED>;
+pub type BigIntVar<F, const ALIGNED: bool> = IntVarInner<F, (), ALIGNED>;
+pub type EmulatedFieldVar<Base, Target, const ALIGNED: bool> = IntVarInner<Base, Target, ALIGNED>;
 
-impl<F: SonobeField, Cfg, const ALIGNED: bool> GR1CSVar<F> for IntVarInner<F, Cfg, ALIGNED> {
+impl<F: SonobeField, const ALIGNED: bool> GR1CSVar<F> for IntVarInner<F, (), ALIGNED> {
     type Value = BigInt;
 
     fn cs(&self) -> ConstraintSystemRef<F> {
@@ -99,23 +113,33 @@ impl<F: SonobeField, Cfg, const ALIGNED: bool> GR1CSVar<F> for IntVarInner<F, Cf
     }
 
     fn value(&self) -> Result<Self::Value, SynthesisError> {
-        let mut r = BigInt::zero();
+        self.limbs.value().map(compose)
+    }
+}
 
-        for limb in self.limbs.value()?.into_iter().rev() {
-            r <<= F::BITS_PER_LIMB;
-            r += if limb.into_bigint() > F::MODULUS_MINUS_ONE_DIV_TWO {
-                BigInt::from_biguint(Sign::Minus, (-limb).into())
-            } else {
-                BigInt::from_biguint(Sign::Plus, limb.into())
-            };
-        }
+impl<Base: SonobeField, Target: SonobeField, const ALIGNED: bool> GR1CSVar<Base>
+    for IntVarInner<Base, Target, ALIGNED>
+{
+    type Value = Target;
 
-        Ok(r)
+    fn cs(&self) -> ConstraintSystemRef<Base> {
+        self.limbs.cs()
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        self.limbs.value().map(compose).map(|v| {
+            let (sign, abs) = v.into_parts();
+            assert!(abs < Target::MODULUS.into());
+            match sign {
+                Sign::Plus | Sign::NoSign => Target::from(abs),
+                Sign::Minus => Target::zero() - Target::from(abs),
+            }
+        })
     }
 }
 
 impl<F: SonobeField, Cfg, const ALIGNED: bool> IntVarInner<F, Cfg, ALIGNED> {
-    fn new(limbs: Vec<FpVar<F>>, bounds: Vec<Bound>) -> Self {
+    pub fn new(limbs: Vec<FpVar<F>>, bounds: Vec<Bound>) -> Self {
         Self {
             _cfg: PhantomData,
             limbs,
@@ -484,7 +508,7 @@ impl<F: SonobeField, Cfg, const LHS_ALIGNED: bool> IntVarInner<F, Cfg, LHS_ALIGN
     }
 }
 
-impl<Base: SonobeField, Target: PrimeField, const LHS_ALIGNED: bool>
+impl<Base: SonobeField, Target: SonobeField, const LHS_ALIGNED: bool>
     IntVarInner<Base, Target, LHS_ALIGNED>
 {
     /// Convert `Self` to an element in `M`, i.e., compute `Self % M::MODULUS`.
@@ -494,10 +518,16 @@ impl<Base: SonobeField, Target: PrimeField, const LHS_ALIGNED: bool>
         // Provide the quotient and remainder as hints
         let q = IntVarInner::new_variable_with_inferred_mode(cs.clone(), || {
             let (lb, ub) = (self.lbound().div_floor(&m), self.ubound().div_floor(&m));
-            Ok((self.value()?.div_floor(&m), Bound(lb, ub)))
+            Ok((
+                compose(self.limbs.value().unwrap_or_default()).div_floor(&m),
+                Bound(lb, ub),
+            ))
         })?;
         let r = IntVarInner::new_variable_with_inferred_mode(cs.clone(), || {
-            Ok((self.value()?.abs() % &m, Bound(Zero::zero(), m.clone())))
+            Ok((
+                compose(self.limbs.value().unwrap_or_default()).abs() % &m,
+                Bound(Zero::zero(), m.clone()),
+            ))
         })?;
 
         let m = IntVarInner::constant(m);
@@ -522,7 +552,10 @@ impl<Base: SonobeField, Target: PrimeField, const LHS_ALIGNED: bool>
         // Provide the quotient as hint
         let q = IntVarInner::new_variable_with_inferred_mode(cs.clone(), || {
             let (lb, ub) = (self.lbound().div_floor(&m), self.ubound().div_floor(&m));
-            Ok((self.value()?.div_floor(&m), Bound(lb, ub)))
+            Ok((
+                compose(self.limbs.value().unwrap_or_default()).div_floor(&m),
+                Bound(lb, ub),
+            ))
         })?;
 
         let m = IntVarInner::constant(m);
@@ -533,7 +566,7 @@ impl<Base: SonobeField, Target: PrimeField, const LHS_ALIGNED: bool>
     }
 }
 
-impl<Base: SonobeField, Target: PrimeField> TryFrom<IntVarInner<Base, Target, false>>
+impl<Base: SonobeField, Target: SonobeField> TryFrom<IntVarInner<Base, Target, false>>
     for IntVarInner<Base, Target, true>
 {
     type Error = SynthesisError;
@@ -576,17 +609,47 @@ impl<F: SonobeField, Cfg> EqGadget<F> for IntVarInner<F, Cfg, true> {
         }
         Ok(())
     }
+
+    fn enforce_not_equal(&self, other: &Self) -> Result<(), SynthesisError> {
+        if self.limbs.len() != other.limbs.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        if self.bounds.len() != other.bounds.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        for i in 0..self.limbs.len() {
+            if self.bounds[i] != other.bounds[i] {
+                return Err(SynthesisError::Unsatisfiable);
+            }
+            self.limbs[i].enforce_not_equal(&other.limbs[i])?;
+        }
+        Ok(())
+    }
+
+    fn conditional_enforce_equal(
+        &self,
+        other: &Self,
+        should_enforce: &Boolean<F>,
+    ) -> Result<(), SynthesisError> {
+        if should_enforce.is_constant() {
+            if should_enforce.value()? {
+                return self.enforce_equal(other);
+            } else {
+                return self.enforce_not_equal(other);
+            }
+        }
+        self.is_eq(&other)?
+            .conditional_enforce_equal(&Boolean::TRUE, should_enforce)
+    }
 }
 
 impl<F: SonobeField, Cfg> FromBitsGadget<F> for IntVarInner<F, Cfg, true> {
-    fn from_bits_le(bits: &[Boolean<F>]) -> Result<Self, SynthesisError> {
+    fn from_bits_le(bits: &[Boolean<F>], bound: Bound) -> Result<Self, SynthesisError> {
         Ok(Self::new(
             bits.chunks(F::BITS_PER_LIMB)
                 .map(Boolean::le_bits_to_fp)
                 .collect::<Result<_, _>>()?,
-            bits.chunks(F::BITS_PER_LIMB)
-                .map(|i| Bound(BigInt::zero(), (BigInt::one() << i.len()) - BigInt::one()))
-                .collect(),
+            compute_bounds(&bound.0, &bound.1, F::BITS_PER_LIMB),
         ))
     }
 }
@@ -641,7 +704,7 @@ impl<F: PrimeField, Cfg> AbsorbableGadget<F> for IntVarInner<F, Cfg, true> {
 
         self.to_bits_le()?
             .chunks(bits_per_limb)
-            .try_for_each(|i| Ok(dest.push(Boolean::le_bits_to_fp(i)?)))
+            .try_for_each(|i| Boolean::le_bits_to_fp(i).map(|v| dest.push(v)))
     }
 }
 
@@ -724,6 +787,34 @@ impl<CF: SonobeField, Cfg> MatrixGadget<IntVarInner<CF, Cfg, false>>
     }
 }
 
+pub fn compute_bounds(lb: &BigInt, ub: &BigInt, bits_per_limb: usize) -> Vec<Bound> {
+    let len = max(lb.bits(), ub.bits()) as usize;
+    let (n_full_limbs, n_remaining_bits) = len.div_rem(&bits_per_limb);
+
+    let mut bounds = vec![
+        Bound(
+            if lb.is_negative() {
+                BigInt::one() - (BigInt::one() << bits_per_limb)
+            } else {
+                BigInt::zero()
+            },
+            if ub.is_positive() {
+                (BigInt::one() << bits_per_limb) - BigInt::one()
+            } else {
+                BigInt::zero()
+            },
+        );
+        n_full_limbs
+    ];
+
+    if !n_remaining_bits.is_zero() {
+        let d = BigInt::one() << (len - n_remaining_bits);
+        bounds.push(Bound(lb.div_floor(&d), ub.div_ceil(&d)));
+    }
+
+    bounds
+}
+
 impl<F: SonobeField, Cfg> AllocVar<(BigInt, Bound), F> for IntVarInner<F, Cfg, true> {
     fn new_variable<T: Borrow<(BigInt, Bound)>>(
         cs: impl Into<Namespace<F>>,
@@ -758,8 +849,6 @@ impl<F: SonobeField, Cfg> AllocVar<(BigInt, Bound), F> for IntVarInner<F, Cfg, t
         };
         let x_bits = Vec::new_variable(cs, || Ok(x_bits), mode)?;
 
-        let (n_full_limbs, n_remaining_bits) = len.div_rem(&F::BITS_PER_LIMB);
-
         let limbs = x_bits
             .chunks(F::BITS_PER_LIMB)
             .map(|chunk| {
@@ -768,26 +857,7 @@ impl<F: SonobeField, Cfg> AllocVar<(BigInt, Bound), F> for IntVarInner<F, Cfg, t
             })
             .collect::<Result<_, _>>()?;
 
-        let mut bounds = vec![
-            Bound(
-                if lb.is_negative() {
-                    BigInt::one() - (BigInt::one() << F::BITS_PER_LIMB)
-                } else {
-                    BigInt::zero()
-                },
-                if ub.is_positive() {
-                    (BigInt::one() << F::BITS_PER_LIMB) - BigInt::one()
-                } else {
-                    BigInt::zero()
-                },
-            );
-            n_full_limbs
-        ];
-
-        if !n_remaining_bits.is_zero() {
-            let d = BigInt::one() << (len - n_remaining_bits);
-            bounds.push(Bound(lb.div_floor(&d), ub.div_ceil(&d)));
-        }
+        let bounds = compute_bounds(&lb, &ub, F::BITS_PER_LIMB);
 
         let var = Self::new(limbs, bounds);
 
@@ -877,7 +947,7 @@ impl<F: SonobeField, G: SonobeField, Cfg> AllocVar<G, F> for IntVarInner<F, Cfg,
 }
 
 impl<F: SonobeField, Cfg> IntVarInner<F, Cfg, true> {
-    fn constant(x: BigInt) -> Self {
+    pub fn constant(x: BigInt) -> Self {
         Self::new_constant(ConstraintSystemRef::None, (x.clone(), Bound(x.clone(), x))).unwrap()
     }
 }
@@ -1159,11 +1229,11 @@ mod tests {
         let aab = a * ab;
         let abb = ab * b;
 
-        let a_var = NonNativeFieldVar::<Fr, Fq, _>::new_witness(cs.clone(), || Ok(a))?;
-        let b_var = NonNativeFieldVar::new_witness(cs.clone(), || Ok(b))?;
-        let ab_var = NonNativeFieldVar::new_witness(cs.clone(), || Ok(ab))?;
-        let aab_var = NonNativeFieldVar::new_witness(cs.clone(), || Ok(aab))?;
-        let abb_var = NonNativeFieldVar::new_witness(cs.clone(), || Ok(abb))?;
+        let a_var = EmulatedFieldVar::<Fr, Fq, _>::new_witness(cs.clone(), || Ok(a))?;
+        let b_var = EmulatedFieldVar::new_witness(cs.clone(), || Ok(b))?;
+        let ab_var = EmulatedFieldVar::new_witness(cs.clone(), || Ok(ab))?;
+        let aab_var = EmulatedFieldVar::new_witness(cs.clone(), || Ok(aab))?;
+        let abb_var = EmulatedFieldVar::new_witness(cs.clone(), || Ok(abb))?;
 
         a_var.mul_unaligned(&b_var)?.enforce_congruent(&ab_var)?;
         a_var.mul_unaligned(&ab_var)?.enforce_congruent(&aab_var)?;
@@ -1181,17 +1251,14 @@ mod tests {
 
         let a = Fq::rand(rng);
 
-        let a_var = NonNativeFieldVar::<Fr, Fq, _>::new_witness(cs.clone(), || Ok(a))?;
+        let a_var = EmulatedFieldVar::<Fr, Fq, _>::new_witness(cs.clone(), || Ok(a))?;
 
         let mut r_var = a_var.clone();
         for _ in 0..16 {
             r_var = r_var.mul_unaligned(&r_var)?.modulo()?;
         }
         r_var = r_var.mul_unaligned(&a_var)?.modulo()?;
-        assert_eq!(
-            BigInt::from_biguint(Sign::Plus, a.pow([65537u64]).into()),
-            r_var.value()?
-        );
+        assert_eq!(a.pow([65537u64]), r_var.value()?);
         assert!(cs.is_satisfied()?);
         Ok(())
     }
@@ -1207,12 +1274,12 @@ mod tests {
         let b = (0..len).map(|_| Fq::rand(rng)).collect::<Vec<Fq>>();
         let c = a.iter().zip(b.iter()).map(|(a, b)| a * b).sum::<Fq>();
 
-        let a_var = Vec::<NonNativeFieldVar<Fr, Fq, _>>::new_witness(cs.clone(), || Ok(a))?;
-        let b_var = Vec::<NonNativeFieldVar<Fr, Fq, _>>::new_witness(cs.clone(), || Ok(b))?;
-        let c_var = NonNativeFieldVar::new_witness(cs.clone(), || Ok(c))?;
+        let a_var = Vec::<EmulatedFieldVar<Fr, Fq, _>>::new_witness(cs.clone(), || Ok(a))?;
+        let b_var = Vec::<EmulatedFieldVar<Fr, Fq, _>>::new_witness(cs.clone(), || Ok(b))?;
+        let c_var = EmulatedFieldVar::new_witness(cs.clone(), || Ok(c))?;
 
-        let mut r_var: NonNativeFieldVar<Fr, Fq, false> =
-            NonNativeFieldVar::constant(BigUint::zero().into()).into();
+        let mut r_var: EmulatedFieldVar<Fr, Fq, false> =
+            EmulatedFieldVar::constant(BigUint::zero().into()).into();
         for (a, b) in a_var.into_iter().zip(b_var.into_iter()) {
             r_var = r_var.add_unaligned(&a.mul_unaligned(&b)?)?;
         }

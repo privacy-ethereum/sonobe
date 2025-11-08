@@ -5,20 +5,23 @@ use ark_crypto_primitives::sponge::{
     },
     Absorb, CryptographicSponge, FieldBasedCryptographicSponge,
 };
-use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
-use ark_r1cs_std::{boolean::Boolean, fields::fp::FpVar, groups::CurveVar};
-use ark_relations::gr1cs::SynthesisError;
+use ark_r1cs_std::{boolean::Boolean, fields::fp::FpVar};
+use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::mem::transmute_copy;
-
-use crate::transcripts::Absorbable;
 
 use super::{AbsorbableGadget, Transcript, TranscriptVar};
 
 impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
-    fn add<A: Absorbable<F> + ?Sized>(&mut self, input: &A) {
+    type Config = PoseidonConfig<F>;
+
+    fn new(config: &Self::Config) -> Self {
+        CryptographicSponge::new(config)
+    }
+
+    fn add_field_elements(&mut self, input: &[F]) -> &mut Self {
         struct Hack<I>(I);
-        impl<F> Absorb for Hack<Vec<F>> {
+        impl<F> Absorb for Hack<&[F]> {
             fn to_sponge_bytes(&self, _: &mut Vec<u8>) {
                 // Unreachable because `PoseidonSponge::absorb` only calls
                 // `to_sponge_field_elements_as_vec::<F>`
@@ -32,8 +35,8 @@ impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
                 dest.extend(unsafe { transmute_copy::<&[F], &[T]>(&self.0.as_ref()) });
             }
         }
-        let v = input.to_absorbable();
-        CryptographicSponge::absorb(self, &Hack(v));
+        CryptographicSponge::absorb(self, &Hack(input));
+        self
     }
 
     fn get_bits(&mut self, num_bits: usize) -> Vec<bool> {
@@ -48,8 +51,16 @@ impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
 impl<F: PrimeField> TranscriptVar<F> for PoseidonSpongeVar<F> {
     type Native = PoseidonSponge<F>;
 
-    fn add<A: AbsorbableGadget<F>>(&mut self, input: &A) -> Result<(), SynthesisError> {
-        self.absorb(&input.to_absorbable()?)
+    fn new(config: &PoseidonConfig<F>) -> Self
+    where
+        Self: Sized,
+    {
+        CryptographicSpongeVar::new(ConstraintSystemRef::None, config)
+    }
+
+    fn add<A: AbsorbableGadget<F>>(&mut self, input: &A) -> Result<&mut Self, SynthesisError> {
+        self.absorb(&input.to_absorbable()?)?;
+        Ok(self)
     }
 
     fn get_bits(&mut self, num_bits: usize) -> Result<Vec<Boolean<F>>, SynthesisError> {
@@ -97,23 +108,26 @@ pub fn poseidon_canonical_config<F: PrimeField>() -> PoseidonConfig<F> {
 #[cfg(test)]
 pub mod tests {
     use ark_bn254::{constraints::GVar, g1::Config, Fq, Fr, G1Projective as G1};
+    use ark_crypto_primitives::sponge::poseidon::{constraints::PoseidonSpongeVar, PoseidonSponge};
     use ark_ec::PrimeGroup;
-    use ark_ff::{BigInteger, UniformRand};
+    use ark_ff::{BigInteger, PrimeField, UniformRand};
     use ark_r1cs_std::{
-        alloc::AllocVar, groups::curves::short_weierstrass::ProjectiveVar, GR1CSVar,
+        alloc::AllocVar,
+        fields::fp::FpVar,
+        groups::{curves::short_weierstrass::ProjectiveVar, CurveVar},
+        GR1CSVar,
     };
     use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::{error::Error, str::FromStr, test_rng};
 
-    use crate::algebra::group::nonnative::NonNativeAffineVar;
-
-    use super::*;
+    use super::{poseidon_canonical_config, Transcript, TranscriptVar};
+    use crate::algebra::group::emulated::EmulatedAffineVar;
 
     // Test with value taken from https://github.com/iden3/circomlibjs/blob/43cc582b100fc3459cf78d903a6f538e5d7f38ee/test/poseidon.js#L32
     #[test]
     fn check_against_circom_poseidon() -> Result<(), Box<dyn Error>> {
         let config = poseidon_canonical_config::<Fr>();
-        let mut poseidon_sponge: PoseidonSponge<_> = CryptographicSponge::new(&config);
+        let mut poseidon_sponge = PoseidonSponge::new(&config);
         let v = vec![1, 2, 3, 4]
             .into_iter()
             .map(Fr::from)
@@ -143,7 +157,7 @@ pub mod tests {
 
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fq>::new_ref();
-        let mut tr_var = PoseidonSpongeVar::<Fq>::new(cs.clone(), &config);
+        let mut tr_var = PoseidonSpongeVar::<Fq>::new(&config);
         let p_var = ProjectiveVar::<Config, FpVar<Fq>>::new_witness(
             ConstraintSystem::<Fq>::new_ref(),
             || Ok(p),
@@ -169,9 +183,9 @@ pub mod tests {
 
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fr>::new_ref();
-        let mut tr_var = PoseidonSpongeVar::<Fr>::new(cs.clone(), &config);
+        let mut tr_var = PoseidonSpongeVar::<Fr>::new(&config);
         let p_var =
-            NonNativeAffineVar::<G1>::new_witness(ConstraintSystem::<Fr>::new_ref(), || Ok(p))?;
+            EmulatedAffineVar::<G1>::new_witness(ConstraintSystem::<Fr>::new_ref(), || Ok(p))?;
         tr_var.add(&p_var)?;
         let c_var = tr_var.challenge_field_element()?;
 
@@ -190,7 +204,7 @@ pub mod tests {
 
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fr>::new_ref();
-        let mut tr_var = PoseidonSpongeVar::<Fr>::new(cs.clone(), &config);
+        let mut tr_var = PoseidonSpongeVar::<Fr>::new(&config);
         let v = FpVar::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(42_u32)))?;
         tr_var.add(&v)?;
         let c_var = tr_var.challenge_field_element()?;
@@ -214,7 +228,7 @@ pub mod tests {
 
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fq>::new_ref();
-        let mut tr_var = PoseidonSpongeVar::<Fq>::new(cs.clone(), &config);
+        let mut tr_var = PoseidonSpongeVar::<Fq>::new(&config);
         let v = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(42_u32)))?;
         tr_var.add(&v)?;
 

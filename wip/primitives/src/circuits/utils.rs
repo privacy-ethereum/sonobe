@@ -1,13 +1,20 @@
 use ark_ff::{Field, PrimeField};
-use ark_r1cs_std::{alloc::AllocVar, fields::fp::AllocatedFp};
+use ark_r1cs_std::{
+    alloc::AllocVar,
+    fields::fp::{AllocatedFp, FpVar},
+};
 use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError, Variable};
 
 use super::Assignments;
-use crate::arithmetizations::r1cs::{R1CSConfig, R1CS};
+use crate::{
+    arithmetizations::r1cs::{R1CSConfig, R1CS},
+    circuits::FCircuit,
+};
 
 pub struct CircuitForTest<F: PrimeField> {
     pub x: F,
 }
+
 impl<F: PrimeField> ConstraintSynthesizer<F> for CircuitForTest<F> {
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> Result<(), SynthesisError> {
         // Variable 0 (implicitly added by arkworks as 1)
@@ -40,6 +47,61 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for CircuitForTest<F> {
     }
 }
 
+impl<F: PrimeField> FCircuit for CircuitForTest<F> {
+    type Field = F;
+
+    type ExternalInputs = ();
+
+    fn dummy_external_inputs(&self) -> Self::ExternalInputs {
+        ()
+    }
+
+    fn state_len(&self) -> usize {
+        1
+    }
+
+    fn generate_step_constraints(
+        &self,
+        cs: ConstraintSystemRef<Self::Field>,
+        i: FpVar<Self::Field>,
+        z_i: Vec<FpVar<Self::Field>>,
+        external_inputs: Self::ExternalInputs,
+    ) -> Result<Vec<FpVar<Self::Field>>, SynthesisError> {
+        // Variable 0 (implicitly added by arkworks as 1)
+        // Variable 1
+        let x = if let FpVar::Var(x) = z_i[0].clone() {
+            x
+        } else {
+            unreachable!()
+        };
+        // Variable 2
+        let y = AllocatedFp::new_witness(cs.clone(), || Ok(x.value()?.pow([3]) + x.value()? + F::from(5)))?;
+
+        // Variable 3, Constraint 0
+        let x_square = x.square()?;
+        // Variable 4, Constraint 1
+        let x_cube = x_square.mul(&x);
+        // Variable 5
+        let t = AllocatedFp::new_witness(cs.clone(), || Ok(x.value()?.pow([3]) + x.value()?))?;
+        let x_cube_plus_x = x.add(&x_cube);
+        // Constraint 2
+        cs.enforce_r1cs_constraint(
+            || x_cube_plus_x.variable.into(),
+            || Variable::one().into(),
+            || t.variable.into(),
+        )?;
+        let x_cube_plus_x_plus_5 = t.add_constant(F::from(5));
+        // Constraint 3
+        cs.enforce_r1cs_constraint(
+            || x_cube_plus_x_plus_5.variable.into(),
+            || Variable::one().into(),
+            || y.variable.into(),
+        )?;
+        Ok(vec![FpVar::Var(x_cube_plus_x_plus_5)])
+    }
+}
+
+#[allow(non_snake_case)]
 pub fn constraints_for_test<F: Field>() -> R1CS<F> {
     // R1CS for: x^3 + x + 5 = y (example from article
     // https://vitalik.eth.limo/general/2016/12/10/qap.html)
