@@ -4,22 +4,19 @@ use ark_relations::gr1cs::SynthesisError;
 use ark_std::{any::TypeId, mem::transmute_copy};
 
 use crate::{
-    circuits::var::Var,
+    algebra::{field::emulated::EmulatedFieldVar, Val},
     traits::{Inputize, InputizeEmulated},
     transcripts::{Absorbable, AbsorbableGadget},
 };
 
-// pub mod nonnative;
 pub mod emulated;
 
 /// `Field` trait is a wrapper around `PrimeField` that also includes the
 /// necessary bounds for the field to be used conveniently in folding schemes.
 pub trait SonobeField:
-    PrimeField<BasePrimeField = Self> + Absorbable + Inputize<Self>
+    PrimeField<BasePrimeField = Self> + Absorbable + Inputize<Self> + Val<Var: FieldVar<Self, Self>>
 {
     const BITS_PER_LIMB: usize;
-    /// The in-circuit variable type for this field.
-    type Var: FieldVar<Self, Self> + AbsorbableGadget<Self>;
 }
 
 impl<P: FpConfig<N>, const N: usize> SonobeField for Fp<P, N> {
@@ -42,7 +39,13 @@ impl<P: FpConfig<N>, const N: usize> SonobeField for Fp<P, N> {
     // TODO: either make it a global const, or compute an optimal value
     // based on the modulus size.
     const BITS_PER_LIMB: usize = 55; // TODO: make this configurable
+}
+
+impl<P: FpConfig<N>, const N: usize> Val for Fp<P, N> {
+    type ConstraintField = Self;
     type Var = FpVar<Self>;
+
+    type EmulatedVar<F: SonobeField> = EmulatedFieldVar<F, Self, true>;
 }
 
 impl<P: FpConfig<N>, const N: usize> Absorbable for Fp<P, N> {
@@ -73,10 +76,6 @@ impl<F: PrimeField> AbsorbableGadget<F> for FpVar<F> {
         dest.push(self.clone());
         Ok(())
     }
-}
-
-impl<F: PrimeField> Var<F> for FpVar<F> {
-    type Native = F;
 }
 
 impl<P: FpConfig<N>, const N: usize> Inputize<Self> for Fp<P, N> {

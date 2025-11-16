@@ -17,8 +17,7 @@ use num_bigint::{BigInt, Sign};
 use num_integer::Integer;
 
 use crate::{
-    algebra::field::SonobeField,
-    circuits::var::Var,
+    algebra::{field::SonobeField, group::emulated::EmulatedAffineVar, Val},
     traits::{Dummy, Inputize, InputizeEmulated},
     transcripts::{Absorbable, AbsorbableGadget},
 };
@@ -33,27 +32,24 @@ pub type CI2<C> = <<<C as CurveGroup>::BaseField as Field>::BasePrimeField as Pr
 /// `Curve` trait is a wrapper around `CurveGroup` that also includes the
 /// necessary bounds for the curve to be used conveniently in folding schemes.
 pub trait SonobeCurve:
-    CurveGroup<ScalarField: SonobeField, BaseField: SonobeField>
+    CurveGroup<ScalarField: SonobeField, BaseField: SonobeField, Config: SWCurveConfig>
     + Absorbable
     + Inputize<Self::BaseField>
     + InputizeEmulated<Self::ScalarField>
+    + Val<Var: CurveVar<Self, Self::BaseField> + AbsorbableGadget<Self::BaseField>>
 {
-    /// The in-circuit variable type for this curve.
-    type Var: CurveVar<Self, Self::BaseField>
-        + Var<Self::BaseField, Native = Self>
-        + AbsorbableGadget<Self::BaseField>;
-}
-
-impl<P: SWCurveConfig<ScalarField: SonobeField, BaseField: SonobeField>> Var<P::BaseField>
-    for ProjectiveVar<P, FpVar<P::BaseField>>
-{
-    type Native = Projective<P>;
 }
 
 impl<P: SWCurveConfig<ScalarField: SonobeField, BaseField: SonobeField>> SonobeCurve
     for Projective<P>
 {
+}
+
+impl<P: SWCurveConfig<ScalarField: SonobeField, BaseField: SonobeField>> Val for Projective<P> {
+    type ConstraintField = P::BaseField;
     type Var = ProjectiveVar<P, FpVar<P::BaseField>>;
+
+    type EmulatedVar<F: SonobeField> = EmulatedAffineVar<F, Self>;
 }
 
 impl<T, C: SonobeCurve> Dummy<T> for C {

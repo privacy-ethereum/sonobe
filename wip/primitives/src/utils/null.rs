@@ -1,5 +1,8 @@
 use ark_ff::Field;
-use ark_r1cs_std::{GR1CSVar, alloc::{AllocVar, AllocationMode}};
+use ark_r1cs_std::{
+    alloc::{AllocVar, AllocationMode},
+    GR1CSVar,
+};
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{
     borrow::Borrow,
@@ -7,8 +10,6 @@ use ark_std::{
     iter::Sum,
     ops::{Add, Mul},
 };
-
-use crate::circuits::var::Var;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct Null;
@@ -49,10 +50,6 @@ impl Sum for Null {
     fn sum<I: Iterator<Item = Self>>(_: I) -> Self {
         Null
     }
-}
-
-impl<F: Field> Var<F> for Null {
-    type Native = Null;
 }
 
 impl<F: Field> AllocVar<Null, F> for Null {

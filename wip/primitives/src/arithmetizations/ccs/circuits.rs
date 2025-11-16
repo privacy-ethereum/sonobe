@@ -6,8 +6,8 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
 
-use super::{CCS, CCSVariant};
-use crate::{algebra::ops::matrix::SparseMatrixVar};
+use super::{CCSVariant, CCS};
+use crate::algebra::ops::matrix::SparseMatrixVar;
 
 /// CCSMatricesVar contains the matrices 'M' of the CCS without the rest of CCS parameters.
 #[allow(non_snake_case)]

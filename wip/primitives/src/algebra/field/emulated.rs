@@ -30,7 +30,6 @@ use crate::{
             vector::VectorGadget,
         },
     },
-    circuits::var::Var,
     transcripts::AbsorbableGadget,
 };
 
@@ -950,10 +949,6 @@ impl<F: SonobeField, Cfg> IntVarInner<F, Cfg, true> {
     pub fn constant(x: BigInt) -> Self {
         Self::new_constant(ConstraintSystemRef::None, (x.clone(), Bound(x.clone(), x))).unwrap()
     }
-}
-
-impl<Base: SonobeField, Target: SonobeField> Var<Base> for IntVarInner<Base, Target, true> {
-    type Native = Target;
 }
 
 macro_rules! impl_binary_op {

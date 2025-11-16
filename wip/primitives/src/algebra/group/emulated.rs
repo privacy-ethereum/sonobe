@@ -13,8 +13,11 @@ use ark_serialize::{CanonicalSerialize, CanonicalSerializeWithFlags};
 use ark_std::borrow::Borrow;
 
 use crate::{
-    algebra::{field::emulated::{BigIntVar, EmulatedFieldVar}, group::SonobeCurve},
-    circuits::var::Var,
+    algebra::{
+        field::emulated::{BigIntVar, EmulatedFieldVar},
+        group::SonobeCurve,
+    },
+    traits::SonobeField,
     transcripts::AbsorbableGadget,
 };
 
@@ -22,14 +25,16 @@ use crate::{
 /// field, over the constraint field. It is not intended to perform operations, but just to contain
 /// the affine coordinates in order to perform hash operations of the point.
 #[derive(Debug, Clone)]
-pub struct EmulatedAffineVar<C: SonobeCurve> {
-    pub x: EmulatedFieldVar<C::ScalarField, C::BaseField, true>,
-    pub y: EmulatedFieldVar<C::ScalarField, C::BaseField, true>,
+pub struct EmulatedAffineVar<Base: SonobeField, Target: SonobeCurve> {
+    pub x: EmulatedFieldVar<Base, Target::BaseField, true>,
+    pub y: EmulatedFieldVar<Base, Target::BaseField, true>,
 }
 
-impl<C: SonobeCurve> AllocVar<C, C::ScalarField> for EmulatedAffineVar<C> {
-    fn new_variable<T: Borrow<C>>(
-        cs: impl Into<Namespace<C::ScalarField>>,
+impl<Base: SonobeField, Target: SonobeCurve> AllocVar<Target, Base>
+    for EmulatedAffineVar<Base, Target>
+{
+    fn new_variable<T: Borrow<Target>>(
+        cs: impl Into<Namespace<Base>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
@@ -47,10 +52,10 @@ impl<C: SonobeCurve> AllocVar<C, C::ScalarField> for EmulatedAffineVar<C> {
     }
 }
 
-impl<C: SonobeCurve> GR1CSVar<C::ScalarField> for EmulatedAffineVar<C> {
-    type Value = C;
+impl<Base: SonobeField, Target: SonobeCurve> GR1CSVar<Base> for EmulatedAffineVar<Base, Target> {
+    type Value = Target;
 
-    fn cs(&self) -> ConstraintSystemRef<C::ScalarField> {
+    fn cs(&self) -> ConstraintSystemRef<Base> {
         self.x.cs().or(self.y.cs())
     }
 
@@ -80,12 +85,12 @@ impl<C: SonobeCurve> GR1CSVar<C::ScalarField> for EmulatedAffineVar<C> {
         // `unwrap` below is safe because `bytes` is constructed from the `x`
         // and `y` coordinates of a valid point, and these coordinates are
         // serialized in the same way as the `SonobeCurve` implementation.
-        Ok(C::deserialize_uncompressed_unchecked(&bytes[..]).unwrap())
+        Ok(Target::deserialize_uncompressed_unchecked(&bytes[..]).unwrap())
     }
 }
 
-impl<C: SonobeCurve> EqGadget<C::ScalarField> for EmulatedAffineVar<C> {
-    fn is_eq(&self, other: &Self) -> Result<Boolean<C::ScalarField>, SynthesisError> {
+impl<Base: SonobeField, Target: SonobeCurve> EqGadget<Base> for EmulatedAffineVar<Base, Target> {
+    fn is_eq(&self, other: &Self) -> Result<Boolean<Base>, SynthesisError> {
         Ok(self.x.is_eq(&other.x)? & self.y.is_eq(&other.y)?)
     }
 
@@ -96,27 +101,27 @@ impl<C: SonobeCurve> EqGadget<C::ScalarField> for EmulatedAffineVar<C> {
     }
 }
 
-impl<C: SonobeCurve> EmulatedAffineVar<C> {
+impl<Base: SonobeField, Target: SonobeCurve> EmulatedAffineVar<Base, Target> {
     pub fn zero() -> Self {
         // `unwrap` below is safe because we are allocating a constant value,
         // which is guaranteed to succeed.
-        Self::new_constant(ConstraintSystemRef::None, C::zero()).unwrap()
+        Self::new_constant(ConstraintSystemRef::None, Target::zero()).unwrap()
     }
 }
 
-impl<C: SonobeCurve> AbsorbableGadget<C::ScalarField> for EmulatedAffineVar<C> {
-    fn absorb_into(&self, dest: &mut Vec<FpVar<C::ScalarField>>) -> Result<(), SynthesisError> {
+impl<Base: SonobeField, Target: SonobeCurve> AbsorbableGadget<Base>
+    for EmulatedAffineVar<Base, Target>
+{
+    fn absorb_into(&self, dest: &mut Vec<FpVar<Base>>) -> Result<(), SynthesisError> {
         (&self.x, &self.y).absorb_into(dest)
     }
 }
 
-impl<C: SonobeCurve> Var<C::ScalarField> for EmulatedAffineVar<C> {
-    type Native = C;
-}
-
-impl<C: SonobeCurve> CondSelectGadget<C::ScalarField> for EmulatedAffineVar<C> {
+impl<Base: SonobeField, Target: SonobeCurve> CondSelectGadget<Base>
+    for EmulatedAffineVar<Base, Target>
+{
     fn conditionally_select(
-        cond: &Boolean<C::ScalarField>,
+        cond: &Boolean<Base>,
         true_value: &Self,
         false_value: &Self,
     ) -> Result<Self, SynthesisError> {
@@ -146,7 +151,7 @@ mod tests {
 
         // dealing with the 'zero' point should not panic when doing the unwrap
         let p = Projective::zero();
-        assert!(EmulatedAffineVar::<Projective>::new_witness(cs.clone(), || Ok(p)).is_ok());
+        assert!(EmulatedAffineVar::<Fr, Projective>::new_witness(cs.clone(), || Ok(p)).is_ok());
     }
 
     #[test]
@@ -156,7 +161,7 @@ mod tests {
         // check that point_to_nonnative_limbs returns the expected values
         let mut rng = ark_std::test_rng();
         let p = Projective::rand(&mut rng);
-        let p_var = EmulatedAffineVar::<Projective>::new_witness(cs.clone(), || Ok(p))?;
+        let p_var = EmulatedAffineVar::<Fr, Projective>::new_witness(cs.clone(), || Ok(p))?;
         assert_eq!(p_var.to_absorbable()?.value()?, p.to_absorbable());
         Ok(())
     }
@@ -168,7 +173,7 @@ mod tests {
         let p = Projective::rand(&mut rng);
 
         let cs = ConstraintSystem::<Fr>::new_ref();
-        let p_var = EmulatedAffineVar::<Projective>::new_witness(cs.clone(), || Ok(p))?;
+        let p_var = EmulatedAffineVar::<Fr, Projective>::new_witness(cs.clone(), || Ok(p))?;
         assert_eq!(
             [p_var.x.limbs.value()?, p_var.y.limbs.value()?].concat(),
             p.inputize_emulated()

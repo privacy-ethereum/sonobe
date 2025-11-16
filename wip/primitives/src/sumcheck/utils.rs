@@ -10,8 +10,9 @@
 //! This module defines our main mathematical object `VirtualPolynomial`; and
 //! various functions associated with it.
 
-use ark_ff::{batch_inversion, PrimeField};
+use ark_ff::{batch_inversion, Field, PrimeField};
 use ark_poly::{univariate::DensePolynomial, DenseMultilinearExtension, DenseUVPolynomial};
+use ark_r1cs_std::fields::{fp::FpVar, FieldVar};
 use ark_serialize::CanonicalSerialize;
 use ark_std::cfg_into_iter;
 #[cfg(feature = "parallel")]
@@ -57,7 +58,6 @@ pub struct VPAuxInfo {
     pub num_variables: usize,
 }
 
-// TODO: convert this into a trait
 impl<F: PrimeField> VirtualPolynomial<F> {
     /// Creates a new virtual polynomial from a MLE and its coefficient.
     pub fn new_from_mle(mle: DenseMultilinearExtension<F>, coefficient: F) -> Self {
@@ -74,51 +74,67 @@ impl<F: PrimeField> VirtualPolynomial<F> {
     }
 }
 
-/// Evaluate eq polynomial.
-pub fn eq_eval<F: PrimeField>(x: &[F], y: &[F]) -> F {
-    debug_assert_eq!(x.len(), y.len());
-    x.iter()
-        .zip(y.iter())
-        .map(|(xi, yi)| xi.double() * yi - xi - yi + F::one())
-        .product::<F>()
-}
-
-/// This function build the eq(x, r) polynomial for any given r, and output the
-/// evaluation of eq(x, r) in its vector form.
+/// `EqPoly` represents the following polynomial:
 ///
-/// Evaluate
-///      eq(x,y) = \prod_i=1^num_var (x_i * y_i + (1-x_i)*(1-y_i))
-/// over r, which is
-///      eq(x,y) = \prod_i=1^num_var (x_i * r_i + (1-x_i)*(1-r_i))
-pub fn build_eq_x_r_vec<F: PrimeField>(r: &[F]) -> Vec<F> {
-    // we build eq(x,r) from its evaluations
-    // we want to evaluate eq(x,r) over x \in {0, 1}^num_vars
-    // for example, with num_vars = 4, x is a binary vector of 4, then
-    //  0 0 0 0 -> (1-r0)   * (1-r1)    * (1-r2)    * (1-r3)
-    //  1 0 0 0 -> r0       * (1-r1)    * (1-r2)    * (1-r3)
-    //  0 1 0 0 -> (1-r0)   * r1        * (1-r2)    * (1-r3)
-    //  1 1 0 0 -> r0       * r1        * (1-r2)    * (1-r3)
-    //  ....
-    //  1 1 1 1 -> r0       * r1        * r2        * r3
-    // we will need 2^num_var evaluations
+/// `eq(x, y) = \prod_{i=1}^n (x_i * y_i + (1 - x_i) * (1 - y_i))`
+pub struct EqPoly;
 
-    // initializing the buffer with [1]
-    let mut buf = vec![F::one()];
+impl EqPoly {
+    /// This function builds `eq(x, y)` by fixing `y = r` and outputting the
+    /// evaluations over all `x` in `[0, 2^n)`.
+    pub fn fix_y_evals<F: PrimeField>(r: &[F]) -> Vec<F> {
+        // we build eq(x,r) from its evaluations
+        // we want to evaluate eq(x,r) over all binary strings `x` of length `n`
+        // for example, with n = 4, x is a binary string of length 4, then
+        //  0 0 0 0 -> (1-r0)   * (1-r1)    * (1-r2)    * (1-r3)
+        //  1 0 0 0 -> r0       * (1-r1)    * (1-r2)    * (1-r3)
+        //  0 1 0 0 -> (1-r0)   * r1        * (1-r2)    * (1-r3)
+        //  1 1 0 0 -> r0       * r1        * (1-r2)    * (1-r3)
+        //  ....
+        //  1 1 1 1 -> r0       * r1        * r2        * r3
+        // we will need 2^num_var evaluations
 
-    for i in r.iter().rev() {
-        // suppose at the previous step we received [b_1, ..., b_k]
-        // for the current step we will need
-        // if x_i = 0:   (1-ri) * [b_1, ..., b_k]
-        // if x_i = 1:   ri * [b_1, ..., b_k]
-        buf = cfg_into_iter!(buf)
-            .flat_map(|j| {
-                let v = j * i;
-                [j - v, v]
-            })
-            .collect();
+        // initializing the buffer with [1]
+        let mut buf = vec![F::one()];
+
+        for i in r.iter().rev() {
+            // suppose at the previous step we received [b_1, ..., b_k]
+            // for the current step we will need
+            // if x_i = 0:   (1-ri) * [b_1, ..., b_k]
+            // if x_i = 1:   ri * [b_1, ..., b_k]
+            buf = cfg_into_iter!(buf)
+                .flat_map(|j| {
+                    let v = j * i;
+                    [j - v, v]
+                })
+                .collect();
+        }
+
+        buf
     }
 
-    buf
+    /// Evaluate eq polynomial.
+    pub fn fix_xy_eval<F: Field>(x: &[F], y: &[F]) -> F {
+        debug_assert_eq!(x.len(), y.len());
+        x.iter()
+            .zip(y.iter())
+            .map(|(xi, yi)| xi.double() * yi - xi - yi + F::one())
+            .product()
+    }
+}
+
+pub struct EqPolyVar;
+
+impl EqPolyVar {
+    /// Evaluate eq polynomial in circuit.
+    pub fn fix_xy_eval<F: PrimeField>(x: &[FpVar<F>], y: &[FpVar<F>]) -> FpVar<F> {
+        debug_assert_eq!(x.len(), y.len());
+        let mut eval = FpVar::<F>::one();
+        for (xi, yi) in x.iter().zip(y.iter()) {
+            eval *= (xi + xi) * yi - xi - yi + F::one();
+        }
+        eval
+    }
 }
 
 #[allow(clippy::filter_map_bool_then)]

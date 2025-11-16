@@ -11,7 +11,6 @@ use ark_std::{
 };
 
 pub mod utils;
-pub mod var;
 
 /// FCircuit defines the trait of the circuit of the F function, which is the one being folded (ie.
 /// inside the agmented F' function).

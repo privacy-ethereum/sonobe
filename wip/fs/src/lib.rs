@@ -16,12 +16,13 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::{ConstraintSystem, ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{borrow::Borrow, fmt::Debug, rand::RngCore};
 use sonobe_primitives::{
+    algebra::group::emulated::EmulatedAffineVar,
     arithmetizations::{Arith, ArithConfig},
-    circuits::{var::Var, AssignmentsOwned},
-    commitments::{VectorCommitment, VectorCommitmentGadget},
+    circuits::AssignmentsOwned,
+    commitments::{GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget},
     relations::{Relation, WitnessInstanceSampler},
     sumcheck::Error as SumCheckError,
-    traits::{Dummy, SonobeField},
+    traits::{Dummy, SonobeField, CF2},
     transcripts::{Absorbable, AbsorbableGadget, Transcript, TranscriptVar},
 };
 use thiserror::Error;
@@ -127,8 +128,8 @@ impl<F: PrimeField, X: CondSelectGadget<F>> CondSelectGadget<F> for PlainWitness
     }
 }
 
-impl<F: Field, V: Var<F>> GR1CSVar<F> for PlainWitness<V> {
-    type Value = PlainWitness<V::Native>;
+impl<F: Field, V: GR1CSVar<F>> GR1CSVar<F> for PlainWitness<V> {
+    type Value = PlainWitness<V::Value>;
 
     fn cs(&self) -> ConstraintSystemRef<F> {
         self.0.cs()
@@ -137,10 +138,6 @@ impl<F: Field, V: Var<F>> GR1CSVar<F> for PlainWitness<V> {
     fn value(&self) -> Result<Self::Value, SynthesisError> {
         self.0.value().map(PlainWitness)
     }
-}
-
-impl<F: Field, V: Var<F>> Var<F> for PlainWitness<V> {
-    type Native = PlainWitness<V::Native>;
 }
 
 impl<V: Default + Clone, A: ArithConfig> Dummy<&A> for PlainWitness<V> {
@@ -223,8 +220,8 @@ impl<F: PrimeField, X: CondSelectGadget<F>> CondSelectGadget<F> for PlainInstanc
     }
 }
 
-impl<F: Field, V: Var<F>> GR1CSVar<F> for PlainInstance<V> {
-    type Value = PlainInstance<V::Native>;
+impl<F: Field, V: GR1CSVar<F>> GR1CSVar<F> for PlainInstance<V> {
+    type Value = PlainInstance<V::Value>;
 
     fn cs(&self) -> ConstraintSystemRef<F> {
         self.0.cs()
@@ -233,10 +230,6 @@ impl<F: Field, V: Var<F>> GR1CSVar<F> for PlainInstance<V> {
     fn value(&self) -> Result<Self::Value, SynthesisError> {
         self.0.value().map(PlainInstance)
     }
-}
-
-impl<F: Field, V: Var<F>> Var<F> for PlainInstance<V> {
-    type Native = PlainInstance<V::Native>;
 }
 
 impl<V: Default + Clone, A: ArithConfig> Dummy<&A> for PlainInstance<V> {
@@ -354,17 +347,20 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
 }
 
 pub trait FoldingWitnessVar<VC: VectorCommitmentGadget>:
-    Var<VC::ConstraintField, Native: FoldingWitness<VC::Native>>
+    AllocVar<Self::Value, VC::ConstraintField>
+    + GR1CSVar<VC::ConstraintField, Value: FoldingWitness<VC::Native>>
 {
 }
 
 impl<VC: VectorCommitmentGadget, T> FoldingWitnessVar<VC> for T where
-    T: Var<VC::ConstraintField, Native: FoldingWitness<VC::Native>>
+    T: AllocVar<Self::Value, VC::ConstraintField>
+        + GR1CSVar<VC::ConstraintField, Value: FoldingWitness<VC::Native>>
 {
 }
 
 pub trait FoldingInstanceVar<VC: VectorCommitmentGadget>:
-    Var<VC::ConstraintField, Native: FoldingInstance<VC::Native>>
+    AllocVar<Self::Value, VC::ConstraintField>
+    + GR1CSVar<VC::ConstraintField, Value: FoldingInstance<VC::Native>>
     + AbsorbableGadget<VC::ConstraintField>
     + CondSelectGadget<VC::ConstraintField>
 {
@@ -375,7 +371,7 @@ pub trait FoldingInstanceVar<VC: VectorCommitmentGadget>:
 
     fn new_witness_with_public_inputs(
         cs: impl Into<Namespace<VC::ConstraintField>>,
-        u: &Self::Native,
+        u: &Self::Value,
         x: Vec<VC::ScalarVar>,
     ) -> Result<Self, SynthesisError>;
 }
@@ -394,37 +390,72 @@ impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for PlainInstanceVar<VC>
 
     fn new_witness_with_public_inputs(
         _cs: impl Into<Namespace<VC::ConstraintField>>,
-        _u: &Self::Native,
+        _u: &Self::Value,
         x: Vec<VC::ScalarVar>,
     ) -> Result<Self, SynthesisError> {
         Ok(Self(x))
     }
 }
 
+pub trait GroupBasedFoldingSchemePrimary<const M: usize = 1, const N: usize = 1>:
+    FoldingScheme<
+    M,
+    N,
+    VC: GroupBasedVectorCommitment,
+    TranscriptField = <<Self as FoldingScheme<M, N>>::VC as VectorCommitment>::Scalar,
+>
+{
+    type Gadget: FoldingSchemePartialGadget<
+        M,
+        N,
+        Native = Self,
+        VC = <Self::VC as GroupBasedVectorCommitment>::EmulatedGadget,
+    >;
+}
+
+pub trait GroupBasedFoldingSchemeSecondary<const M: usize = 1, const N: usize = 1>:
+    FoldingScheme<
+    M,
+    N,
+    VC: GroupBasedVectorCommitment,
+    TranscriptField = CF2<<<Self as FoldingScheme<M, N>>::VC as VectorCommitment>::Commitment>,
+>
+{
+    type Gadget: FoldingSchemeFullGadget<
+        M,
+        N,
+        Native = Self,
+        VC = <Self::VC as VectorCommitment>::Gadget,
+    >;
+}
+
 pub trait FoldingSchemePartialGadget<const M: usize = 1, const N: usize = 1> {
     type Native: FoldingScheme<M, N>;
 
     type VC: VectorCommitmentGadget<Native = <Self::Native as FoldingScheme<M, N>>::VC>;
-    type RW: FoldingWitnessVar<Self::VC, Native = <Self::Native as FoldingScheme<M, N>>::RW>;
-    type RU: FoldingInstanceVar<Self::VC, Native = <Self::Native as FoldingScheme<M, N>>::RU>;
-    type IW: FoldingWitnessVar<Self::VC, Native = <Self::Native as FoldingScheme<M, N>>::IW>;
-    type IU: FoldingInstanceVar<Self::VC, Native = <Self::Native as FoldingScheme<M, N>>::IU>;
+    type RW: FoldingWitnessVar<Self::VC, Value = <Self::Native as FoldingScheme<M, N>>::RW>;
+    type RU: FoldingInstanceVar<Self::VC, Value = <Self::Native as FoldingScheme<M, N>>::RU>;
+    type IW: FoldingWitnessVar<Self::VC, Value = <Self::Native as FoldingScheme<M, N>>::IW>;
+    type IU: FoldingInstanceVar<Self::VC, Value = <Self::Native as FoldingScheme<M, N>>::IU>;
 
     type VerifierKey;
 
     type Challenge;
 
-    type Proof: Var<
-        <Self::VC as VectorCommitmentGadget>::ConstraintField,
-        Native = <Self::Native as FoldingScheme<M, N>>::Proof,
-    >;
+    type Proof: AllocVar<
+            <Self::Native as FoldingScheme<M, N>>::Proof,
+            <Self::VC as VectorCommitmentGadget>::ConstraintField,
+        > + GR1CSVar<
+            <Self::VC as VectorCommitmentGadget>::ConstraintField,
+            Value = <Self::Native as FoldingScheme<M, N>>::Proof,
+        >;
 
     #[allow(non_snake_case)]
     fn verify_hinted(
         vk: &Self::VerifierKey,
         transcript: &mut impl TranscriptVar<<Self::VC as VectorCommitmentGadget>::ConstraintField>,
-        Us: &[impl Borrow<Self::RU>; M],
-        us: &[impl Borrow<Self::IU>; N],
+        Us: [&Self::RU; M],
+        us: [&Self::IU; N],
         proof: &Self::Proof,
     ) -> Result<(Self::RU, Self::Challenge), SynthesisError>;
 }
@@ -436,25 +467,20 @@ pub trait FoldingSchemeFullGadget<const M: usize = 1, const N: usize = 1>:
     fn verify(
         vk: &Self::VerifierKey,
         transcript: &mut impl TranscriptVar<<Self::VC as VectorCommitmentGadget>::ConstraintField>,
-        Us: &[impl Borrow<Self::RU>; M],
-        us: &[impl Borrow<Self::IU>; N],
+        Us: [&Self::RU; M],
+        us: [&Self::IU; N],
         proof: &Self::Proof,
     ) -> Result<Self::RU, SynthesisError>;
 }
 
 #[cfg(test)]
 mod tests {
-    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystem};
     use ark_std::{error::Error, rand::Rng, sync::Arc};
     use sonobe_primitives::{
-        arithmetizations::r1cs::R1CS,
-        circuits::{AssignmentsOwned, ConstraintSystemBuilder, ConstraintSystemExt},
+        circuits::{AssignmentsOwned, ConstraintSystemBuilder},
         relations::WitnessInstanceSampler,
-        transcripts::{
-            griffin::{params::GriffinParams, sponge::GriffinSponge},
-            poseidon::poseidon_canonical_config,
-        },
+        transcripts::griffin::{params::GriffinParams, sponge::GriffinSponge},
     };
 
     use super::*;

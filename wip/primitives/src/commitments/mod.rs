@@ -1,6 +1,9 @@
-use ark_ec::PrimeGroup;
+use ark_ec::{CurveGroup, PrimeGroup};
 use ark_ff::PrimeField;
-use ark_r1cs_std::{eq::EqGadget, select::CondSelectGadget, GR1CSVar};
+use ark_r1cs_std::{
+    alloc::AllocVar, eq::EqGadget, fields::fp::FpVar,
+    groups::curves::short_weierstrass::ProjectiveVar, select::CondSelectGadget, GR1CSVar,
+};
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::{
     fmt::Debug,
@@ -11,8 +14,11 @@ use ark_std::{
 use thiserror::Error;
 
 use crate::{
-    circuits::var::Var,
-    traits::{SonobeCurve, SonobeField, CF1},
+    algebra::{
+        field::emulated::EmulatedFieldVar, group::emulated::EmulatedAffineVar,
+        ops::bits::FromBitsGadget, Var,
+    },
+    traits::{SonobeCurve, SonobeField, CF1, CF2},
     transcripts::{Absorbable, AbsorbableGadget},
 };
 
@@ -34,6 +40,8 @@ pub enum Error {
 
 pub trait VectorCommitment: 'static + Clone + Debug + PartialEq + Eq {
     const IS_HIDING: bool;
+
+    type Gadget: VectorCommitmentGadget<Native = Self>;
 
     type Key: Clone;
     type Scalar: Clone + Copy + Default + Debug + PartialEq + Eq + Sync + Absorbable;
@@ -70,16 +78,23 @@ pub trait VectorCommitment: 'static + Clone + Debug + PartialEq + Eq {
 }
 
 pub trait GroupBasedVectorCommitment:
-    VectorCommitment<Commitment: SonobeCurve, Scalar = CF1<<Self as VectorCommitment>::Commitment>>
+    VectorCommitment<
+    Gadget: VectorCommitmentGadget<
+        Native = Self,
+        ConstraintField = CF2<Self::Commitment>,
+        ScalarVar = EmulatedFieldVar<CF2<Self::Commitment>, Self::Scalar, true>,
+        CommitmentVar = Var<Self::Commitment>,
+    >,
+    Commitment: SonobeCurve,
+    Scalar = CF1<<Self as VectorCommitment>::Commitment>,
+>
 {
-}
-
-impl<VC> GroupBasedVectorCommitment for VC where
-    VC: VectorCommitment<
-        Commitment: SonobeCurve,
-        Scalar = CF1<<Self as VectorCommitment>::Commitment>,
-    >
-{
+    type EmulatedGadget: VectorCommitmentGadget<
+        Native = Self,
+        ConstraintField = Self::Scalar,
+        ScalarVar = FpVar<Self::Scalar>,
+        CommitmentVar = EmulatedAffineVar<Self::Scalar, Self::Commitment>,
+    >;
 }
 
 pub trait VectorCommitmentGadget: Clone {
@@ -88,11 +103,12 @@ pub trait VectorCommitmentGadget: Clone {
 
     type KeyVar;
     type ScalarVar: Clone
-        + GR1CSVar<Self::ConstraintField>
         + EqGadget<Self::ConstraintField>
         + AbsorbableGadget<Self::ConstraintField>
         + CondSelectGadget<Self::ConstraintField>
-        + Var<Self::ConstraintField, Native = <Self::Native as VectorCommitment>::Scalar>
+        + FromBitsGadget<Self::ConstraintField>
+        + AllocVar<<Self::Native as VectorCommitment>::Scalar, Self::ConstraintField>
+        + GR1CSVar<Self::ConstraintField, Value = <Self::Native as VectorCommitment>::Scalar>
         + Add<Output = Self::IntermediateScalarVar>
         + for<'a> Add<&'a Self::ScalarVar, Output = Self::IntermediateScalarVar>
         + Mul<Output = Self::IntermediateScalarVar>
@@ -110,11 +126,10 @@ pub trait VectorCommitmentGadget: Clone {
     type CommitmentVar: Clone
         + AbsorbableGadget<Self::ConstraintField>
         + CondSelectGadget<Self::ConstraintField>
-        + Var<Self::ConstraintField, Native = <Self::Native as VectorCommitment>::Commitment>;
-    type RandomnessVar: Var<
-        Self::ConstraintField,
-        Native = <Self::Native as VectorCommitment>::Randomness,
-    >;
+        + AllocVar<<Self::Native as VectorCommitment>::Commitment, Self::ConstraintField>
+        + GR1CSVar<Self::ConstraintField, Value = <Self::Native as VectorCommitment>::Commitment>;
+    type RandomnessVar: AllocVar<<Self::Native as VectorCommitment>::Randomness, Self::ConstraintField>
+        + GR1CSVar<Self::ConstraintField, Value = <Self::Native as VectorCommitment>::Randomness>;
 
     fn open(
         ck: &Self::KeyVar,

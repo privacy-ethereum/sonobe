@@ -629,10 +629,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
                     .into_iter()
                     .chain(ws.iter().map(|w| &w[..]))
                     .slice_rlc(&lagrange_evals),
-                r: vec![W.r]
-                    .into_iter()
-                    .chain(rs.iter().copied())
-                    .scalar_rlc(&lagrange_evals),
+                r: vec![W.r].into_iter().chain(rs).scalar_rlc(&lagrange_evals),
             },
             RU {
                 e: f_alpha * lagrange_evals[0]
@@ -644,7 +641,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
                 betas: betas_star,
                 phi: vec![U.phi]
                     .into_iter()
-                    .chain(phis.iter().copied())
+                    .chain(phis)
                     .scalar_rlc(&lagrange_evals),
             },
             (
@@ -709,7 +706,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
             betas: betas_star,
             phi: vec![U.phi]
                 .into_iter()
-                .chain(phis.iter().copied())
+                .chain(*phis)
                 .scalar_rlc(&lagrange_evals),
         })
     }

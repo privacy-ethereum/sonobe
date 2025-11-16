@@ -26,15 +26,17 @@ pub trait SliceRLC<Coeff> {
     fn slice_rlc(self, coeffs: &[Coeff]) -> Vec<Self::Value>;
 }
 
-impl<'a, T: 'a, I: Iterator<Item = &'a [T]>, Coeff> SliceRLC<Coeff> for I
+impl<'a, T, I: Iterator<Item = &'a [T]>, Coeff> SliceRLC<Coeff> for I
 where
-    T: Add<Output = T> + Copy,
+    T: 'a + Add<Output = T> + Clone,
     for<'x> T: Mul<&'x Coeff, Output = T>,
 {
     type Value = T;
 
     fn slice_rlc(self, coeffs: &[Coeff]) -> Vec<Self::Value> {
-        let mut iter = self.zip(coeffs).map(|(v, c)| v.iter().map(|x| *x * c));
+        let mut iter = self
+            .zip(coeffs)
+            .map(|(v, c)| v.iter().map(|x| x.clone() * c));
         let first = iter.next().unwrap();
 
         iter.fold(first.collect(), |acc, v| {

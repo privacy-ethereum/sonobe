@@ -4,7 +4,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
-use sonobe_primitives::{circuits::var::Var, commitments::VectorCommitmentGadget};
+use sonobe_primitives::commitments::VectorCommitmentGadget;
 
 use super::RunningWitness;
 
@@ -12,10 +12,6 @@ use super::RunningWitness;
 pub struct RunningWitnessVar<VC: VectorCommitmentGadget> {
     pub w: Vec<VC::ScalarVar>,
     pub r: VC::RandomnessVar,
-}
-
-impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for RunningWitnessVar<VC> {
-    type Native = RunningWitness<VC::Native>;
 }
 
 impl<VC: VectorCommitmentGadget> AllocVar<RunningWitness<VC::Native>, VC::ConstraintField>

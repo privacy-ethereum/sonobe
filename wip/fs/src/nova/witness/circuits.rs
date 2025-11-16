@@ -4,7 +4,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
-use sonobe_primitives::{circuits::var::Var, commitments::VectorCommitmentGadget};
+use sonobe_primitives::commitments::VectorCommitmentGadget;
 
 use super::{IncomingWitness, RunningWitness};
 
@@ -14,10 +14,6 @@ pub struct RunningWitnessVar<VC: VectorCommitmentGadget> {
     pub r_e: VC::RandomnessVar,
     pub w: Vec<VC::ScalarVar>,
     pub r_w: VC::RandomnessVar,
-}
-
-impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for RunningWitnessVar<VC> {
-    type Native = RunningWitness<VC::Native>;
 }
 
 impl<VC: VectorCommitmentGadget> AllocVar<RunningWitness<VC::Native>, VC::ConstraintField>
@@ -44,7 +40,11 @@ impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for RunningWitnes
     type Value = RunningWitness<VC::Native>;
 
     fn cs(&self) -> ConstraintSystemRef<VC::ConstraintField> {
-        self.e.cs().or(self.r_e.cs()).or(self.w.cs()).or(self.r_w.cs())
+        self.e
+            .cs()
+            .or(self.r_e.cs())
+            .or(self.w.cs())
+            .or(self.r_w.cs())
     }
 
     fn value(&self) -> Result<Self::Value, SynthesisError> {
@@ -61,10 +61,6 @@ impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for RunningWitnes
 pub struct IncomingWitnessVar<VC: VectorCommitmentGadget> {
     pub w: Vec<VC::ScalarVar>,
     pub r_w: VC::RandomnessVar,
-}
-
-impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for IncomingWitnessVar<VC> {
-    type Native = IncomingWitness<VC::Native>;
 }
 
 impl<VC: VectorCommitmentGadget> AllocVar<IncomingWitness<VC::Native>, VC::ConstraintField>

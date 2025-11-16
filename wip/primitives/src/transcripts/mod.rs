@@ -107,7 +107,10 @@ pub trait TranscriptVar<F: PrimeField> {
         Ok(sponge)
     }
 
-    fn add<A: AbsorbableGadget<F>>(&mut self, input: &A) -> Result<&mut Self, SynthesisError>;
+    fn add<A: AbsorbableGadget<F> + ?Sized>(
+        &mut self,
+        input: &A,
+    ) -> Result<&mut Self, SynthesisError>;
 
     /// Squeeze `num_bits` bits from the sponge.
     fn get_bits(&mut self, num_bits: usize) -> Result<Vec<Boolean<F>>, SynthesisError>;

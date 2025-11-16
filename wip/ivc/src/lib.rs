@@ -25,7 +25,7 @@ pub trait IVC {
     type PublicParam;
     type ProverKey;
     type VerifierKey;
-    type Proof;
+    type Proof: for<'a> Dummy<&'a Self::ProverKey>;
 
     fn preprocess(config: Self::Config, rng: impl RngCore) -> Result<Self::PublicParam, Error>;
 
@@ -68,19 +68,14 @@ impl<FC: FCircuit<Field = I::Field>, I: IVC> IVCStatefulProver<FC, I> {
         pk: I::ProverKey,
         step_circuit: FC,
         initial_state: Vec<FC::Field>,
-    ) -> Result<Self, Error>
-    where
-        I::Proof: for<'a> Dummy<&'a I::ProverKey>,
-    {
-        let current_proof = I::Proof::dummy(&pk);
-
+    ) -> Result<Self, Error> {
         Ok(Self {
-            pk,
             step_circuit,
             i: 0,
             current_state: initial_state.clone(),
             initial_state,
-            current_proof,
+            current_proof: I::Proof::dummy(&pk),
+            pk,
         })
     }
 
@@ -102,6 +97,63 @@ impl<FC: FCircuit<Field = I::Field>, I: IVC> IVCStatefulProver<FC, I> {
         self.i += 1;
         self.current_state = next_state;
         self.current_proof = next_proof;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ark_bn254::{Fr, G1Projective as C1};
+    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use ark_ff::UniformRand;
+    use ark_grumpkin::Projective as C2;
+    use ark_std::{error::Error, rand::Rng, sync::Arc, test_rng};
+    use sonobe_fs::{
+        ova::{
+            instance::{circuits::RunningInstanceVar as RUVar, RunningInstance as RU},
+            witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW},
+        },
+        FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget, PlainInstance as IU,
+        PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar,
+    };
+    use sonobe_primitives::{
+        arithmetizations::Arith,
+        circuits::utils::CircuitForTest,
+        commitments::pedersen::{Pedersen, PedersenEmulatedGadget, PedersenGadget},
+        traits::Dummy,
+        transcripts::{
+            griffin::params::GriffinParams, poseidon::poseidon_canonical_config, Transcript,
+        },
+    };
+
+    use super::*;
+
+    pub fn test_ivc<I: IVC, F: FCircuit<Field = I::Field>>(
+        config: I::Config,
+        step_circuit: F,
+        external_inputs_vec: Vec<F::ExternalInputs>,
+        mut rng: impl Rng,
+    ) -> Result<(), Box<dyn Error>> {
+        let pp = I::preprocess(config, &mut rng)?;
+
+        let (pk, vk) = I::generate_keys(pp, &step_circuit)?;
+
+        let initial_state = vec![UniformRand::rand(&mut rng)];
+
+        let mut prover = IVCStatefulProver::<_, I>::new(pk, step_circuit, initial_state)?;
+
+        for external_inputs in external_inputs_vec {
+            prover.prove_step(external_inputs, &mut rng)?;
+
+            I::verify(
+                &vk,
+                prover.i,
+                &prover.initial_state,
+                &prover.current_state,
+                &prover.current_proof,
+            )?;
+        }
+
         Ok(())
     }
 }

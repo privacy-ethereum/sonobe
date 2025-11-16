@@ -7,9 +7,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
-use sonobe_primitives::{
-    circuits::var::Var, commitments::VectorCommitmentGadget, transcripts::AbsorbableGadget,
-};
+use sonobe_primitives::{commitments::VectorCommitmentGadget, transcripts::AbsorbableGadget};
 
 use super::RunningInstance;
 use crate::FoldingInstanceVar;
@@ -19,10 +17,6 @@ pub struct RunningInstanceVar<VC: VectorCommitmentGadget> {
     pub u: VC::ScalarVar,
     pub cm: VC::CommitmentVar,
     pub x: Vec<VC::ScalarVar>,
-}
-
-impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for RunningInstanceVar<VC> {
-    type Native = RunningInstance<VC::Native>;
 }
 
 impl<VC: VectorCommitmentGadget> AllocVar<RunningInstance<VC::Native>, VC::ConstraintField>
@@ -104,7 +98,7 @@ impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for RunningInstanceVar<V
 
     fn new_witness_with_public_inputs(
         cs: impl Into<Namespace<VC::ConstraintField>>,
-        u: &Self::Native,
+        u: &Self::Value,
         x: Vec<VC::ScalarVar>,
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();

@@ -75,7 +75,9 @@ impl<F: PrimeField> FCircuit for CircuitForTest<F> {
             unreachable!()
         };
         // Variable 2
-        let y = AllocatedFp::new_witness(cs.clone(), || Ok(x.value()?.pow([3]) + x.value()? + F::from(5)))?;
+        let y = AllocatedFp::new_witness(cs.clone(), || {
+            Ok(x.value()?.pow([3]) + x.value()? + F::from(5))
+        })?;
 
         // Variable 3, Constraint 0
         let x_square = x.square()?;

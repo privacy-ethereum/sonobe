@@ -58,7 +58,10 @@ impl<F: PrimeField> TranscriptVar<F> for PoseidonSpongeVar<F> {
         CryptographicSpongeVar::new(ConstraintSystemRef::None, config)
     }
 
-    fn add<A: AbsorbableGadget<F>>(&mut self, input: &A) -> Result<&mut Self, SynthesisError> {
+    fn add<A: AbsorbableGadget<F> + ?Sized>(
+        &mut self,
+        input: &A,
+    ) -> Result<&mut Self, SynthesisError> {
         self.absorb(&input.to_absorbable()?)?;
         Ok(self)
     }
@@ -184,8 +187,7 @@ pub mod tests {
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fr>::new_ref();
         let mut tr_var = PoseidonSpongeVar::<Fr>::new(&config);
-        let p_var =
-            EmulatedAffineVar::<G1>::new_witness(ConstraintSystem::<Fr>::new_ref(), || Ok(p))?;
+        let p_var = EmulatedAffineVar::new_witness(ConstraintSystem::<Fr>::new_ref(), || Ok(p))?;
         tr_var.add(&p_var)?;
         let c_var = tr_var.challenge_field_element()?;
 

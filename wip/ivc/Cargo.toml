@@ -7,10 +7,12 @@ repository.workspace = true
 
 [dependencies]
 ark-crypto-primitives = { workspace = true, features = ["constraints", "sponge", "crh"] }
+ark-ec = { workspace = true }
 ark-ff = { workspace = true, features = ["asm"] }
 ark-r1cs-std = { workspace = true }
 ark-relations = { workspace = true }
 ark-std = { workspace = true, features = ["getrandom"] }
+num-bigint = { workspace = true, features = ["rand"] }
 thiserror = { workspace = true }
 
 sonobe-primitives = { workspace = true }

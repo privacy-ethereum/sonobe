@@ -287,7 +287,10 @@ impl<F: PrimeField> TranscriptVar<F> for GriffinSpongeVar<F> {
         }
     }
 
-    fn add<A: AbsorbableGadget<F>>(&mut self, input: &A) -> Result<&mut Self, SynthesisError> {
+    fn add<A: AbsorbableGadget<F> + ?Sized>(
+        &mut self,
+        input: &A,
+    ) -> Result<&mut Self, SynthesisError> {
         let input = input.to_absorbable()?;
         if input.is_empty() {
             return Ok(self);
@@ -408,8 +411,7 @@ pub mod tests {
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fr>::new_ref();
         let mut tr_var = GriffinSpongeVar::<Fr>::new(&config);
-        let p_var =
-            EmulatedAffineVar::<G1>::new_witness(ConstraintSystem::<Fr>::new_ref(), || Ok(p))?;
+        let p_var = EmulatedAffineVar::new_witness(ConstraintSystem::<Fr>::new_ref(), || Ok(p))?;
         tr_var.add(&p_var)?;
         let c_var = tr_var.challenge_field_element()?;
 

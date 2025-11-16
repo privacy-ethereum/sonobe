@@ -4,7 +4,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
-use sonobe_primitives::{circuits::var::Var, commitments::VectorCommitmentGadget};
+use sonobe_primitives::commitments::VectorCommitmentGadget;
 
 use super::{CCCSWitness, LCCCSWitness};
 
@@ -12,10 +12,6 @@ use super::{CCCSWitness, LCCCSWitness};
 pub struct LCCCSWitnessVar<VC: VectorCommitmentGadget> {
     pub w: Vec<VC::ScalarVar>,
     pub r: VC::RandomnessVar,
-}
-
-impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for LCCCSWitnessVar<VC> {
-    type Native = LCCCSWitness<VC::Native>;
 }
 
 impl<VC: VectorCommitmentGadget> AllocVar<LCCCSWitness<VC::Native>, VC::ConstraintField>
@@ -55,10 +51,6 @@ impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for LCCCSWitnessV
 pub struct CCCSWitnessVar<VC: VectorCommitmentGadget> {
     pub w: Vec<VC::ScalarVar>,
     pub r: VC::RandomnessVar,
-}
-
-impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for CCCSWitnessVar<VC> {
-    type Native = CCCSWitness<VC::Native>;
 }
 
 impl<VC: VectorCommitmentGadget> AllocVar<CCCSWitness<VC::Native>, VC::ConstraintField>

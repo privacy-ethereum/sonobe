@@ -34,8 +34,7 @@ use self::{
     witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW},
 };
 use crate::{
-    Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget, PlainInstance as IU,
-    PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar,
+    Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget, GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary, PlainInstance as IU, PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar
 };
 
 pub mod instance;
@@ -281,7 +280,6 @@ impl<VC, const CHALLENGE_BITS: usize> FoldingSchemePartialGadget<1, 1>
     for AbstractOvaGadget<VC, CHALLENGE_BITS>
 where
     VC: VectorCommitmentGadget<Native: GroupBasedVectorCommitment>,
-    VC::ScalarVar: FromBitsGadget<VC::ConstraintField>,
 {
     type Native = AbstractOva<VC::Native, VC::ConstraintField, CHALLENGE_BITS>;
 
@@ -298,12 +296,10 @@ where
     fn verify_hinted(
         _vk: &Self::VerifierKey,
         transcript: &mut impl TranscriptVar<VC::ConstraintField>,
-        Us: &[impl Borrow<Self::RU>; 1],
-        us: &[impl Borrow<Self::IU>; 1],
+        [U]: [&Self::RU; 1],
+        [u]: [&Self::IU; 1],
         proof: &Self::Proof,
     ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
-        let (U, u) = (Us[0].borrow(), us[0].borrow());
-
         let rho_bits = {
             transcript.add(&U)?;
             transcript.add(&u)?;
@@ -343,7 +339,6 @@ impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeFullGadget<1, 1>
     for AbstractOvaGadget<VC, CHALLENGE_BITS>
 where
     VC: VectorCommitmentGadget<Native: GroupBasedVectorCommitment>,
-    VC::ScalarVar: FromBitsGadget<VC::ConstraintField>,
     VC::CommitmentVar: CurveVar<<VC::Native as VectorCommitment>::Commitment, VC::ConstraintField>
         + Add<Output = VC::CommitmentVar>
         + for<'a> Add<&'a VC::CommitmentVar, Output = VC::CommitmentVar>,
@@ -352,23 +347,16 @@ where
     fn verify(
         _vk: &Self::VerifierKey,
         transcript: &mut impl TranscriptVar<VC::ConstraintField>,
-        Us: &[impl Borrow<Self::RU>; 1],
-        us: &[impl Borrow<Self::IU>; 1],
+        [U]: [&Self::RU; 1],
+        [u]: [&Self::IU; 1],
         proof: &Self::Proof,
     ) -> Result<Self::RU, SynthesisError> {
-        let (U, u) = (Us[0].borrow(), us[0].borrow());
-        let cs = U.cs();
-
         let rho_bits = {
             transcript.add(&U)?;
             transcript.add(&u)?;
             transcript.add(proof)?;
             transcript.challenge_bits(CHALLENGE_BITS)?
         };
-        println!("{}", cs.num_constraints());
-        if !cs.is_in_setup_mode() {
-            assert!(cs.is_satisfied().unwrap());
-        }
         let rho = VC::ScalarVar::from_bits_le(
             &rho_bits,
             Bound(
@@ -376,16 +364,12 @@ where
                 (BigInt::one() << CHALLENGE_BITS) - BigInt::one(),
             ),
         )?;
-        println!("{}", cs.num_constraints());
-        if !cs.is_in_setup_mode() {
-            assert!(cs.is_satisfied().unwrap());
-        }
 
         Ok(RUVar {
             u: (U.u.clone() + &rho)
                 .try_into()
                 .map_err(|_| SynthesisError::Unsatisfiable)?,
-            cm: proof.scalar_mul_le(rho_bits.iter())? + &Us[0].borrow().cm,
+            cm: proof.scalar_mul_le(rho_bits.iter())? + &U.cm,
             x: U.x
                 .iter()
                 .zip(&u[..])
@@ -394,6 +378,18 @@ where
                 .map_err(|_| SynthesisError::Unsatisfiable)?,
         })
     }
+}
+
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemePrimary<1, 1>
+    for AbstractOva<VC, VC::Scalar, CHALLENGE_BITS>
+{
+    type Gadget = AbstractOvaGadget<VC::EmulatedGadget, CHALLENGE_BITS>;
+}
+
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemeSecondary<1, 1>
+    for AbstractOva<VC, CF2<VC::Commitment>, CHALLENGE_BITS>
+{
+    type Gadget = AbstractOvaGadget<VC::Gadget, CHALLENGE_BITS>;
 }
 
 #[cfg(test)]

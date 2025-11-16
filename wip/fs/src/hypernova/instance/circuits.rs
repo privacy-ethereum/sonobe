@@ -7,9 +7,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
-use sonobe_primitives::{
-    circuits::var::Var, commitments::VectorCommitmentGadget, transcripts::AbsorbableGadget,
-};
+use sonobe_primitives::{commitments::VectorCommitmentGadget, transcripts::AbsorbableGadget};
 
 use super::{CCCSInstance, LCCCSInstance};
 use crate::FoldingInstanceVar;
@@ -21,10 +19,6 @@ pub struct LCCCSInstanceVar<VC: VectorCommitmentGadget> {
     pub x: Vec<VC::ScalarVar>,
     pub r_x: Vec<VC::ScalarVar>,
     pub v: Vec<VC::ScalarVar>,
-}
-
-impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for LCCCSInstanceVar<VC> {
-    type Native = LCCCSInstance<VC::Native>;
 }
 
 impl<VC: VectorCommitmentGadget> AllocVar<LCCCSInstance<VC::Native>, VC::ConstraintField>
@@ -135,7 +129,7 @@ impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for LCCCSInstanceVar<VC>
 
     fn new_witness_with_public_inputs(
         cs: impl Into<Namespace<VC::ConstraintField>>,
-        u: &Self::Native,
+        u: &Self::Value,
         x: Vec<VC::ScalarVar>,
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();
@@ -153,10 +147,6 @@ impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for LCCCSInstanceVar<VC>
 pub struct CCCSInstanceVar<VC: VectorCommitmentGadget> {
     pub cm: VC::CommitmentVar,
     pub x: Vec<VC::ScalarVar>,
-}
-
-impl<VC: VectorCommitmentGadget> Var<VC::ConstraintField> for CCCSInstanceVar<VC> {
-    type Native = CCCSInstance<VC::Native>;
 }
 
 impl<VC: VectorCommitmentGadget> AllocVar<CCCSInstance<VC::Native>, VC::ConstraintField>
@@ -197,8 +187,8 @@ impl<VC: VectorCommitmentGadget> AbsorbableGadget<VC::ConstraintField> for CCCSI
         &self,
         dest: &mut Vec<FpVar<VC::ConstraintField>>,
     ) -> Result<(), SynthesisError> {
-        self.x.absorb_into(dest)?;
-        self.cm.absorb_into(dest)
+        self.cm.absorb_into(dest)?;
+        self.x.absorb_into(dest)
     }
 }
 
@@ -234,7 +224,7 @@ impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for CCCSInstanceVar<VC> 
 
     fn new_witness_with_public_inputs(
         cs: impl Into<Namespace<VC::ConstraintField>>,
-        u: &Self::Native,
+        u: &Self::Value,
         x: Vec<VC::ScalarVar>,
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();

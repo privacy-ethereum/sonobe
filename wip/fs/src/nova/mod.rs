@@ -300,8 +300,8 @@ pub type Nova2<VC, const CHALLENGE_BITS: usize = 128> =
 pub type CycleFoldNova2<VC, const CHALLENGE_BITS: usize = 128> =
     AbstractNova2<VC, CF2<<VC as VectorCommitment>::Commitment>, CHALLENGE_BITS>;
 
-impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingScheme<1, 1>
-    for AbstractNova2<VC, TF, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
+    FoldingScheme<1, 1> for AbstractNova2<VC, TF, CHALLENGE_BITS>
 {
     type VC = VC;
     type RW = RW<VC>;
