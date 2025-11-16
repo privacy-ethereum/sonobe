@@ -1,35 +1,29 @@
-use ark_ff::{BigInteger, Field, One, PrimeField};
+use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::AllocVar,
-    convert::ToConstraintFieldGadget,
     eq::EqGadget,
     fields::{fp::FpVar, FieldVar},
     groups::CurveVar,
-    prelude::Boolean,
     GR1CSVar,
 };
-use ark_relations::gr1cs::{
-    ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError,
-};
-use ark_std::{marker::PhantomData, rand::RngCore, sync::Arc};
+use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
+use ark_std::{marker::PhantomData, sync::Arc};
 use sonobe_fs::{
-    FoldingInstance, FoldingInstanceVar, FoldingScheme, FoldingSchemeFullGadget,
-    FoldingSchemePartialGadget, GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary,
+    FoldingInstanceVar, FoldingSchemeFullGadget, FoldingSchemePartialGadget,
+    GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary,
 };
 use sonobe_primitives::{
-    algebra::field::emulated::EmulatedFieldVar,
     arithmetizations::Arith,
-    circuits::{ConstraintSystemExt, FCircuit},
-    commitments::{VectorCommitment, VectorCommitmentGadget},
-    relations::WitnessInstanceSampler,
-    traits::{Dummy, SonobeCurve, SonobeField, CF1, CF2},
+    circuits::FCircuit,
+    commitments::VectorCommitment,
+    traits::{Dummy, SonobeCurve, CF2},
     transcripts::{
-        griffin::{params::GriffinParams, sponge::GriffinSpongeVar},
-        Transcript, TranscriptVar,
+        griffin::{GriffinParams, sponge::GriffinSpongeVar},
+        TranscriptVar,
     },
 };
 
-use crate::compilers::cyclefold::FoldingSchemeCycleFoldGadget;
+use crate::compilers::cyclefold::FoldingSchemeCycleFoldExt;
 
 pub struct AugmentedCircuit<
     'a,
@@ -45,7 +39,7 @@ pub struct AugmentedCircuit<
 
 impl<'a, FS1, FS2, FC> AugmentedCircuit<'a, FS1, FS2, FC>
 where
-    FS1: FoldingSchemeCycleFoldGadget<
+    FS1: FoldingSchemeCycleFoldExt<
         1,
         1,
         Gadget: FoldingSchemePartialGadget<1, 1, VerifierKey = ()>,
@@ -149,7 +143,7 @@ where
         //   computing them outside the circuit.
         // - `.enforce_equal()` prevents a malicious prover from claiming wrong
         //   public inputs that are not the honest `uu_x` computed in-circuit.
-        uu_x.enforce_equal(&Vec::new_input(cs, || {
+        uu_x.enforce_equal(&Vec::new_input(cs.clone(), || {
             Ok(uu_x.value().unwrap_or(vec![Default::default(); uu_x.len()]))
         })?)?;
 
@@ -161,7 +155,7 @@ where
 
 impl<'a, FS1, FS2, FC> ConstraintSynthesizer<FC::Field> for AugmentedCircuit<'a, FS1, FS2, FC>
 where
-    FS1: FoldingSchemeCycleFoldGadget<
+    FS1: FoldingSchemeCycleFoldExt<
         1,
         1,
         Gadget: FoldingSchemePartialGadget<1, 1, VerifierKey = ()>,

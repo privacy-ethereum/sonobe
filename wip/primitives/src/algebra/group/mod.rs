@@ -2,18 +2,15 @@ use ark_ec::{
     short_weierstrass::{Projective, SWCurveConfig},
     AffineRepr, CurveGroup, PrimeGroup,
 };
-use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
+use ark_ff::{Field, One, PrimeField, Zero};
 use ark_r1cs_std::{
-    alloc::AllocVar,
-    convert::{ToBitsGadget, ToConstraintFieldGadget},
+    convert::ToConstraintFieldGadget,
     fields::fp::FpVar,
     groups::{curves::short_weierstrass::ProjectiveVar, CurveVar},
-    prelude::Boolean,
-    GR1CSVar,
 };
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::mem::swap;
-use num_bigint::{BigInt, Sign};
+use num_bigint::BigInt;
 use num_integer::Integer;
 
 use crate::{

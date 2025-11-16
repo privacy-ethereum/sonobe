@@ -13,7 +13,7 @@ use ark_ff::PrimeField;
 use ark_poly::{
     univariate::DensePolynomial, DenseMultilinearExtension, DenseUVPolynomial, Polynomial,
 };
-use ark_std::{cfg_chunks, cfg_into_iter, cfg_iter, fmt::Debug};
+use ark_std::{cfg_chunks, cfg_into_iter, fmt::Debug};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use thiserror::Error;

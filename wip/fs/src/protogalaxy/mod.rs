@@ -14,8 +14,8 @@ use sonobe_primitives::{
     circuits::{Assignments, AssignmentsOwned},
     commitments::{GroupBasedVectorCommitment, VectorCommitment},
     relations::{Relation, WitnessInstanceSampler},
-    traits::{Dummy, SonobeCurve, SonobeField},
-    transcripts::{Absorbable, Transcript},
+    traits::Dummy,
+    transcripts::Transcript,
 };
 
 use self::{
@@ -436,7 +436,8 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
     }
 }
 
-pub struct ProtoGalaxy2<VC> {
+// TODO: experimental design
+struct ProtoGalaxy2<VC> {
     _vc: PhantomData<VC>,
 }
 

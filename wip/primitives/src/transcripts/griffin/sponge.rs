@@ -1,20 +1,13 @@
-use ark_crypto_primitives::sponge::{constraints::AbsorbGadget, Absorb, DuplexSpongeMode};
+use ark_crypto_primitives::sponge::DuplexSpongeMode;
 use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{
     fields::{fp::FpVar, FieldVar},
-    prelude::{Boolean, ToBitsGadget, ToBytesGadget},
-    uint8::UInt8,
+    prelude::{Boolean, ToBitsGadget},
 };
 use ark_relations::gr1cs::SynthesisError;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::{any::TypeId, sync::Arc};
+use ark_std::sync::Arc;
 
-use crate::{
-    algebra::ops::bits::ToBitsGadgetExt,
-    transcripts::{
-        griffin::params::GriffinParams, Absorbable, AbsorbableGadget, Transcript, TranscriptVar,
-    },
-};
+use crate::transcripts::{griffin::GriffinParams, AbsorbableGadget, Transcript, TranscriptVar};
 
 #[derive(Clone)]
 pub struct GriffinSponge<F: PrimeField> {
@@ -366,7 +359,7 @@ pub mod tests {
         GR1CSVar,
     };
     use ark_relations::gr1cs::ConstraintSystem;
-    use ark_std::{error::Error, str::FromStr, test_rng};
+    use ark_std::{error::Error, test_rng};
 
     use super::*;
     use crate::algebra::group::emulated::EmulatedAffineVar;
@@ -385,10 +378,7 @@ pub mod tests {
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fq>::new_ref();
         let mut tr_var = GriffinSpongeVar::<Fq>::new(&config);
-        let p_var = ProjectiveVar::<Config, FpVar<Fq>>::new_witness(
-            ConstraintSystem::<Fq>::new_ref(),
-            || Ok(p),
-        )?;
+        let p_var = ProjectiveVar::<Config, FpVar<Fq>>::new_witness(cs, || Ok(p))?;
         tr_var.add(&p_var)?;
         let c_var = tr_var.challenge_field_element()?;
 
@@ -411,7 +401,7 @@ pub mod tests {
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fr>::new_ref();
         let mut tr_var = GriffinSpongeVar::<Fr>::new(&config);
-        let p_var = EmulatedAffineVar::new_witness(ConstraintSystem::<Fr>::new_ref(), || Ok(p))?;
+        let p_var = EmulatedAffineVar::new_witness(cs, || Ok(p))?;
         tr_var.add(&p_var)?;
         let c_var = tr_var.challenge_field_element()?;
 

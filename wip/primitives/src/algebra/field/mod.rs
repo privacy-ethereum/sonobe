@@ -1,4 +1,4 @@
-use ark_ff::{BigInteger, Field, Fp, FpConfig, PrimeField};
+use ark_ff::{BigInteger, Fp, FpConfig, PrimeField};
 use ark_r1cs_std::fields::{fp::FpVar, FieldVar};
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::{any::TypeId, mem::transmute_copy};

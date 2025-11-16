@@ -103,28 +103,8 @@ impl<FC: FCircuit<Field = I::Field>, I: IVC> IVCStatefulProver<FC, I> {
 
 #[cfg(test)]
 mod tests {
-    use ark_bn254::{Fr, G1Projective as C1};
-    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use ark_ff::UniformRand;
-    use ark_grumpkin::Projective as C2;
-    use ark_std::{error::Error, rand::Rng, sync::Arc, test_rng};
-    use sonobe_fs::{
-        ova::{
-            instance::{circuits::RunningInstanceVar as RUVar, RunningInstance as RU},
-            witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW},
-        },
-        FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget, PlainInstance as IU,
-        PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar,
-    };
-    use sonobe_primitives::{
-        arithmetizations::Arith,
-        circuits::utils::CircuitForTest,
-        commitments::pedersen::{Pedersen, PedersenEmulatedGadget, PedersenGadget},
-        traits::Dummy,
-        transcripts::{
-            griffin::params::GriffinParams, poseidon::poseidon_canonical_config, Transcript,
-        },
-    };
+    use ark_std::{error::Error, rand::Rng};
 
     use super::*;
 
@@ -138,7 +118,7 @@ mod tests {
 
         let (pk, vk) = I::generate_keys(pp, &step_circuit)?;
 
-        let initial_state = vec![UniformRand::rand(&mut rng)];
+        let initial_state = vec![UniformRand::rand(&mut rng); step_circuit.state_len()];
 
         let mut prover = IVCStatefulProver::<_, I>::new(pk, step_circuit, initial_state)?;
 

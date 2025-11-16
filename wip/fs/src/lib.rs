@@ -13,10 +13,9 @@ use ark_r1cs_std::{
     select::CondSelectGadget,
     GR1CSVar,
 };
-use ark_relations::gr1cs::{ConstraintSystem, ConstraintSystemRef, Namespace, SynthesisError};
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{borrow::Borrow, fmt::Debug, rand::RngCore};
 use sonobe_primitives::{
-    algebra::group::emulated::EmulatedAffineVar,
     arithmetizations::{Arith, ArithConfig},
     circuits::AssignmentsOwned,
     commitments::{GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget},
@@ -480,7 +479,7 @@ mod tests {
     use sonobe_primitives::{
         circuits::{AssignmentsOwned, ConstraintSystemBuilder},
         relations::WitnessInstanceSampler,
-        transcripts::griffin::{params::GriffinParams, sponge::GriffinSponge},
+        transcripts::griffin::{GriffinParams, sponge::GriffinSponge},
     };
 
     use super::*;

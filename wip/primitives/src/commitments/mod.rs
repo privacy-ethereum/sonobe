@@ -1,8 +1,5 @@
-use ark_ec::{CurveGroup, PrimeGroup};
-use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    alloc::AllocVar, eq::EqGadget, fields::fp::FpVar,
-    groups::curves::short_weierstrass::ProjectiveVar, select::CondSelectGadget, GR1CSVar,
+    alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, select::CondSelectGadget, GR1CSVar,
 };
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::{

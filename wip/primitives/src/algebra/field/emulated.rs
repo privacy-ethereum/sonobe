@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use ark_ff::{BigInteger, One, PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
@@ -14,6 +12,7 @@ use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{
     borrow::Borrow,
     cmp::{max, min},
+    fmt::Debug,
     marker::PhantomData,
     ops::Index,
 };
@@ -637,7 +636,7 @@ impl<F: SonobeField, Cfg> EqGadget<F> for IntVarInner<F, Cfg, true> {
                 return self.enforce_not_equal(other);
             }
         }
-        self.is_eq(&other)?
+        self.is_eq(other)?
             .conditional_enforce_equal(&Boolean::TRUE, should_enforce)
     }
 }

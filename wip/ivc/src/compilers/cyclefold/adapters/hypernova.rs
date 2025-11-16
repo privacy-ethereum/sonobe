@@ -1,35 +1,23 @@
-use ark_ff::{BigInteger, One, PrimeField, Zero};
-use ark_r1cs_std::{
-    alloc::AllocVar,
-    fields::fp::FpVar,
-    groups::CurveVar,
-    prelude::{Boolean, ToBitsGadget},
-    GR1CSVar,
-};
+use ark_ff::{BigInteger, PrimeField, Zero};
+use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, groups::CurveVar, prelude::Boolean};
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::{borrow::Borrow, iter::once};
 use sonobe_fs::{
-    hypernova::{HyperNova, HyperNovaGadget},
-    ova::{AbstractOvaGadget, CycleFoldOva},
-    FoldingScheme, FoldingSchemePartialGadget,
+    hypernova::HyperNova, nova::CycleFoldNova, ova::CycleFoldOva, FoldingSchemePartialGadget,
 };
 use sonobe_primitives::{
     algebra::{
         field::emulated::{Bound, EmulatedFieldVar},
-        group::{emulated::EmulatedAffineVar, CI2},
-        ops::{
-            bits::{FromBitsGadget, ToBitsGadgetExt},
-            pow::Pow,
-        },
+        group::CI2,
+        ops::bits::{FromBitsGadget, ToBitsGadgetExt},
     },
     arithmetizations::{ccs::CCSVariant, r1cs::R1CSConfig},
-    commitments::{GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget},
-    traits::{SonobeCurve, SonobeField, CF1, CF2},
-    transcripts::{Absorbable, AbsorbableGadget},
+    commitments::GroupBasedVectorCommitment,
+    traits::{SonobeCurve, CF2},
 };
 
 use crate::compilers::cyclefold::{
-    circuits::CycleFoldConfig, CycleFoldBasedIVC, FoldingSchemeCycleFoldGadget,
+    circuits::CycleFoldConfig, CycleFoldBasedIVC, FoldingSchemeCycleFoldExt,
 };
 
 /// Configuration for HyperNova's CycleFold circuit
@@ -93,7 +81,7 @@ impl<
         const M: usize,
         const N: usize,
         const CHALLENGE_BITS: usize,
-    > FoldingSchemeCycleFoldGadget<M, N> for HyperNova<VC, V, CHALLENGE_BITS>
+    > FoldingSchemeCycleFoldExt<M, N> for HyperNova<VC, V, CHALLENGE_BITS>
 {
     const N_CYCLEFOLDS: usize = 1;
 
@@ -142,43 +130,48 @@ impl<
     }
 }
 
-pub type HyperNovaIVC<VC1, VC2, V = R1CSConfig, const CHALLENGE_BITS: usize = 128> =
+pub type HyperNovaOvaIVC<VC1, VC2, V = R1CSConfig, const CHALLENGE_BITS: usize = 128> =
     CycleFoldBasedIVC<HyperNova<VC1, V, CHALLENGE_BITS>, CycleFoldOva<VC2, CHALLENGE_BITS>>;
+
+pub type HyperNovaNovaIVC<VC1, VC2, V = R1CSConfig, const CHALLENGE_BITS: usize = 128> =
+    CycleFoldBasedIVC<HyperNova<VC1, V, CHALLENGE_BITS>, CycleFoldNova<VC2, CHALLENGE_BITS>>;
 
 #[cfg(test)]
 mod tests {
     use ark_bn254::{Fr, G1Projective as C1};
-    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use ark_ff::UniformRand;
     use ark_grumpkin::Projective as C2;
     use ark_std::{error::Error, sync::Arc, test_rng};
-    use sonobe_fs::{
-        ova::{
-            instance::{circuits::RunningInstanceVar as RUVar, RunningInstance as RU},
-            witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW},
-        },
-        FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget, PlainInstance as IU,
-        PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar,
-    };
     use sonobe_primitives::{
-        arithmetizations::Arith,
-        circuits::utils::CircuitForTest,
-        commitments::pedersen::{Pedersen, PedersenEmulatedGadget, PedersenGadget},
-        traits::Dummy,
-        transcripts::{
-            griffin::params::GriffinParams, poseidon::poseidon_canonical_config, Transcript,
-        },
+        circuits::utils::CircuitForTest, commitments::pedersen::Pedersen,
+        transcripts::griffin::GriffinParams,
     };
 
     use super::*;
-    use crate::{tests::test_ivc, IVCStatefulProver, IVC};
+    use crate::tests::test_ivc;
 
     #[test]
     fn test_hypernova_ova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
 
-        test_ivc::<HyperNovaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
+        test_ivc::<HyperNovaOvaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
             (65536, (2048, 2048), Arc::new(GriffinParams::new(16, 5, 9))),
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            vec![(); 20],
+            &mut rng,
+        )?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_hypernova_nova() -> Result<(), Box<dyn Error>> {
+        let mut rng = test_rng();
+
+        test_ivc::<HyperNovaNovaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
+            (65536, 2048, Arc::new(GriffinParams::new(16, 5, 9))),
             CircuitForTest {
                 x: Fr::rand(&mut rng),
             },

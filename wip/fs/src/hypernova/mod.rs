@@ -1,5 +1,4 @@
-use ark_ec::PrimeGroup;
-use ark_ff::{AdditiveGroup, BigInteger, Field, One, PrimeField, Zero};
+use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
 use ark_poly::{DenseMultilinearExtension as MLE, MultilinearExtension};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
@@ -15,13 +14,9 @@ use ark_std::{
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use sonobe_primitives::{
-    algebra::{
-        group::emulated::EmulatedAffineVar,
-        ops::{
-            bits::FromBitsGadget,
-            pow::{Pow, PowGadget},
-            rlc::{ScalarRLC, SliceRLC},
-        },
+    algebra::ops::{
+        pow::{Pow, PowGadget},
+        rlc::{ScalarRLC, SliceRLC},
     },
     arithmetizations::{
         ccs::{CCSConfig, CCSVariant, CCS},
@@ -29,15 +24,15 @@ use sonobe_primitives::{
         Arith, ArithConfig, ArithRelation, Error as ArithError,
     },
     circuits::{Assignments, AssignmentsOwned},
-    commitments::{GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget},
+    commitments::{GroupBasedVectorCommitment, VectorCommitment},
     relations::{Relation, WitnessInstanceSampler},
     sumcheck::{
         circuits::IOPSumCheckGadget,
         utils::{EqPoly, EqPolyVar, VPAuxInfo, VirtualPolynomial},
         IOPSumCheck,
     },
-    traits::{Dummy, SonobeCurve, SonobeField, CF1},
-    transcripts::{Absorbable, Transcript, TranscriptVar},
+    traits::Dummy,
+    transcripts::{Transcript, TranscriptVar},
 };
 
 use self::{
@@ -52,7 +47,7 @@ use self::{
 };
 use crate::{
     Error, FoldingScheme, FoldingSchemePartialGadget, GroupBasedFoldingSchemePrimary,
-    PlainInstance as PU, PlainInstanceVar as PUVar, PlainWitness as PW, PlainWitnessVar as PWVar,
+    PlainInstance as PU, PlainWitness as PW,
 };
 
 pub mod instance;
@@ -511,7 +506,8 @@ impl<
     }
 }
 
-pub struct HyperNova2<VC, V: CCSVariant = R1CSConfig, const CHALLENGE_BITS: usize = 128> {
+// TODO: experimental design
+struct HyperNova2<VC, V: CCSVariant = R1CSConfig, const CHALLENGE_BITS: usize = 128> {
     _v: PhantomData<(VC, V)>,
 }
 

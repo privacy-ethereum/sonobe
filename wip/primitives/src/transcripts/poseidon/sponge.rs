@@ -1,8 +1,6 @@
 use ark_crypto_primitives::sponge::{
     constraints::CryptographicSpongeVar,
-    poseidon::{
-        constraints::PoseidonSpongeVar, find_poseidon_ark_and_mds, PoseidonConfig, PoseidonSponge,
-    },
+    poseidon::{constraints::PoseidonSpongeVar, PoseidonConfig, PoseidonSponge},
     Absorb, CryptographicSponge, FieldBasedCryptographicSponge,
 };
 use ark_ff::PrimeField;
@@ -10,7 +8,7 @@ use ark_r1cs_std::{boolean::Boolean, fields::fp::FpVar};
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::mem::transmute_copy;
 
-use super::{AbsorbableGadget, Transcript, TranscriptVar};
+use crate::transcripts::{AbsorbableGadget, Transcript, TranscriptVar};
 
 impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
     type Config = PoseidonConfig<F>;
@@ -32,7 +30,7 @@ impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
                 // Safe because `F` in `to_sponge_field_elements_as_vec::<F>`,
                 // which is called by `PoseidonSponge::absorb`, is the same as
                 // `T` here.
-                dest.extend(unsafe { transmute_copy::<&[F], &[T]>(&self.0.as_ref()) });
+                dest.extend(unsafe { transmute_copy::<&[F], &[T]>(&self.0) });
             }
         }
         CryptographicSponge::absorb(self, &Hack(input));
@@ -75,39 +73,6 @@ impl<F: PrimeField> TranscriptVar<F> for PoseidonSpongeVar<F> {
     }
 }
 
-/// This Poseidon configuration generator produces a Poseidon configuration with custom parameters
-pub fn poseidon_custom_config<F: PrimeField>(
-    full_rounds: usize,
-    partial_rounds: usize,
-    alpha: u64,
-    rate: usize,
-    capacity: usize,
-) -> PoseidonConfig<F> {
-    let (ark, mds) = find_poseidon_ark_and_mds::<F>(
-        F::MODULUS_BIT_SIZE as u64,
-        rate,
-        full_rounds as u64,
-        partial_rounds as u64,
-        0,
-    );
-
-    PoseidonConfig::new(full_rounds, partial_rounds, alpha, mds, ark, rate, capacity)
-}
-
-/// This Poseidon configuration generator agrees with Circom's Poseidon(4) in the case of BN254's scalar field
-pub fn poseidon_canonical_config<F: PrimeField>() -> PoseidonConfig<F> {
-    // 120 bit security target as in
-    // https://eprint.iacr.org/2019/458.pdf
-    // t = rate + 1
-
-    let full_rounds = 8;
-    let partial_rounds = 60;
-    let alpha = 5;
-    let rate = 4;
-
-    poseidon_custom_config(full_rounds, partial_rounds, alpha, rate, 1)
-}
-
 #[cfg(test)]
 pub mod tests {
     use ark_bn254::{constraints::GVar, g1::Config, Fq, Fr, G1Projective as G1};
@@ -123,8 +88,10 @@ pub mod tests {
     use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::{error::Error, str::FromStr, test_rng};
 
-    use super::{poseidon_canonical_config, Transcript, TranscriptVar};
-    use crate::algebra::group::emulated::EmulatedAffineVar;
+    use crate::{
+        algebra::group::emulated::EmulatedAffineVar,
+        transcripts::{poseidon::poseidon_canonical_config, Transcript, TranscriptVar},
+    };
 
     // Test with value taken from https://github.com/iden3/circomlibjs/blob/43cc582b100fc3459cf78d903a6f538e5d7f38ee/test/poseidon.js#L32
     #[test]
@@ -161,10 +128,7 @@ pub mod tests {
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fq>::new_ref();
         let mut tr_var = PoseidonSpongeVar::<Fq>::new(&config);
-        let p_var = ProjectiveVar::<Config, FpVar<Fq>>::new_witness(
-            ConstraintSystem::<Fq>::new_ref(),
-            || Ok(p),
-        )?;
+        let p_var = ProjectiveVar::<Config, FpVar<Fq>>::new_witness(cs, || Ok(p))?;
         tr_var.add(&p_var)?;
         let c_var = tr_var.challenge_field_element()?;
 
@@ -187,7 +151,7 @@ pub mod tests {
         // use 'gadget' transcript
         let cs = ConstraintSystem::<Fr>::new_ref();
         let mut tr_var = PoseidonSpongeVar::<Fr>::new(&config);
-        let p_var = EmulatedAffineVar::new_witness(ConstraintSystem::<Fr>::new_ref(), || Ok(p))?;
+        let p_var = EmulatedAffineVar::new_witness(cs, || Ok(p))?;
         tr_var.add(&p_var)?;
         let c_var = tr_var.challenge_field_element()?;
 

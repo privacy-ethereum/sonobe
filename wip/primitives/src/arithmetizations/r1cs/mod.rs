@@ -10,7 +10,6 @@ use crate::{
     arithmetizations::{ccs::CCSVariant, ArithConfig},
     circuits::Assignments,
     relations::WitnessInstanceExtractor,
-    traits::Dummy,
 };
 
 pub mod circuits;
@@ -189,7 +188,7 @@ impl<F: Field> From<&ConstraintSystem<F>> for R1CS<F> {
     fn from(cs: &ConstraintSystem<F>) -> Self {
         // Get the R1CS predicate matrices
         let r1cs_predicate = &cs.predicate_constraint_systems[R1CS_PREDICATE_LABEL];
-        let matrices = r1cs_predicate.to_matrices(&cs);
+        let matrices = r1cs_predicate.to_matrices(cs);
         // `unwrap` is safe here because R1CS always has 3 matrices
         R1CS::new(cs.into(), matrices.try_into().unwrap())
     }
@@ -304,7 +303,7 @@ pub mod tests {
         cs.finalize();
         let cs = cs.into_inner().unwrap();
 
-        assert_eq!(R1CS::try_from(&cs)?, constraints_for_test());
+        assert_eq!(R1CS::from(&cs), constraints_for_test());
         Ok(())
     }
 

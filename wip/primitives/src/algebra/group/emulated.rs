@@ -1,5 +1,5 @@
 use ark_ec::{short_weierstrass::SWFlags, AffineRepr};
-use ark_ff::{PrimeField, Zero};
+use ark_ff::Zero;
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     eq::EqGadget,
@@ -13,10 +13,7 @@ use ark_serialize::{CanonicalSerialize, CanonicalSerializeWithFlags};
 use ark_std::borrow::Borrow;
 
 use crate::{
-    algebra::{
-        field::emulated::{BigIntVar, EmulatedFieldVar},
-        group::SonobeCurve,
-    },
+    algebra::{field::emulated::EmulatedFieldVar, group::SonobeCurve},
     traits::SonobeField,
     transcripts::AbsorbableGadget,
 };

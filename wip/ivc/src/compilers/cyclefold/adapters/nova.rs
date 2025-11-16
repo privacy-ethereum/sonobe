@@ -3,8 +3,8 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, groups::CurveVar, prelude
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::{borrow::Borrow, iter::once};
 use sonobe_fs::{
-    nova::CycleFoldNova,
-    ova::{CycleFoldOva, Ova},
+    nova::{CycleFoldNova, Nova},
+    ova::CycleFoldOva,
     FoldingSchemePartialGadget,
 };
 use sonobe_primitives::{
@@ -20,14 +20,14 @@ use crate::compilers::cyclefold::{
     circuits::CycleFoldConfig, CycleFoldBasedIVC, FoldingSchemeCycleFoldExt,
 };
 
-/// Configuration for Ova's CycleFold circuit
-pub struct OvaCycleFoldConfig<C, const CHALLENGE_BITS: usize> {
+/// Configuration for Nova's CycleFold circuit
+pub struct NovaCycleFoldConfig<C, const CHALLENGE_BITS: usize> {
     r: Vec<bool>,
     points: Vec<C>,
 }
 
 impl<C: SonobeCurve, const CHALLENGE_BITS: usize> Default
-    for OvaCycleFoldConfig<C, CHALLENGE_BITS>
+    for NovaCycleFoldConfig<C, CHALLENGE_BITS>
 {
     fn default() -> Self {
         Self {
@@ -38,7 +38,7 @@ impl<C: SonobeCurve, const CHALLENGE_BITS: usize> Default
 }
 
 impl<C: SonobeCurve, const CHALLENGE_BITS: usize> CycleFoldConfig
-    for OvaCycleFoldConfig<C, CHALLENGE_BITS>
+    for NovaCycleFoldConfig<C, CHALLENGE_BITS>
 {
     type C = C;
 
@@ -66,27 +66,33 @@ impl<C: SonobeCurve, const CHALLENGE_BITS: usize> CycleFoldConfig
 }
 
 impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeCycleFoldExt<1, 1>
-    for Ova<VC, CHALLENGE_BITS>
+    for Nova<VC, CHALLENGE_BITS>
 {
-    const N_CYCLEFOLDS: usize = 1;
+    const N_CYCLEFOLDS: usize = 2;
 
-    type CFConfig = OvaCycleFoldConfig<VC::Commitment, CHALLENGE_BITS>;
+    type CFConfig = NovaCycleFoldConfig<VC::Commitment, CHALLENGE_BITS>;
 
     fn to_cyclefold_configs(
         [U]: &[impl Borrow<Self::RU>; 1],
-        _us: &[impl Borrow<Self::IU>; 1],
+        [u]: &[impl Borrow<Self::IU>; 1],
         proof: &Self::Proof,
         rho: Self::Challenge,
     ) -> Vec<Self::CFConfig> {
-        vec![OvaCycleFoldConfig {
-            r: rho,
-            points: vec![U.borrow().cm, *proof],
-        }]
+        vec![
+            NovaCycleFoldConfig {
+                r: rho.clone(),
+                points: vec![U.borrow().cm_e, *proof],
+            },
+            NovaCycleFoldConfig {
+                r: rho,
+                points: vec![U.borrow().cm_w, u.borrow().cm_w],
+            },
+        ]
     }
 
     fn to_cyclefold_inputs(
         [U]: [<Self::Gadget as FoldingSchemePartialGadget<1, 1>>::RU; 1],
-        _us: [<Self::Gadget as FoldingSchemePartialGadget<1, 1>>::IU; 1],
+        [u]: [<Self::Gadget as FoldingSchemePartialGadget<1, 1>>::IU; 1],
         UU: <Self::Gadget as FoldingSchemePartialGadget<1, 1>>::RU,
         proof: <Self::Gadget as FoldingSchemePartialGadget<1, 1>>::Proof,
         mut rho: <Self::Gadget as FoldingSchemePartialGadget<1, 1>>::Challenge,
@@ -96,20 +102,34 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
             CF2::<VC::Commitment>::MODULUS_BIT_SIZE as usize,
             Boolean::FALSE,
         );
-        Ok(vec![once(EmulatedFieldVar::from_bits_le(
+        let rho = EmulatedFieldVar::from_bits_le(
             &rho,
             Bound(Zero::zero(), CF2::<VC::Commitment>::MODULUS.into().into()),
-        )?)
-        .chain([U.cm, proof, UU.cm].into_iter().flat_map(|p| [p.x, p.y]))
-        .collect()])
+        )?;
+        Ok(vec![
+            once(rho.clone())
+                .chain(
+                    [U.cm_e, proof, UU.cm_e]
+                        .into_iter()
+                        .flat_map(|p| [p.x, p.y]),
+                )
+                .collect(),
+            once(rho)
+                .chain(
+                    [U.cm_w, u.cm_w, UU.cm_w]
+                        .into_iter()
+                        .flat_map(|p| [p.x, p.y]),
+                )
+                .collect(),
+        ])
     }
 }
 
-pub type OvaOvaIVC<VC1, VC2, const CHALLENGE_BITS: usize = 128> =
-    CycleFoldBasedIVC<Ova<VC1, CHALLENGE_BITS>, CycleFoldOva<VC2, CHALLENGE_BITS>>;
+pub type NovaOvaIVC<VC1, VC2, const CHALLENGE_BITS: usize = 128> =
+    CycleFoldBasedIVC<Nova<VC1, CHALLENGE_BITS>, CycleFoldOva<VC2, CHALLENGE_BITS>>;
 
-pub type OvaNovaIVC<VC1, VC2, const CHALLENGE_BITS: usize = 128> =
-    CycleFoldBasedIVC<Ova<VC1, CHALLENGE_BITS>, CycleFoldNova<VC2, CHALLENGE_BITS>>;
+pub type NovaNovaIVC<VC1, VC2, const CHALLENGE_BITS: usize = 128> =
+    CycleFoldBasedIVC<Nova<VC1, CHALLENGE_BITS>, CycleFoldNova<VC2, CHALLENGE_BITS>>;
 
 #[cfg(test)]
 mod tests {
@@ -126,15 +146,11 @@ mod tests {
     use crate::tests::test_ivc;
 
     #[test]
-    fn test_ova_ova() -> Result<(), Box<dyn Error>> {
+    fn test_nova_ova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
 
-        test_ivc::<OvaOvaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
-            (
-                (65536, 65536),
-                (2048, 2048),
-                Arc::new(GriffinParams::new(16, 5, 9)),
-            ),
+        test_ivc::<NovaOvaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
+            (65536, (2048, 2048), Arc::new(GriffinParams::new(16, 5, 9))),
             CircuitForTest {
                 x: Fr::rand(&mut rng),
             },
@@ -146,11 +162,11 @@ mod tests {
     }
 
     #[test]
-    fn test_ova_nova() -> Result<(), Box<dyn Error>> {
+    fn test_nova_nova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
 
-        test_ivc::<OvaNovaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
-            ((65536, 65536), 2048, Arc::new(GriffinParams::new(16, 5, 9))),
+        test_ivc::<NovaNovaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
+            (65536, 2048, Arc::new(GriffinParams::new(16, 5, 9))),
             CircuitForTest {
                 x: Fr::rand(&mut rng),
             },

@@ -52,9 +52,7 @@ impl<F: PrimeField> FCircuit for CircuitForTest<F> {
 
     type ExternalInputs = ();
 
-    fn dummy_external_inputs(&self) -> Self::ExternalInputs {
-        ()
-    }
+    fn dummy_external_inputs(&self) -> Self::ExternalInputs {}
 
     fn state_len(&self) -> usize {
         1
@@ -63,9 +61,9 @@ impl<F: PrimeField> FCircuit for CircuitForTest<F> {
     fn generate_step_constraints(
         &self,
         cs: ConstraintSystemRef<Self::Field>,
-        i: FpVar<Self::Field>,
+        _i: FpVar<Self::Field>,
         z_i: Vec<FpVar<Self::Field>>,
-        external_inputs: Self::ExternalInputs,
+        _external_inputs: Self::ExternalInputs,
     ) -> Result<Vec<FpVar<Self::Field>>, SynthesisError> {
         // Variable 0 (implicitly added by arkworks as 1)
         // Variable 1

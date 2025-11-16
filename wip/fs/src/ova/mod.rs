@@ -1,17 +1,8 @@
-use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
-use ark_r1cs_std::{
-    alloc::AllocVar, boolean::Boolean, convert::ToBitsGadget, groups::CurveVar, GR1CSVar,
-};
-use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
+use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, groups::CurveVar, GR1CSVar};
+use ark_relations::gr1cs::SynthesisError;
 use ark_std::{
-    borrow::Borrow,
-    cfg_iter,
-    marker::PhantomData,
-    ops::{Add, Mul},
-    rand::RngCore,
-    sync::Arc,
-    UniformRand,
+    borrow::Borrow, cfg_iter, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
 };
 use num_bigint::BigInt;
 #[cfg(feature = "parallel")]
@@ -25,8 +16,8 @@ use sonobe_primitives::{
     circuits::{Assignments, AssignmentsOwned},
     commitments::{GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget},
     relations::{Relation, WitnessInstanceSampler},
-    traits::{SonobeCurve, SonobeField, CF2},
-    transcripts::{Absorbable, AbsorbableGadget, Transcript, TranscriptVar},
+    traits::{SonobeField, CF2},
+    transcripts::{Transcript, TranscriptVar},
 };
 
 use self::{
@@ -34,7 +25,9 @@ use self::{
     witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW},
 };
 use crate::{
-    Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget, GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary, PlainInstance as IU, PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar
+    Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget,
+    GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary, PlainInstance as IU,
+    PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar,
 };
 
 pub mod instance;
@@ -232,7 +225,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
             },
             RU {
                 u: U.u + rho,
-                cm: U.cm + cm.mul(rho),
+                cm: U.cm + cm * rho,
                 x: cfg_iter!(U.x)
                     .zip(&u[..])
                     .map(|(a, b)| rho * b + a)
@@ -263,7 +256,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
 
         Ok(RU {
             u: U.u + rho,
-            cm: U.cm + cm.mul(rho),
+            cm: U.cm + *cm * rho,
             x: cfg_iter!(U.x)
                 .zip(&u[..])
                 .map(|(a, b)| rho * b + a)
@@ -339,9 +332,7 @@ impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeFullGadget<1, 1>
     for AbstractOvaGadget<VC, CHALLENGE_BITS>
 where
     VC: VectorCommitmentGadget<Native: GroupBasedVectorCommitment>,
-    VC::CommitmentVar: CurveVar<<VC::Native as VectorCommitment>::Commitment, VC::ConstraintField>
-        + Add<Output = VC::CommitmentVar>
-        + for<'a> Add<&'a VC::CommitmentVar, Output = VC::CommitmentVar>,
+    VC::CommitmentVar: CurveVar<<VC::Native as VectorCommitment>::Commitment, VC::ConstraintField>,
 {
     #[allow(non_snake_case)]
     fn verify(
@@ -380,13 +371,14 @@ where
     }
 }
 
-impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemePrimary<1, 1>
-    for AbstractOva<VC, VC::Scalar, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
+    GroupBasedFoldingSchemePrimary<1, 1> for AbstractOva<VC, VC::Scalar, CHALLENGE_BITS>
 {
     type Gadget = AbstractOvaGadget<VC::EmulatedGadget, CHALLENGE_BITS>;
 }
 
-impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemeSecondary<1, 1>
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
+    GroupBasedFoldingSchemeSecondary<1, 1>
     for AbstractOva<VC, CF2<VC::Commitment>, CHALLENGE_BITS>
 {
     type Gadget = AbstractOvaGadget<VC::Gadget, CHALLENGE_BITS>;

@@ -3,18 +3,13 @@
 /// - Typings to better stick to ark_poly's API
 /// - Uses `folding-schemes`' own `TranscriptVar` trait and `PoseidonTranscriptVar` struct
 /// - API made closer to gadgets found in `folding-schemes`
-use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, Absorb, CryptographicSponge};
 use ark_ff::PrimeField;
-use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial};
 use ark_r1cs_std::{
-    alloc::{AllocVar, AllocationMode},
-    boolean::Boolean,
     eq::EqGadget,
     fields::{fp::FpVar, FieldVar},
     poly::polynomial::univariate::dense::DensePolynomialVar,
 };
-use ark_relations::gr1cs::{Namespace, SynthesisError};
-use ark_std::{borrow::Borrow, marker::PhantomData};
+use ark_relations::gr1cs::SynthesisError;
 
 use crate::{sumcheck::utils::VPAuxInfo, transcripts::TranscriptVar};
 
@@ -60,10 +55,16 @@ impl IOPSumCheckGadget {
 #[cfg(test)]
 mod tests {
     use ark_bn254::Fr;
-    use ark_crypto_primitives::sponge::poseidon::constraints::PoseidonSpongeVar;
+    use ark_crypto_primitives::sponge::{
+        poseidon::{constraints::PoseidonSpongeVar, PoseidonSponge},
+        CryptographicSponge,
+    };
     use ark_ff::{One, Zero};
-    use ark_poly::{DenseMultilinearExtension, MultilinearExtension, Polynomial};
-    use ark_r1cs_std::GR1CSVar;
+    use ark_poly::{
+        univariate::DensePolynomial, DenseMultilinearExtension, DenseUVPolynomial,
+        MultilinearExtension, Polynomial,
+    };
+    use ark_r1cs_std::{alloc::AllocVar, GR1CSVar};
     use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::{error::Error, test_rng};
 
