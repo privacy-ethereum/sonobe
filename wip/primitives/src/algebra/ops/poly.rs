@@ -1,9 +1,22 @@
-use ark_ff::PrimeField;
-use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
+use ark_ff::{Field, PrimeField, Zero};
+use ark_poly::{DenseMultilinearExtension, EvaluationDomain, GeneralEvaluationDomain};
 use ark_r1cs_std::fields::{fp::FpVar, FieldVar};
 use ark_relations::gr1cs::SynthesisError;
+use ark_std::log2;
 
 use super::pow::Pow;
+
+pub trait MLEHelper<F> {
+    fn from_evaluations(evaluations: &[F]) -> Self;
+}
+
+impl<F: Field> MLEHelper<F> for DenseMultilinearExtension<F> {
+    fn from_evaluations(evaluations: &[F]) -> Self {
+        let l = evaluations.len();
+        let pad = vec![Zero::zero(); l.next_power_of_two() - l];
+        Self::from_evaluations_vec(log2(l) as usize, [evaluations, &pad].concat())
+    }
+}
 
 pub trait EvaluationDomainGadget<F: PrimeField> {
     fn evaluate_all_lagrange_coefficients_var(

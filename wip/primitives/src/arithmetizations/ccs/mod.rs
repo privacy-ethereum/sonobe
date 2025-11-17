@@ -7,6 +7,7 @@ use rayon::prelude::*;
 
 use super::{r1cs::R1CS, Arith, ArithRelation, Error};
 use crate::{
+    algebra::ops::poly::MLEHelper,
     arithmetizations::{r1cs::R1CSConfig, ArithConfig},
     circuits::Assignments,
 };
@@ -169,14 +170,13 @@ impl<F: Field, V: CCSVariant> CCS<F, V> {
         &self,
         z: Assignments<F, impl AsRef<[F]> + Sync>,
     ) -> Vec<DenseMultilinearExtension<F>> {
-        let s = log2(self.n_constraints()) as usize;
         (0..V::n_matrices())
-            .map(|i| DenseMultilinearExtension {
-                num_vars: s,
-                evaluations: cfg_iter!(self.M[i])
-                    .map(|row| row.iter().map(|(val, col)| z[*col] * val).sum())
-                    .chain(vec![F::zero(); (1 << s) - self.n_constraints()])
-                    .collect(),
+            .map(|i| {
+                DenseMultilinearExtension::from_evaluations(
+                    &cfg_iter!(self.M[i])
+                        .map(|row| row.iter().map(|(val, col)| z[*col] * val).sum())
+                        .collect::<Vec<_>>(),
+                )
             })
             .collect()
     }

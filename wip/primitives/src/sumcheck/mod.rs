@@ -212,7 +212,7 @@ pub mod tests {
     use ark_crypto_primitives::sponge::poseidon::PoseidonSponge;
     use ark_ff::Field;
     use ark_pallas::Fr;
-    use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
+    use ark_poly::MultilinearExtension;
     use ark_std::{test_rng, One, Zero};
 
     use super::*;
