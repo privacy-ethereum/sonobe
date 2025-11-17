@@ -3,8 +3,6 @@ pub mod nova;
 pub mod ova;
 pub mod protogalaxy;
 
-use std::ops::{Deref, DerefMut};
-
 use ark_ff::{Field, PrimeField};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
@@ -14,7 +12,12 @@ use ark_r1cs_std::{
     GR1CSVar,
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
-use ark_std::{borrow::Borrow, fmt::Debug, rand::RngCore};
+use ark_std::{
+    borrow::Borrow,
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+    rand::RngCore,
+};
 use sonobe_primitives::{
     arithmetizations::{Arith, ArithConfig},
     circuits::AssignmentsOwned,
@@ -479,7 +482,7 @@ mod tests {
     use sonobe_primitives::{
         circuits::{AssignmentsOwned, ConstraintSystemBuilder},
         relations::WitnessInstanceSampler,
-        transcripts::griffin::{GriffinParams, sponge::GriffinSponge},
+        transcripts::griffin::{sponge::GriffinSponge, GriffinParams},
     };
 
     use super::*;

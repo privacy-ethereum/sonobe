@@ -1,6 +1,5 @@
-use std::fmt::Debug;
-
 use ark_relations::gr1cs::SynthesisError;
+use ark_std::fmt::Debug;
 use thiserror::Error;
 
 use crate::relations::Relation;

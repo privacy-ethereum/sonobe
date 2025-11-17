@@ -1,5 +1,3 @@
-use std::iter::once;
-
 use ark_ff::{batch_inversion, Field, One, PrimeField, Zero};
 use ark_poly::{
     univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations,
@@ -13,7 +11,8 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{
-    borrow::Borrow, cfg_into_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
+    borrow::Borrow, cfg_into_iter, iter::once, log2, marker::PhantomData, rand::RngCore, sync::Arc,
+    UniformRand,
 };
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;

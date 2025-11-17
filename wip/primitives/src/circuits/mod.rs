@@ -1,11 +1,10 @@
-use std::fmt::Debug;
-
 use ark_ff::{Field, PrimeField};
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError, SynthesisMode,
 };
 use ark_std::{
+    fmt::Debug,
     marker::PhantomData,
     ops::{Index, IndexMut},
 };
