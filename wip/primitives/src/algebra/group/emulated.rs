@@ -23,8 +23,8 @@ use crate::{
 /// the affine coordinates in order to perform hash operations of the point.
 #[derive(Debug, Clone)]
 pub struct EmulatedAffineVar<Base: SonobeField, Target: SonobeCurve> {
-    pub x: EmulatedFieldVar<Base, Target::BaseField, true>,
-    pub y: EmulatedFieldVar<Base, Target::BaseField, true>,
+    pub x: EmulatedFieldVar<Base, Target::BaseField>,
+    pub y: EmulatedFieldVar<Base, Target::BaseField>,
 }
 
 impl<Base: SonobeField, Target: SonobeCurve> AllocVar<Target, Base>

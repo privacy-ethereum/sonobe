@@ -25,7 +25,7 @@ use self::{
     witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW},
 };
 use crate::{
-    Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget,
+    DeciderKey, Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget,
     GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary, PlainInstance as IU,
     PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar,
 };
@@ -39,6 +39,23 @@ pub struct OvaKey<A, VC: VectorCommitment> {
     pub ck: Arc<VC::Key>,
 }
 
+impl<A: Arith, VC: VectorCommitment> DeciderKey for OvaKey<A, VC> {
+    type ProverKey = Self;
+    type VerifierKey = ();
+    type ArithConfig = A::Config;
+
+    fn to_pk(&self) -> &Self::ProverKey {
+        self
+    }
+
+    fn to_vk(&self) -> &Self::VerifierKey {
+        &()
+    }
+
+    fn to_arith_config(&self) -> &Self::ArithConfig {
+        self.arith.config()
+    }
+}
 impl<A, VC> Relation<RW<VC>, RU<VC>> for OvaKey<A, VC>
 where
     A: for<'a> ArithRelation<
@@ -144,8 +161,6 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
 
     type Config = (usize, usize);
     type PublicParam = (VC::Key, usize);
-    type ProverKey = OvaKey<Self::Arith, VC>;
-    type VerifierKey = ();
     type DeciderKey = OvaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
     type Proof = VC::Commitment;
@@ -161,23 +176,16 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
     fn generate_keys(
         (ck, n): Self::PublicParam,
         r1cs: Self::Arith,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey, Self::DeciderKey), Error> {
+    ) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
         assert!(n >= r1cs.n_constraints() + r1cs.n_witnesses());
-        Ok((
-            OvaKey {
-                arith: r1cs.clone(),
-                ck: ck.clone(),
-            },
-            (),
-            OvaKey { arith: r1cs, ck },
-        ))
+        Ok(OvaKey { arith: r1cs, ck })
     }
 
     #[allow(non_snake_case)]
     fn prove(
-        pk: &Self::ProverKey,
+        pk: &OvaKey<Self::Arith, VC>,
         transcript: &mut impl Transcript<TF>,
         Ws: &[impl Borrow<Self::RW>; 1],
         Us: &[impl Borrow<Self::RU>; 1],
@@ -238,7 +246,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
 
     #[allow(non_snake_case)]
     fn verify(
-        _vk: &Self::VerifierKey,
+        _vk: &(),
         transcript: &mut impl Transcript<TF>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; 1],

@@ -1,5 +1,4 @@
 use ark_ff::PrimeField;
-use ark_std::log2;
 use sonobe_primitives::{
     arithmetizations::{
         ccs::{CCSConfig, CCSVariant},
@@ -34,7 +33,7 @@ impl<VC: VectorCommitment> FoldingInstance<VC> for LCCCSInstance<VC> {
         &self.x
     }
 
-    fn public_inputs_mut(&mut self) -> &mut [<VC as VectorCommitment>::Scalar] {
+    fn public_inputs_mut(&mut self) -> &mut [VC::Scalar] {
         &mut self.x
     }
 }
@@ -45,7 +44,7 @@ impl<VC: VectorCommitment, V: CCSVariant> Dummy<&CCSConfig<V>> for LCCCSInstance
             cm: Default::default(),
             u: Default::default(),
             x: vec![Default::default(); cfg.n_public_inputs()],
-            r_x: vec![Default::default(); log2(cfg.n_constraints()) as usize],
+            r_x: vec![Default::default(); cfg.log_constraints()],
             v: vec![Default::default(); V::n_matrices()],
         }
     }
@@ -78,7 +77,7 @@ impl<VC: VectorCommitment> FoldingInstance<VC> for CCCSInstance<VC> {
         &self.x
     }
 
-    fn public_inputs_mut(&mut self) -> &mut [<VC as VectorCommitment>::Scalar] {
+    fn public_inputs_mut(&mut self) -> &mut [VC::Scalar] {
         &mut self.x
     }
 }

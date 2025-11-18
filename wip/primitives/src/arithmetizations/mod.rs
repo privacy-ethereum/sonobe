@@ -1,5 +1,5 @@
 use ark_relations::gr1cs::SynthesisError;
-use ark_std::fmt::Debug;
+use ark_std::{fmt::Debug, log2};
 use thiserror::Error;
 
 use crate::relations::Relation;
@@ -27,6 +27,10 @@ pub trait ArithConfig: Clone + Debug + PartialEq {
 
     /// Returns the number of constraints in the constraint system
     fn n_constraints(&self) -> usize;
+
+    fn log_constraints(&self) -> usize {
+        log2(self.n_constraints()) as usize
+    }
 
     /// Returns the number of variables in the constraint system
     fn n_variables(&self) -> usize;
@@ -60,6 +64,10 @@ pub trait Arith: Clone {
     /// Returns the number of constraints in the constraint system
     fn n_constraints(&self) -> usize {
         self.config().n_constraints()
+    }
+
+    fn log_constraints(&self) -> usize {
+        self.config().log_constraints()
     }
 
     /// Returns the number of variables in the constraint system

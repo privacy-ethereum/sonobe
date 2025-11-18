@@ -90,8 +90,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
         UU: <Self::Gadget as FoldingSchemePartialGadget<1, 1>>::RU,
         proof: <Self::Gadget as FoldingSchemePartialGadget<1, 1>>::Proof,
         mut rho: <Self::Gadget as FoldingSchemePartialGadget<1, 1>>::Challenge,
-    ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>, true>>>, SynthesisError>
-    {
+    ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>>>>, SynthesisError> {
         rho.resize(
             CF2::<VC::Commitment>::MODULUS_BIT_SIZE as usize,
             Boolean::FALSE,

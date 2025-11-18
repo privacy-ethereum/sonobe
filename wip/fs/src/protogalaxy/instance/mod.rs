@@ -1,5 +1,4 @@
 use ark_ff::PrimeField;
-use ark_std::log2;
 use sonobe_primitives::{
     arithmetizations::ArithConfig, commitments::VectorCommitment, traits::Dummy,
     transcripts::Absorbable,
@@ -37,7 +36,7 @@ impl<VC: VectorCommitment, Cfg: ArithConfig> Dummy<&Cfg> for RunningInstance<VC>
     fn dummy(cfg: &Cfg) -> Self {
         Self {
             phi: Default::default(),
-            betas: vec![Default::default(); log2(cfg.n_constraints()) as usize],
+            betas: vec![Default::default(); cfg.log_constraints()],
             e: Default::default(),
             x: vec![Default::default(); cfg.n_public_inputs()],
         }

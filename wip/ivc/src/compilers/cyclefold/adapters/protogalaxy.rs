@@ -66,7 +66,7 @@ impl<C: SonobeCurve, const N: usize> CycleFoldConfig for ProtoGalaxyCycleFoldCon
             .collect::<Result<Vec<_>, _>>()?
             .concat();
 
-        let points = Vec::<C::Var>::new_witness(cs.clone(), || Ok(&self.points[..]))?;
+        let points = Vec::new_witness(cs.clone(), || Ok(&self.points[..]))?;
         for point in &points {
             Self::mark_point_as_public(point)?;
         }
@@ -117,8 +117,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeCycleFoldExt<1
         UU: <Self::Gadget as FoldingSchemePartialGadget<1, N>>::RU,
         _proof: <Self::Gadget as FoldingSchemePartialGadget<1, N>>::Proof,
         lagrange_evals: Vec<FpVar<VC::Scalar>>,
-    ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>, true>>>, SynthesisError>
-    {
+    ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>>>>, SynthesisError> {
         let lagrange_evals_bits = lagrange_evals
             .into_iter()
             .map(|eval| eval.to_n_bits_le(VC::Scalar::MODULUS_BIT_SIZE as usize))

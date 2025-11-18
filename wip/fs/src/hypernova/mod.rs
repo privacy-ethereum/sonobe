@@ -9,7 +9,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{
-    borrow::Borrow, cfg_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
+    borrow::Borrow, cfg_iter, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
 };
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -46,7 +46,7 @@ use self::{
     },
 };
 use crate::{
-    Error, FoldingScheme, FoldingSchemePartialGadget, GroupBasedFoldingSchemePrimary,
+    DeciderKey, Error, FoldingScheme, FoldingSchemePartialGadget, GroupBasedFoldingSchemePrimary,
     PlainInstance as PU, PlainWitness as PW,
 };
 
@@ -57,6 +57,24 @@ pub mod witness;
 pub struct HyperNovaKey<A, VC: VectorCommitment> {
     arith: Arc<A>,
     ck: Arc<VC::Key>,
+}
+
+impl<A: Arith, VC: VectorCommitment> DeciderKey for HyperNovaKey<A, VC> {
+    type ProverKey = Self;
+    type VerifierKey = ();
+    type ArithConfig = A::Config;
+
+    fn to_pk(&self) -> &Self::ProverKey {
+        self
+    }
+
+    fn to_vk(&self) -> &Self::VerifierKey {
+        &()
+    }
+
+    fn to_arith_config(&self) -> &Self::ArithConfig {
+        self.arith.config()
+    }
 }
 
 impl<VC: VectorCommitment<Scalar: Field>, V: CCSVariant> ArithRelation<RW<VC>, RU<VC>>
@@ -173,7 +191,7 @@ where
             .collect::<Vec<_>>();
         let (cm, r) = VC::commit(&self.ck, &w, &mut rng)?;
 
-        let r_x = (0..log2(self.arith.n_constraints()))
+        let r_x = (0..self.arith.log_constraints())
             .map(|_| VC::Scalar::rand(&mut rng))
             .collect();
 
@@ -202,7 +220,7 @@ impl<F: Field, const M: usize, const N: usize, V: CCSVariant> Dummy<&CCSConfig<V
     for NIMFSProof<F, M, N>
 {
     fn dummy(cfg: &CCSConfig<V>) -> Self {
-        let s = log2(cfg.n_constraints()) as usize;
+        let s = cfg.log_constraints();
         let d = cfg.degree();
         let t = V::n_matrices();
         Self {
@@ -236,8 +254,6 @@ impl<
 
     type Config = usize;
     type PublicParam = VC::Key;
-    type ProverKey = HyperNovaKey<Self::Arith, VC>;
-    type VerifierKey = ();
     type DeciderKey = HyperNovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
     type Proof = NIMFSProof<VC::Scalar, M, N>;
@@ -247,25 +263,15 @@ impl<
         Ok(ck)
     }
 
-    fn generate_keys(
-        ck: Self::PublicParam,
-        ccs: Self::Arith,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey, Self::DeciderKey), Error> {
+    fn generate_keys(ck: Self::PublicParam, ccs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let ccs = Arc::new(ccs);
-        Ok((
-            HyperNovaKey {
-                arith: ccs.clone(),
-                ck: ck.clone(),
-            },
-            (),
-            HyperNovaKey { arith: ccs, ck },
-        ))
+        Ok(HyperNovaKey { arith: ccs, ck })
     }
 
     #[allow(non_snake_case)]
     fn prove(
-        pk: &Self::ProverKey,
+        pk: &HyperNovaKey<Self::Arith, VC>,
         transcript: &mut impl Transcript<VC::Scalar>,
         Ws: &[impl Borrow<Self::RW>; M],
         Us: &[impl Borrow<Self::RU>; M],
@@ -280,7 +286,7 @@ impl<
 
         let ccs = &pk.arith;
         let d = ccs.degree();
-        let s = log2(ccs.n_constraints()) as usize;
+        let s = ccs.log_constraints();
         let t = V::n_matrices();
         let S = &V::multisets_vec();
         let c = &V::coefficients_vec::<VC::Scalar>();
@@ -402,7 +408,7 @@ impl<
 
     #[allow(non_snake_case)]
     fn verify(
-        _vk: &Self::VerifierKey,
+        _vk: &(),
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
@@ -530,8 +536,6 @@ impl<
 
     type Config = usize;
     type PublicParam = VC::Key;
-    type ProverKey = HyperNovaKey<Self::Arith, VC>;
-    type VerifierKey = ();
     type DeciderKey = HyperNovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
     type Proof = ([VC::Commitment; N], NIMFSProof<VC::Scalar, M, N>);
@@ -541,25 +545,15 @@ impl<
         Ok(ck)
     }
 
-    fn generate_keys(
-        ck: Self::PublicParam,
-        ccs: Self::Arith,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey, Self::DeciderKey), Error> {
+    fn generate_keys(ck: Self::PublicParam, ccs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let ccs = Arc::new(ccs);
-        Ok((
-            HyperNovaKey {
-                arith: ccs.clone(),
-                ck: ck.clone(),
-            },
-            (),
-            HyperNovaKey { arith: ccs, ck },
-        ))
+        Ok(HyperNovaKey { arith: ccs, ck })
     }
 
     #[allow(non_snake_case)]
     fn prove(
-        pk: &Self::ProverKey,
+        pk: &HyperNovaKey<Self::Arith, VC>,
         transcript: &mut impl Transcript<VC::Scalar>,
         Ws: &[impl Borrow<Self::RW>; M],
         Us: &[impl Borrow<Self::RU>; M],
@@ -574,7 +568,7 @@ impl<
 
         let ccs = &pk.arith;
         let d = ccs.degree();
-        let s = log2(ccs.n_constraints()) as usize;
+        let s = ccs.log_constraints();
         let t = V::n_matrices();
         let S = &V::multisets_vec();
         let c = &V::coefficients_vec::<VC::Scalar>();
@@ -704,7 +698,7 @@ impl<
 
     #[allow(non_snake_case)]
     fn verify(
-        _vk: &Self::VerifierKey,
+        _vk: &(),
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],

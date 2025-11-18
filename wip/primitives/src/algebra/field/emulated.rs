@@ -100,8 +100,8 @@ pub struct IntVarInner<F: PrimeField, Cfg, const ALIGNED: bool> {
     pub bounds: Vec<Bound>,
 }
 
-pub type BigIntVar<F, const ALIGNED: bool> = IntVarInner<F, (), ALIGNED>;
-pub type EmulatedFieldVar<Base, Target, const ALIGNED: bool> = IntVarInner<Base, Target, ALIGNED>;
+pub type BigIntVar<F> = IntVarInner<F, (), true>;
+pub type EmulatedFieldVar<Base, Target> = IntVarInner<Base, Target, true>;
 
 impl<F: SonobeField, const ALIGNED: bool> GR1CSVar<F> for IntVarInner<F, (), ALIGNED> {
     type Value = BigInt;
@@ -1128,7 +1128,7 @@ mod tests {
                     Ok((a.clone(), Bound(lb.clone(), ub.clone())))
                 })?;
 
-                let a_const = BigIntVar::<Fr, _>::constant(a.clone());
+                let a_const = BigIntVar::<Fr>::constant(a.clone());
 
                 assert_eq!(a, a_var.value()?);
                 assert_eq!(a, a_const.value()?);
@@ -1223,7 +1223,7 @@ mod tests {
         let aab = a * ab;
         let abb = ab * b;
 
-        let a_var = EmulatedFieldVar::<Fr, Fq, _>::new_witness(cs.clone(), || Ok(a))?;
+        let a_var = EmulatedFieldVar::<Fr, Fq>::new_witness(cs.clone(), || Ok(a))?;
         let b_var = EmulatedFieldVar::new_witness(cs.clone(), || Ok(b))?;
         let ab_var = EmulatedFieldVar::new_witness(cs.clone(), || Ok(ab))?;
         let aab_var = EmulatedFieldVar::new_witness(cs.clone(), || Ok(aab))?;
@@ -1245,7 +1245,7 @@ mod tests {
 
         let a = Fq::rand(rng);
 
-        let a_var = EmulatedFieldVar::<Fr, Fq, _>::new_witness(cs.clone(), || Ok(a))?;
+        let a_var = EmulatedFieldVar::<Fr, Fq>::new_witness(cs.clone(), || Ok(a))?;
 
         let mut r_var = a_var.clone();
         for _ in 0..16 {
@@ -1268,11 +1268,11 @@ mod tests {
         let b = (0..len).map(|_| Fq::rand(rng)).collect::<Vec<Fq>>();
         let c = a.iter().zip(b.iter()).map(|(a, b)| a * b).sum::<Fq>();
 
-        let a_var = Vec::<EmulatedFieldVar<Fr, Fq, _>>::new_witness(cs.clone(), || Ok(a))?;
-        let b_var = Vec::<EmulatedFieldVar<Fr, Fq, _>>::new_witness(cs.clone(), || Ok(b))?;
+        let a_var = Vec::<EmulatedFieldVar<Fr, Fq>>::new_witness(cs.clone(), || Ok(a))?;
+        let b_var = Vec::<EmulatedFieldVar<Fr, Fq>>::new_witness(cs.clone(), || Ok(b))?;
         let c_var = EmulatedFieldVar::new_witness(cs.clone(), || Ok(c))?;
 
-        let mut r_var: EmulatedFieldVar<Fr, Fq, false> =
+        let mut r_var: IntVarInner<Fr, Fq, false> =
             EmulatedFieldVar::constant(BigUint::zero().into()).into();
         for (a, b) in a_var.into_iter().zip(b_var.into_iter()) {
             r_var = r_var.add_unaligned(&a.mul_unaligned(&b)?)?;

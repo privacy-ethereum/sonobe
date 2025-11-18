@@ -45,7 +45,7 @@ impl<P: FpConfig<N>, const N: usize> Val for Fp<P, N> {
     type ConstraintField = Self;
     type Var = FpVar<Self>;
 
-    type EmulatedVar<F: SonobeField> = EmulatedFieldVar<F, Self, true>;
+    type EmulatedVar<F: SonobeField> = EmulatedFieldVar<F, Self>;
 }
 
 impl<P: FpConfig<N>, const N: usize> Absorbable for Fp<P, N> {

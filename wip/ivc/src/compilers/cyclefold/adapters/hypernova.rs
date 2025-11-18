@@ -31,8 +31,8 @@ pub struct HyperNovaCycleFoldConfig<
     points: Vec<C>,
 }
 
-impl<C: SonobeCurve, const MU: usize, const NU: usize, const CHALLENGE_BITS: usize> Default
-    for HyperNovaCycleFoldConfig<C, MU, NU, CHALLENGE_BITS>
+impl<C: SonobeCurve, const M: usize, const N: usize, const CHALLENGE_BITS: usize> Default
+    for HyperNovaCycleFoldConfig<C, M, N, CHALLENGE_BITS>
 {
     fn default() -> Self {
         Self {
@@ -42,13 +42,13 @@ impl<C: SonobeCurve, const MU: usize, const NU: usize, const CHALLENGE_BITS: usi
     }
 }
 
-impl<C: SonobeCurve, const MU: usize, const NU: usize, const CHALLENGE_BITS: usize> CycleFoldConfig
-    for HyperNovaCycleFoldConfig<C, MU, NU, CHALLENGE_BITS>
+impl<C: SonobeCurve, const M: usize, const N: usize, const CHALLENGE_BITS: usize> CycleFoldConfig
+    for HyperNovaCycleFoldConfig<C, M, N, CHALLENGE_BITS>
 {
     type C = C;
 
     const N_INPUT_RANDOMNESS_BITS: usize = CHALLENGE_BITS;
-    const N_INPUT_POINTS: usize = MU + NU;
+    const N_INPUT_POINTS: usize = M + N;
 
     fn verify_point_rlc(
         &self,
@@ -109,8 +109,7 @@ impl<
         UU: <Self::Gadget as FoldingSchemePartialGadget<M, N>>::RU,
         _proof: <Self::Gadget as FoldingSchemePartialGadget<M, N>>::Proof,
         mut rho: <Self::Gadget as FoldingSchemePartialGadget<M, N>>::Challenge,
-    ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>, true>>>, SynthesisError>
-    {
+    ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>>>>, SynthesisError> {
         rho.resize(
             CF2::<VC::Commitment>::MODULUS_BIT_SIZE as usize,
             Boolean::FALSE,

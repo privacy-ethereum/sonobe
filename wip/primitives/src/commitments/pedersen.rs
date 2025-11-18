@@ -6,9 +6,12 @@ use ark_std::{iter::repeat_with, marker::PhantomData, rand::RngCore, UniformRand
 
 use super::{Error, VectorCommitment};
 use crate::{
-    algebra::{field::emulated::EmulatedFieldVar, group::emulated::EmulatedAffineVar},
+    algebra::{
+        field::emulated::{EmulatedFieldVar, IntVarInner},
+        group::emulated::EmulatedAffineVar,
+    },
     commitments::{GroupBasedVectorCommitment, VectorCommitmentGadget},
-    traits::{CF1, CF2, SonobeCurve},
+    traits::{SonobeCurve, CF1, CF2},
     utils::null::Null,
 };
 
@@ -228,9 +231,9 @@ impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, false> {
 
     type KeyVar = Vec<C::Var>;
 
-    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>, true>;
+    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
 
-    type IntermediateScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>, false>;
+    type IntermediateScalarVar = IntVarInner<CF2<C>, CF1<C>, false>;
 
     type CommitmentVar = C::Var;
 
@@ -258,13 +261,13 @@ impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, true> {
 
     type KeyVar = (Vec<C::Var>, C::Var);
 
-    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>, true>;
+    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
 
-    type IntermediateScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>, false>;
+    type IntermediateScalarVar = IntVarInner<CF2<C>, CF1<C>, false>;
 
     type CommitmentVar = C::Var;
 
-    type RandomnessVar = EmulatedFieldVar<CF2<C>, CF1<C>, true>;
+    type RandomnessVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
 
     fn open(
         (g, h): &Self::KeyVar,

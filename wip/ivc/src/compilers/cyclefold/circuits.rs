@@ -1,9 +1,9 @@
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::AllocVar,
+    convert::ToConstraintFieldGadget,
     eq::EqGadget,
     fields::{fp::FpVar, FieldVar},
-    groups::CurveVar,
     GR1CSVar,
 };
 use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
@@ -13,12 +13,13 @@ use sonobe_fs::{
     GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary,
 };
 use sonobe_primitives::{
+    algebra::Val,
     arithmetizations::Arith,
     circuits::FCircuit,
     commitments::VectorCommitment,
     traits::{Dummy, SonobeCurve, CF2},
     transcripts::{
-        griffin::{GriffinParams, sponge::GriffinSpongeVar},
+        griffin::{sponge::GriffinSpongeVar, GriffinParams},
         TranscriptVar,
     },
 };
@@ -239,9 +240,7 @@ pub trait CycleFoldConfig: Sized + Default {
     /// The final vector of public inputs is shorter than the result of calling
     /// [`AllocVar::new_input`], because we only need the x and y coordinates of
     /// the point, but the `infinity` flag is not necessary.
-    fn mark_point_as_public(
-        point: &impl CurveVar<Self::C, CF2<Self::C>>,
-    ) -> Result<(), SynthesisError> {
+    fn mark_point_as_public(point: &<Self::C as Val>::Var) -> Result<(), SynthesisError> {
         for x in &point.to_constraint_field()?[..2] {
             // This line "converts" `x` from a witness to a public input.
             // Instead of directly modifying the constraint system, we explicitly

@@ -3,7 +3,7 @@ use ark_poly::{
     univariate::DensePolynomial, DenseMultilinearExtension as MLE, DenseUVPolynomial, Polynomial,
 };
 use ark_std::{
-    borrow::Borrow, cfg_into_iter, cfg_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc,
+    borrow::Borrow, cfg_into_iter, cfg_iter, marker::PhantomData, rand::RngCore, sync::Arc,
     UniformRand,
 };
 #[cfg(feature = "parallel")]
@@ -12,7 +12,7 @@ use sonobe_primitives::{
     algebra::ops::poly::MLEHelper,
     arithmetizations::{
         r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
-        ArithConfig, ArithRelation,
+        Arith, ArithConfig, ArithRelation,
     },
     circuits::AssignmentsOwned,
     commitments::{GroupBasedVectorCommitment, VectorCommitment},
@@ -22,7 +22,7 @@ use sonobe_primitives::{
 };
 
 use self::{instance::RunningInstance as RU, witness::RunningWitness as RW};
-use crate::{Error, FoldingScheme, PlainInstance as IU, PlainWitness as IW};
+use crate::{DeciderKey, Error, FoldingScheme, PlainInstance as IU, PlainWitness as IW};
 
 pub mod instance;
 pub mod witness;
@@ -31,6 +31,24 @@ pub mod witness;
 pub struct MovaKey<A, VC: VectorCommitment> {
     pub arith: Arc<A>,
     pub ck: Arc<VC::Key>,
+}
+
+impl<A: Arith, VC: VectorCommitment> DeciderKey for MovaKey<A, VC> {
+    type ProverKey = Self;
+    type VerifierKey = ();
+    type ArithConfig = A::Config;
+
+    fn to_pk(&self) -> &Self::ProverKey {
+        self
+    }
+
+    fn to_vk(&self) -> &Self::VerifierKey {
+        &()
+    }
+
+    fn to_arith_config(&self) -> &Self::ArithConfig {
+        self.arith.config()
+    }
 }
 
 impl<A, VC> Relation<RW<VC>, RU<VC>> for MovaKey<A, VC>
@@ -112,7 +130,7 @@ where
 
         let (cm_w, r_w) = VC::commit(&self.ck, &w, &mut rng)?;
 
-        let r_e = (0..log2(e.len()) as usize)
+        let r_e = (0..self.arith.log_constraints())
             .map(|_| VC::Scalar::rand(&mut rng))
             .collect::<Vec<_>>();
         let v = MLE::from_evaluations(&e).evaluate(&r_e);
@@ -130,7 +148,7 @@ pub struct MovaProof<F: Field> {
 impl<F: Field, Cfg: ArithConfig> Dummy<&Cfg> for MovaProof<F> {
     fn dummy(cfg: &Cfg) -> Self {
         Self {
-            h1_coeffs: vec![F::zero(); 1 << (log2(cfg.n_constraints()) as usize)],
+            h1_coeffs: vec![F::zero(); cfg.log_constraints()],
             t: F::zero(),
         }
     }
@@ -154,8 +172,6 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
 
     type Config = usize;
     type PublicParam = VC::Key;
-    type ProverKey = MovaKey<Self::Arith, VC>;
-    type VerifierKey = ();
     type DeciderKey = MovaKey<Self::Arith, VC>;
     type Challenge = VC::Scalar;
     type Proof = (MovaProof<VC::Scalar>, VC::Commitment);
@@ -165,25 +181,15 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
         Ok(ck)
     }
 
-    fn generate_keys(
-        ck: Self::PublicParam,
-        r1cs: Self::Arith,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey, Self::DeciderKey), Error> {
+    fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
-        Ok((
-            MovaKey {
-                arith: r1cs.clone(),
-                ck: ck.clone(),
-            },
-            (),
-            MovaKey { arith: r1cs, ck },
-        ))
+        Ok(MovaKey { arith: r1cs, ck })
     }
 
     #[allow(non_snake_case)]
     fn prove(
-        pk: &Self::ProverKey,
+        pk: &MovaKey<Self::Arith, VC>,
         transcript: &mut impl Transcript<VC::Scalar>,
         Ws: &[impl Borrow<Self::RW>; 1],
         Us: &[impl Borrow<Self::RU>; 1],
@@ -297,7 +303,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
 
     #[allow(non_snake_case)]
     fn verify(
-        _vk: &Self::VerifierKey,
+        _vk: &(),
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; 1],

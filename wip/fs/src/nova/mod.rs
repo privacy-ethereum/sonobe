@@ -17,7 +17,7 @@ use sonobe_primitives::{
     algebra::{field::emulated::Bound, ops::bits::FromBitsGadget},
     arithmetizations::{
         r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
-        ArithRelation,
+        Arith, ArithRelation,
     },
     circuits::AssignmentsOwned,
     commitments::{GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget},
@@ -37,7 +37,7 @@ use self::{
     },
 };
 use crate::{
-    Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget,
+    DeciderKey, Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget,
     GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary, PlainInstance as PU,
     PlainWitness as PW,
 };
@@ -49,6 +49,24 @@ pub mod witness;
 pub struct NovaKey<A, VC: VectorCommitment> {
     arith: Arc<A>,
     ck: Arc<VC::Key>,
+}
+
+impl<A: Arith, VC: VectorCommitment> DeciderKey for NovaKey<A, VC> {
+    type ProverKey = Self;
+    type VerifierKey = ();
+    type ArithConfig = A::Config;
+
+    fn to_pk(&self) -> &Self::ProverKey {
+        self
+    }
+
+    fn to_vk(&self) -> &Self::VerifierKey {
+        &()
+    }
+
+    fn to_arith_config(&self) -> &Self::ArithConfig {
+        self.arith.config()
+    }
 }
 
 impl<A, VC> Relation<RW<VC>, RU<VC>> for NovaKey<A, VC>
@@ -185,8 +203,6 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
 
     type Config = usize;
     type PublicParam = VC::Key;
-    type ProverKey = NovaKey<Self::Arith, VC>;
-    type VerifierKey = ();
     type DeciderKey = NovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
     type Proof = VC::Commitment;
@@ -196,25 +212,15 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         Ok(ck)
     }
 
-    fn generate_keys(
-        ck: Self::PublicParam,
-        r1cs: Self::Arith,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey, Self::DeciderKey), Error> {
+    fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
-        Ok((
-            NovaKey {
-                arith: r1cs.clone(),
-                ck: ck.clone(),
-            },
-            (),
-            NovaKey { arith: r1cs, ck },
-        ))
+        Ok(NovaKey { arith: r1cs, ck })
     }
 
     #[allow(non_snake_case)]
     fn prove(
-        pk: &Self::ProverKey,
+        pk: &NovaKey<Self::Arith, VC>,
         transcript: &mut impl Transcript<TF>,
         Ws: &[impl Borrow<Self::RW>; 1],
         Us: &[impl Borrow<Self::RU>; 1],
@@ -273,7 +279,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
 
     #[allow(non_snake_case)]
     fn verify(
-        _vk: &Self::VerifierKey,
+        _vk: &(),
         transcript: &mut impl Transcript<TF>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; 1],
@@ -328,8 +334,6 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
 
     type Config = usize;
     type PublicParam = VC::Key;
-    type ProverKey = NovaKey<Self::Arith, VC>;
-    type VerifierKey = ();
     type DeciderKey = NovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
     type Proof = (VC::Commitment, VC::Commitment);
@@ -339,25 +343,15 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         Ok(ck)
     }
 
-    fn generate_keys(
-        ck: Self::PublicParam,
-        r1cs: Self::Arith,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey, Self::DeciderKey), Error> {
+    fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
-        Ok((
-            NovaKey {
-                arith: r1cs.clone(),
-                ck: ck.clone(),
-            },
-            (),
-            NovaKey { arith: r1cs, ck },
-        ))
+        Ok(NovaKey { arith: r1cs, ck })
     }
 
     #[allow(non_snake_case)]
     fn prove(
-        pk: &Self::ProverKey,
+        pk: &NovaKey<Self::Arith, VC>,
         transcript: &mut impl Transcript<TF>,
         Ws: &[impl Borrow<Self::RW>; 1],
         Us: &[impl Borrow<Self::RU>; 1],
@@ -426,7 +420,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
 
     #[allow(non_snake_case)]
     fn verify(
-        _vk: &Self::VerifierKey,
+        _vk: &(),
         transcript: &mut impl Transcript<TF>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; 1],

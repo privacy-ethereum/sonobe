@@ -1,7 +1,7 @@
 use ark_ff::Field;
 use ark_poly::DenseMultilinearExtension;
 use ark_relations::gr1cs::{ConstraintSystem, Matrix};
-use ark_std::{borrow::Borrow, cfg_into_iter, cfg_iter, fmt::Debug, log2, marker::PhantomData};
+use ark_std::{borrow::Borrow, cfg_into_iter, cfg_iter, fmt::Debug, marker::PhantomData};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 

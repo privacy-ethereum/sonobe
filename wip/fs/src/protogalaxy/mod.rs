@@ -41,7 +41,7 @@ use self::{
     },
 };
 use crate::{
-    Error, FoldingScheme, FoldingSchemePartialGadget, GroupBasedFoldingSchemePrimary,
+    DeciderKey, Error, FoldingScheme, FoldingSchemePartialGadget, GroupBasedFoldingSchemePrimary,
     PlainInstance as PU, PlainWitness as PW,
 };
 
@@ -52,6 +52,24 @@ pub mod witness;
 pub struct ProtoGalaxyKey<A, VC: VectorCommitment> {
     arith: Arc<A>,
     ck: Arc<VC::Key>,
+}
+
+impl<A: Arith, VC: VectorCommitment> DeciderKey for ProtoGalaxyKey<A, VC> {
+    type ProverKey = Self;
+    type VerifierKey = ();
+    type ArithConfig = A::Config;
+
+    fn to_pk(&self) -> &Self::ProverKey {
+        self
+    }
+
+    fn to_vk(&self) -> &Self::VerifierKey {
+        &()
+    }
+
+    fn to_arith_config(&self) -> &Self::ArithConfig {
+        self.arith.config()
+    }
 }
 
 impl<VC: VectorCommitment<Scalar: Field>> ArithRelation<RW<VC>, RU<VC>> for R1CS<VC::Scalar> {
@@ -169,7 +187,7 @@ where
             .collect::<Vec<_>>();
         let (phi, r) = VC::commit(&self.ck, &w, &mut rng)?;
 
-        let betas = (0..log2(self.arith.n_constraints()) as usize)
+        let betas = (0..self.arith.log_constraints())
             .map(|_| VC::Scalar::rand(&mut rng))
             .collect::<Vec<_>>();
 
@@ -193,7 +211,7 @@ pub struct ProtoGalaxyProof<F, const N: usize> {
 impl<F: Field, Cfg: ArithConfig, const N: usize> Dummy<&Cfg> for ProtoGalaxyProof<F, N> {
     fn dummy(cfg: &Cfg) -> Self {
         Self {
-            f_coeffs: vec![Default::default(); log2(cfg.n_constraints()) as usize],
+            f_coeffs: vec![Default::default(); cfg.log_constraints()],
             k_coeffs: vec![Default::default(); cfg.degree() * N + 1],
         }
     }
@@ -215,8 +233,6 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
 
     type Config = usize;
     type PublicParam = VC::Key;
-    type ProverKey = Arc<Self::Arith>;
-    type VerifierKey = ();
     type DeciderKey = ProtoGalaxyKey<Self::Arith, VC>;
     type Challenge = Vec<VC::Scalar>;
     type Proof = ProtoGalaxyProof<VC::Scalar, N>;
@@ -229,18 +245,15 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         Ok(ck)
     }
 
-    fn generate_keys(
-        ck: Self::PublicParam,
-        r1cs: Self::Arith,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey, Self::DeciderKey), Error> {
+    fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
-        Ok((r1cs.clone(), (), ProtoGalaxyKey { arith: r1cs, ck }))
+        Ok(ProtoGalaxyKey { arith: r1cs, ck })
     }
 
     #[allow(non_snake_case)]
     fn prove(
-        r1cs: &Self::ProverKey,
+        pk: &ProtoGalaxyKey<Self::Arith, VC>,
         transcript: &mut impl Transcript<VC::Scalar>,
         Ws: &[impl Borrow<Self::RW>; 1],
         Us: &[impl Borrow<Self::RU>; 1],
@@ -252,8 +265,9 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
+        let r1cs = &pk.arith;
         let d = r1cs.degree();
-        let t = log2(r1cs.n_constraints()) as usize;
+        let t = r1cs.log_constraints();
 
         transcript.add(&t);
         transcript.add(&(d * N + 1));
@@ -401,7 +415,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
 
     #[allow(non_snake_case)]
     fn verify(
-        _vk: &Self::VerifierKey,
+        _vk: &(),
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; N],
@@ -470,8 +484,6 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
 
     type Config = usize;
     type PublicParam = VC::Key;
-    type ProverKey = ProtoGalaxyKey<Self::Arith, VC>;
-    type VerifierKey = ();
     type DeciderKey = ProtoGalaxyKey<Self::Arith, VC>;
     type Challenge = Vec<VC::Scalar>;
     type Proof = ([VC::Commitment; N], ProtoGalaxyProof<VC::Scalar, N>);
@@ -484,25 +496,15 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         Ok(ck)
     }
 
-    fn generate_keys(
-        ck: Self::PublicParam,
-        r1cs: Self::Arith,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey, Self::DeciderKey), Error> {
+    fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
-        Ok((
-            ProtoGalaxyKey {
-                arith: r1cs.clone(),
-                ck: ck.clone(),
-            },
-            (),
-            ProtoGalaxyKey { arith: r1cs, ck },
-        ))
+        Ok(ProtoGalaxyKey { arith: r1cs, ck })
     }
 
     #[allow(non_snake_case)]
     fn prove(
-        pk: &Self::ProverKey,
+        pk: &ProtoGalaxyKey<Self::Arith, VC>,
         transcript: &mut impl Transcript<VC::Scalar>,
         Ws: &[impl Borrow<Self::RW>; 1],
         Us: &[impl Borrow<Self::RU>; 1],
@@ -516,7 +518,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
 
         let r1cs = &pk.arith;
         let d = r1cs.degree();
-        let t = log2(r1cs.n_constraints()) as usize;
+        let t = r1cs.log_constraints();
 
         let mut phis = [VC::Commitment::default(); N];
         let mut rs = [VC::Randomness::default(); N];
@@ -672,7 +674,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
 
     #[allow(non_snake_case)]
     fn verify(
-        _vk: &Self::VerifierKey,
+        _vk: &(),
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; N],

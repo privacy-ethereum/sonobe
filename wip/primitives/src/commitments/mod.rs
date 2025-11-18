@@ -79,7 +79,7 @@ pub trait GroupBasedVectorCommitment:
     Gadget: VectorCommitmentGadget<
         Native = Self,
         ConstraintField = CF2<Self::Commitment>,
-        ScalarVar = EmulatedFieldVar<CF2<Self::Commitment>, Self::Scalar, true>,
+        ScalarVar = EmulatedFieldVar<CF2<Self::Commitment>, Self::Scalar>,
         CommitmentVar = Var<Self::Commitment>,
     >,
     Commitment: SonobeCurve,

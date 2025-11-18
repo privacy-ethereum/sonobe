@@ -265,7 +265,15 @@ impl<VC: VectorCommitment> FoldingInstance<VC> for PlainInstance<VC::Scalar> {
     }
 }
 
-pub trait DeciderKey {}
+pub trait DeciderKey {
+    type ProverKey;
+    type VerifierKey;
+    type ArithConfig: ArithConfig;
+
+    fn to_pk(&self) -> &Self::ProverKey;
+    fn to_vk(&self) -> &Self::VerifierKey;
+    fn to_arith_config(&self) -> &Self::ArithConfig;
+}
 
 pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
     type VC: VectorCommitment<Scalar: SonobeField>;
@@ -274,12 +282,11 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
     type IW: FoldingWitness<Self::VC> + for<'a> Dummy<&'a <Self::Arith as Arith>::Config>;
     type IU: FoldingInstance<Self::VC> + for<'a> Dummy<&'a <Self::Arith as Arith>::Config>;
     type TranscriptField: SonobeField;
-    type Arith: Arith;
+    type Arith: Arith<Config = <Self::DeciderKey as DeciderKey>::ArithConfig>;
     type Config;
     type PublicParam;
-    type ProverKey;
-    type VerifierKey;
-    type DeciderKey: Clone
+    type DeciderKey: DeciderKey
+        + Clone
         + Relation<Self::RW, Self::RU, Error = Error>
         + Relation<Self::IW, Self::IU, Error = Error>
         + WitnessInstanceSampler<Self::RW, Self::RU, Source = (), Error = Error>
@@ -305,10 +312,7 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
     /// The key generation method is a deterministic algorithm that takes as
     /// input the public parameters `pp` and the constraint system `arith`, and
     /// outputs a prover key and a verifier key.
-    fn generate_keys(
-        pp: Self::PublicParam,
-        arith: Self::Arith,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey, Self::DeciderKey), Error>;
+    fn generate_keys(pp: Self::PublicParam, arith: Self::Arith) -> Result<Self::DeciderKey, Error>;
 
     /// The proof generation method is a deterministic algorithm that takes as
     /// input the prover key `pk`, the transcript `transcript` between the
@@ -321,7 +325,7 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
     /// circuits in our CycleFold-based folding-to-IVC compiler.
     #[allow(non_snake_case)]
     fn prove(
-        pk: &Self::ProverKey,
+        pk: &<Self::DeciderKey as DeciderKey>::ProverKey,
         transcript: &mut impl Transcript<Self::TranscriptField>,
         Ws: &[impl Borrow<Self::RW>; M],
         Us: &[impl Borrow<Self::RU>; M],
@@ -332,7 +336,7 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
 
     #[allow(non_snake_case)]
     fn verify(
-        vk: &Self::VerifierKey,
+        vk: &<Self::DeciderKey as DeciderKey>::VerifierKey,
         transcript: &mut impl Transcript<Self::TranscriptField>,
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
@@ -504,7 +508,9 @@ mod tests {
             .with_setup_mode()
             .with_circuit(circuit);
         let cs = cs.synthesize()?;
-        let (pk, vk, dk) = FS::generate_keys(pp, cs.into())?;
+        let dk = FS::generate_keys(pp, cs.into())?;
+        let pk = dk.to_pk();
+        let vk = dk.to_vk();
 
         let mut Ws = vec![];
         let mut Us = vec![];
