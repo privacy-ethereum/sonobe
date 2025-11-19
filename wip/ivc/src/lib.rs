@@ -101,6 +101,31 @@ impl<FC: FCircuit<Field = I::Field>, I: IVC> IVCStatefulProver<FC, I> {
     }
 }
 
+pub trait Decider {
+    type IVC: IVC;
+
+    type ProverKey;
+    type VerifierKey;
+    type Instance;
+    type Witness;
+    type Proof;
+
+    fn preprocess_and_generate_keys(
+        ivc_pk: &<Self::IVC as IVC>::ProverKey,
+        rng: impl RngCore,
+    ) -> Result<(Self::ProverKey, Self::VerifierKey), Error>;
+
+    fn prove(
+        pk: &Self::ProverKey,
+        w: &Self::Witness,
+        x: &Self::Instance,
+        rng: impl RngCore,
+    ) -> Result<Self::Proof, Error>;
+
+    fn verify(vk: &Self::VerifierKey, x: &Self::Instance, proof: &Self::Proof)
+        -> Result<(), Error>;
+}
+
 #[cfg(test)]
 mod tests {
     use ark_ff::UniformRand;
