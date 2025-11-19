@@ -1,3 +1,4 @@
+use ark_ff::UniformRand;
 use ark_r1cs_std::{
     alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, select::CondSelectGadget, GR1CSVar,
 };
@@ -35,13 +36,17 @@ pub enum Error {
     CommitmentVerificationFail,
 }
 
+pub trait CommitmentKey: Clone {
+    fn max_scalars_len(&self) -> usize;
+}
+
 pub trait VectorCommitment: 'static + Clone + Debug + PartialEq + Eq {
     const IS_HIDING: bool;
 
     type Gadget: VectorCommitmentGadget<Native = Self>;
 
-    type Key: Clone;
-    type Scalar: Clone + Copy + Default + Debug + PartialEq + Eq + Sync + Absorbable;
+    type Key: CommitmentKey;
+    type Scalar: Clone + Copy + Default + Debug + PartialEq + Eq + Sync + Absorbable + UniformRand;
     type Commitment: Clone + Default + Debug + PartialEq + Eq + Sync + Absorbable;
     type Randomness: Clone
         + Copy
@@ -58,7 +63,7 @@ pub trait VectorCommitment: 'static + Clone + Debug + PartialEq + Eq {
         + Mul<Output = Self::Randomness>
         + Sum;
 
-    fn generate_key(rng: impl RngCore, len: usize) -> Result<Self::Key, Error>;
+    fn generate_key(len: usize, rng: impl RngCore) -> Result<Self::Key, Error>;
 
     fn commit(
         ck: &Self::Key,
@@ -71,7 +76,7 @@ pub trait VectorCommitment: 'static + Clone + Debug + PartialEq + Eq {
         v: &[Self::Scalar],
         r: &Self::Randomness,
         cm: &Self::Commitment,
-    ) -> Result<bool, Error>;
+    ) -> Result<(), Error>;
 }
 
 pub trait GroupBasedVectorCommitment:
@@ -151,9 +156,9 @@ mod tests {
             .map(|_| VC::Scalar::rand(&mut rng))
             .collect::<Vec<_>>();
 
-        let ck = VC::generate_key(&mut rng, len)?;
+        let ck = VC::generate_key(len, &mut rng)?;
         let (cm, r) = VC::commit(&ck, &v, &mut rng)?;
-        assert!(VC::open(&ck, &v, &r, &cm)?);
+        VC::open(&ck, &v, &r, &cm)?;
         Ok(())
     }
 }

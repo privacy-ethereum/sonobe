@@ -9,12 +9,11 @@ use super::{ccs::CCS, Arith, ArithRelation, Error};
 use crate::{
     arithmetizations::{ccs::CCSVariant, ArithConfig},
     circuits::Assignments,
-    relations::WitnessInstanceExtractor,
 };
 
 pub mod circuits;
 
-#[derive(Debug, Clone, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct R1CSConfig {
     m: usize, // number of constraints
     n: usize, // number of variables
@@ -32,11 +31,6 @@ impl R1CSConfig {
 }
 
 impl ArithConfig for R1CSConfig {
-    #[inline]
-    fn empty() -> Self {
-        Self { m: 0, n: 0, l: 0 }
-    }
-
     #[inline]
     fn degree(&self) -> usize {
         2
@@ -97,7 +91,7 @@ impl CCSVariant for R1CSConfig {
 }
 
 #[allow(non_snake_case)]
-#[derive(Debug, Clone, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct R1CS<F: Field> {
     cfg: R1CSConfig,
     pub A: Matrix<F>,
@@ -139,16 +133,6 @@ impl<F: Field> R1CS<F> {
 
 impl<F: Field> Arith for R1CS<F> {
     type Config = R1CSConfig;
-
-    #[inline]
-    fn empty() -> Self {
-        Self {
-            cfg: R1CSConfig::empty(),
-            A: vec![],
-            B: vec![],
-            C: vec![],
-        }
-    }
 
     #[inline]
     fn config(&self) -> &Self::Config {
@@ -217,15 +201,6 @@ impl<F: Field, W: AsRef<[F]>, U: AsRef<[F]>> ArithRelation<W, U> for R1CS<F> {
     }
 }
 
-impl<F: Field> WitnessInstanceExtractor<Vec<F>, Vec<F>> for R1CS<F> {
-    type Source = Assignments<F, Vec<F>>;
-    type Error = Error;
-
-    fn extract(&self, z: Self::Source) -> Result<(Vec<F>, Vec<F>), Error> {
-        Ok((z.private, z.public))
-    }
-}
-
 pub struct RelaxedWitness<V> {
     pub w: V,
     pub e: V,
@@ -262,22 +237,6 @@ impl<F: Field> ArithRelation<RelaxedWitness<&[F]>, RelaxedInstance<&[F]>> for R1
     }
 }
 
-impl<F: Field> WitnessInstanceExtractor<RelaxedWitness<Vec<F>>, RelaxedInstance<Vec<F>>>
-    for R1CS<F>
-{
-    type Source = Assignments<F, Vec<F>>;
-    type Error = Error;
-
-    fn extract(
-        &self,
-        z: Self::Source,
-    ) -> Result<(RelaxedWitness<Vec<F>>, RelaxedInstance<Vec<F>>), Error> {
-        let (w, x) = self.extract(z)?;
-        let e = vec![F::zero(); self.n_constraints()];
-        Ok((RelaxedWitness { w, e }, RelaxedInstance { x, u: F::one() }))
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
     use ark_bn254::Fr;
@@ -298,7 +257,7 @@ pub mod tests {
             x: Fr::rand(&mut rng),
         };
         let cs = ConstraintSystem::new_ref();
-        circuit.generate_constraints(cs.clone()).unwrap();
+        circuit.generate_constraints(cs.clone())?;
         assert!(cs.is_satisfied()?);
         cs.finalize();
         let cs = cs.into_inner().unwrap();
@@ -313,10 +272,9 @@ pub mod tests {
         let x = Fr::rand(&mut rng);
         let circuit = CircuitForTest::<Fr> { x };
         let cs = ConstraintSystem::new_ref();
-        circuit.generate_constraints(cs.clone()).unwrap();
+        circuit.generate_constraints(cs.clone())?;
         assert!(cs.is_satisfied()?);
         cs.finalize();
-        let cs = cs.into_inner().unwrap();
 
         assert_eq!(cs.assignments()?, satisfying_assignments_for_test(x));
         Ok(())

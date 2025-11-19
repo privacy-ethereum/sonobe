@@ -29,8 +29,8 @@ pub mod utils;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Incorrect evaluations: {0} + {1} != {2}")]
-    IncorrectEvaluations(String, String, String),
+    #[error("Incorrect evaluation: claimed {0}, got {1}")]
+    IncorrectEvaluation(String, String),
     #[error("Incorrect proof length: expected {0}, got {1}")]
     UnexpectedProofLength(usize, usize),
     #[error("Unexpected polynomial degree: expected at most {0}, got {1}")]
@@ -155,7 +155,7 @@ impl IOPSumCheck {
     }
 
     pub fn verify<F: PrimeField + Absorbable>(
-        claimed_sum: F,
+        mut claimed_sum: F,
         proofs: &[Vec<F>],
         aux_info: &VPAuxInfo,
         transcript: &mut impl Transcript<F>,
@@ -170,7 +170,6 @@ impl IOPSumCheck {
         }
 
         let mut challenges = Vec::with_capacity(aux_info.num_variables);
-        let mut expected = claimed_sum;
 
         // Outer loop is not parallelized because `DensePolynomial::evaluate` is
         // already parallelized internally.
@@ -186,12 +185,11 @@ impl IOPSumCheck {
             let eval_at_one = coeffs.iter().sum::<F>();
 
             // the deferred check during the interactive phase:
-            // 1. check if the received 'P(0) + P(1) = expected`.
-            if eval_at_zero + eval_at_one != expected {
-                return Err(Error::IncorrectEvaluations(
-                    eval_at_zero.to_string(),
-                    eval_at_one.to_string(),
-                    expected.to_string(),
+            // 1. check if the received 'P(0) + P(1) = claimed_sum`.
+            if eval_at_zero + eval_at_one != claimed_sum {
+                return Err(Error::IncorrectEvaluation(
+                    claimed_sum.to_string(),
+                    format!("{} + {}", eval_at_zero, eval_at_one),
                 ));
             }
 
@@ -199,11 +197,11 @@ impl IOPSumCheck {
             let challenge = transcript.challenge_field_element();
 
             // 2. set `expected` to `P(r)`
-            expected = DensePolynomial::from_coefficients_slice(coeffs).evaluate(&challenge);
+            claimed_sum = DensePolynomial::from_coefficients_slice(coeffs).evaluate(&challenge);
             challenges.push(challenge);
         }
 
-        Ok((expected, challenges))
+        Ok((claimed_sum, challenges))
     }
 }
 

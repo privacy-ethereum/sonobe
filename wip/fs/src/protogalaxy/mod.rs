@@ -24,7 +24,7 @@ use sonobe_primitives::{
     },
     arithmetizations::{r1cs::R1CS, Arith, ArithConfig, ArithRelation, Error as ArithError},
     circuits::{Assignments, AssignmentsOwned},
-    commitments::{GroupBasedVectorCommitment, VectorCommitment},
+    commitments::{CommitmentKey, GroupBasedVectorCommitment, VectorCommitment},
     relations::{Relation, WitnessInstanceSampler},
     traits::Dummy,
     transcripts::{Transcript, TranscriptVar},
@@ -76,7 +76,7 @@ impl<VC: VectorCommitment<Scalar: Field>> ArithRelation<RW<VC>, RU<VC>> for R1CS
     type Evaluation = Vec<VC::Scalar>;
 
     fn eval_relation(&self, w: &RW<VC>, u: &RU<VC>) -> Result<Self::Evaluation, ArithError> {
-        ArithRelation::<Vec<VC::Scalar>, Vec<VC::Scalar>>::eval_relation(self, &w.w, &u.x)
+        Self::eval_relation(self, &w.w, &u.x)
     }
 
     fn check_evaluation(_w: &RW<VC>, u: &RU<VC>, v: Self::Evaluation) -> Result<(), ArithError> {
@@ -103,14 +103,13 @@ impl<VC: VectorCommitment<Scalar: Field>> ArithRelation<RW<VC>, RU<VC>> for R1CS
 impl<A, VC> Relation<RW<VC>, RU<VC>> for ProtoGalaxyKey<A, VC>
 where
     A: ArithRelation<RW<VC>, RU<VC>>,
-    VC: VectorCommitment<Scalar: Field>,
+    VC: VectorCommitment,
 {
     type Error = Error;
 
     fn check_relation(&self, w: &RW<VC>, u: &RU<VC>) -> Result<(), Self::Error> {
         self.arith.check_relation(w, u)?;
-        // TODO: handle the error properly
-        assert!(VC::open(&self.ck, &w.w, &w.r, &u.phi)?);
+        VC::open(&self.ck, &w.w, &w.r, &u.phi)?;
         Ok(())
     }
 }
@@ -124,7 +123,7 @@ where
 
     fn check_relation(&self, w: &IW<VC>, u: &IU<VC>) -> Result<(), Self::Error> {
         self.arith.check_relation(&w.w, &u.x)?;
-        assert!(VC::open(&self.ck, &w.w, &w.r, &u.phi)?);
+        VC::open(&self.ck, &w.w, &w.r, &u.phi)?;
         Ok(())
     }
 }
@@ -142,9 +141,7 @@ where
     }
 }
 
-impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<VC>>
-    for ProtoGalaxyKey<A, VC>
-{
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC>, IU<VC>> for ProtoGalaxyKey<A, VC> {
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
@@ -241,13 +238,18 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         if !(N + 1).is_power_of_two() {
             return Err(Error::Unsupported("N + 1 must be a power of two".into()));
         }
-        let ck = VC::generate_key(&mut rng, ck_len)?;
+        let ck = VC::generate_key(ck_len, &mut rng)?;
         Ok(ck)
     }
 
     fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
+        if ck.max_scalars_len() < r1cs.n_witnesses() {
+            return Err(Error::InvalidPublicParameters(
+                "The commitment key is too short for the R1CS instance".into(),
+            ));
+        }
         Ok(ProtoGalaxyKey { arith: r1cs, ck })
     }
 
@@ -266,7 +268,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
         let r1cs = &pk.arith;
-        let d = r1cs.degree();
+        let d = r1cs.config().degree();
         let t = r1cs.log_constraints();
 
         transcript.add(&t);
@@ -279,7 +281,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         let delta = transcript.challenge_field_element();
         let deltas = delta.repeated_squares(t);
 
-        let mut eval = r1cs.eval_assignments((VC::Scalar::one(), &U.x, &W.w).into())?;
+        let mut eval = r1cs.eval_relation(&W.w, &U.x)?;
         eval.resize(1 << t, VC::Scalar::default());
 
         // F(X)
@@ -376,7 +378,9 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         let g_poly = Evaluations::from_vec_and_domain(g_evals, G).interpolate();
         // Compute K(X) = (G(X) - F(alpha)*L_0(X)) / Z(X)
         let (mut k_poly, r) = g_poly.divide_by_vanishing_poly(H);
-        assert!(r.is_zero());
+        if !r.is_zero() {
+            return Err(Error::IndivisibleByVanishingPoly);
+        }
 
         k_poly.coeffs.resize(d * N + 1, VC::Scalar::default());
         transcript.add(&k_poly.coeffs);
@@ -492,13 +496,18 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         if !(N + 1).is_power_of_two() {
             return Err(Error::Unsupported("N + 1 must be a power of two".into()));
         }
-        let ck = VC::generate_key(&mut rng, ck_len)?;
+        let ck = VC::generate_key(ck_len, &mut rng)?;
         Ok(ck)
     }
 
     fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
+        if ck.max_scalars_len() < r1cs.n_witnesses() {
+            return Err(Error::InvalidPublicParameters(
+                "The commitment key is too short for the R1CS instance".into(),
+            ));
+        }
         Ok(ProtoGalaxyKey { arith: r1cs, ck })
     }
 
@@ -517,7 +526,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
         let r1cs = &pk.arith;
-        let d = r1cs.degree();
+        let d = r1cs.config().degree();
         let t = r1cs.log_constraints();
 
         let mut phis = [VC::Commitment::default(); N];
@@ -539,7 +548,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         let delta = transcript.challenge_field_element();
         let deltas = delta.repeated_squares(t);
 
-        let mut eval = r1cs.eval_assignments((VC::Scalar::one(), &U.x, &W.w).into())?;
+        let mut eval = r1cs.eval_relation(&W.w, &U.x)?;
         eval.resize(1 << t, VC::Scalar::default());
 
         // F(X)
@@ -636,7 +645,9 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         let g_poly = Evaluations::from_vec_and_domain(g_evals, G).interpolate();
         // Compute K(X) = (G(X) - F(alpha)*L_0(X)) / Z(X)
         let (mut k_poly, r) = g_poly.divide_by_vanishing_poly(H);
-        assert!(r.is_zero());
+        if !r.is_zero() {
+            return Err(Error::IndivisibleByVanishingPoly);
+        }
 
         k_poly.coeffs.resize(d * N + 1, VC::Scalar::default());
         transcript.add(&k_poly.coeffs);
@@ -742,7 +753,7 @@ fn calc_f_from_btree<F: Field>(fw: &[F], betas: &[F], deltas: &[F]) -> DensePoly
             })
             .collect();
     }
-    layer.pop().unwrap()
+    layer.swap_remove(0)
 }
 
 #[derive(Clone)]

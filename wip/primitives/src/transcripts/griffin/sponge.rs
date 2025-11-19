@@ -184,6 +184,7 @@ impl<F: PrimeField> GriffinSpongeVar<F> {
 
 impl<F: PrimeField> Transcript<F> for GriffinSponge<F> {
     type Config = Arc<GriffinParams<F>>;
+    type Var = GriffinSpongeVar<F>;
 
     fn new(parameters: &Arc<GriffinParams<F>>) -> Self {
         let state = vec![F::zero(); parameters.rate + parameters.capacity];

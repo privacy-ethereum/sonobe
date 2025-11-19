@@ -10,7 +10,7 @@ use crate::{
         field::emulated::{EmulatedFieldVar, IntVarInner},
         group::emulated::EmulatedAffineVar,
     },
-    commitments::{GroupBasedVectorCommitment, VectorCommitmentGadget},
+    commitments::{CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentGadget},
     traits::{SonobeCurve, CF1, CF2},
     utils::null::Null,
 };
@@ -20,14 +20,49 @@ pub struct Pedersen<C: SonobeCurve, const H: bool> {
     _c: PhantomData<C>,
 }
 
-impl<C: SonobeCurve, const H: bool> Pedersen<C, H> {
-    fn msm(g: &[C::Affine], v: &[C::ScalarField]) -> Result<C, Error> {
-        if g.len() < v.len() {
-            return Err(Error::MessageTooLong(g.len(), v.len()));
+#[derive(Clone)]
+pub struct PedersenKey<C: SonobeCurve, const H: bool> {
+    pub g: Vec<C::Affine>,
+    pub h: C,
+}
+
+impl<C: SonobeCurve, const H: bool> CommitmentKey for PedersenKey<C, H> {
+    fn max_scalars_len(&self) -> usize {
+        self.g.len()
+    }
+}
+
+impl<C: SonobeCurve, const H: bool> PedersenKey<C, H> {
+    fn new(len: usize, mut rng: impl RngCore) -> Self {
+        let generators = repeat_with(|| C::rand(&mut rng))
+            .take(len.next_power_of_two())
+            .collect::<Vec<_>>();
+        Self {
+            g: C::normalize_batch(&generators),
+            h: if H { C::rand(&mut rng) } else { C::zero() },
+        }
+    }
+}
+
+impl<C: SonobeCurve> PedersenKey<C, true> {
+    fn commit(&self, v: &[C::ScalarField], r: &C::ScalarField) -> Result<C, Error> {
+        if self.g.len() < v.len() {
+            return Err(Error::MessageTooLong(self.g.len(), v.len()));
+        }
+        // <g, v> + h * r
+        // use msm_unchecked because we already ensured at the if that generators are long enough
+        Ok(C::msm_unchecked(&self.g, v) + self.h.mul(r))
+    }
+}
+
+impl<C: SonobeCurve> PedersenKey<C, false> {
+    fn commit(&self, v: &[C::ScalarField]) -> Result<C, Error> {
+        if self.g.len() < v.len() {
+            return Err(Error::MessageTooLong(self.g.len(), v.len()));
         }
         // <g, v>
         // use msm_unchecked because we already ensured at the if that generators are long enough
-        Ok(C::msm_unchecked(g, v))
+        Ok(C::msm_unchecked(&self.g, v))
     }
 }
 
@@ -36,24 +71,21 @@ impl<C: SonobeCurve> VectorCommitment for Pedersen<C, false> {
 
     type Gadget = PedersenGadget<C, false>;
 
-    type Key = Vec<C::Affine>;
+    type Key = PedersenKey<C, false>;
     type Scalar = C::ScalarField;
     type Commitment = C;
     type Randomness = Null;
 
-    fn generate_key(mut rng: impl RngCore, len: usize) -> Result<Self::Key, Error> {
-        let generators = repeat_with(|| C::rand(&mut rng))
-            .take(len.next_power_of_two())
-            .collect::<Vec<_>>();
-        Ok(C::normalize_batch(&generators))
+    fn generate_key(len: usize, rng: impl RngCore) -> Result<Self::Key, Error> {
+        Ok(PedersenKey::new(len, rng))
     }
 
     fn commit(
-        g: &Self::Key,
+        ck: &Self::Key,
         v: &[Self::Scalar],
         _rng: impl RngCore,
     ) -> Result<(Self::Commitment, Self::Randomness), Error> {
-        Ok((Self::msm(g, v)?, Null))
+        Ok((ck.commit(v)?, Null))
     }
 
     fn open(
@@ -61,8 +93,10 @@ impl<C: SonobeCurve> VectorCommitment for Pedersen<C, false> {
         v: &[Self::Scalar],
         _r: &Self::Randomness,
         cm: &Self::Commitment,
-    ) -> Result<bool, Error> {
-        Ok(&Self::msm(ck, v)? == cm)
+    ) -> Result<(), Error> {
+        (&ck.commit(v)? == cm)
+            .then_some(())
+            .ok_or(Error::CommitmentVerificationFail)
     }
 }
 
@@ -71,34 +105,33 @@ impl<C: SonobeCurve> VectorCommitment for Pedersen<C, true> {
 
     type Gadget = PedersenGadget<C, true>;
 
-    type Key = (Vec<C::Affine>, C);
+    type Key = PedersenKey<C, true>;
     type Scalar = C::ScalarField;
     type Commitment = C;
     type Randomness = C::ScalarField;
 
-    fn generate_key(mut rng: impl RngCore, len: usize) -> Result<Self::Key, Error> {
-        Ok((
-            Pedersen::<C, false>::generate_key(&mut rng, len)?,
-            C::rand(&mut rng),
-        ))
+    fn generate_key(len: usize, rng: impl RngCore) -> Result<Self::Key, Error> {
+        Ok(PedersenKey::new(len, rng))
     }
 
     fn commit(
-        (g, h): &Self::Key,
+        ck: &Self::Key,
         v: &[Self::Scalar],
         mut rng: impl RngCore,
     ) -> Result<(Self::Commitment, Self::Randomness), Error> {
         let r = C::ScalarField::rand(&mut rng);
-        Ok((Self::msm(g, v)? + h.mul(r), r))
+        Ok((ck.commit(v, &r)?, r))
     }
 
     fn open(
-        (g, h): &Self::Key,
+        ck: &Self::Key,
         v: &[Self::Scalar],
         r: &Self::Randomness,
         cm: &Self::Commitment,
-    ) -> Result<bool, Error> {
-        Ok(&(Self::msm(g, v)? + h.mul(r)) == cm)
+    ) -> Result<(), Error> {
+        (&(ck.commit(v, r)?) == cm)
+            .then_some(())
+            .ok_or(Error::CommitmentVerificationFail)
     }
 }
 

@@ -7,7 +7,7 @@ use ark_r1cs_std::{
     GR1CSVar,
 };
 use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
-use ark_std::{marker::PhantomData, sync::Arc};
+use ark_std::marker::PhantomData;
 use sonobe_fs::{
     FoldingInstanceVar, FoldingSchemeFullGadget, FoldingSchemePartialGadget,
     GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary,
@@ -18,10 +18,7 @@ use sonobe_primitives::{
     circuits::FCircuit,
     commitments::VectorCommitment,
     traits::{Dummy, SonobeCurve, CF2},
-    transcripts::{
-        griffin::{sponge::GriffinSpongeVar, GriffinParams},
-        TranscriptVar,
-    },
+    transcripts::{Transcript, TranscriptVar},
 };
 
 use crate::compilers::cyclefold::FoldingSchemeCycleFoldExt;
@@ -31,14 +28,15 @@ pub struct AugmentedCircuit<
     FS1: GroupBasedFoldingSchemePrimary<1, 1>,
     FS2: GroupBasedFoldingSchemeSecondary<1, 1>,
     FC: FCircuit,
+    T: Transcript<FC::Field>,
 > {
-    pub griffin_config: Arc<GriffinParams<FC::Field>>,
+    pub hash_config: T::Config,
     pub arith1_config: &'a <FS1::Arith as Arith>::Config,
     pub arith2_config: &'a <FS2::Arith as Arith>::Config,
     pub step_circuit: &'a FC,
 }
 
-impl<'a, FS1, FS2, FC> AugmentedCircuit<'a, FS1, FS2, FC>
+impl<'a, FS1, FS2, FC, T> AugmentedCircuit<'a, FS1, FS2, FC, T>
 where
     FS1: FoldingSchemeCycleFoldExt<
         1,
@@ -57,6 +55,7 @@ where
         >,
     >,
     FC: FCircuit<Field = <FS1::VC as VectorCommitment>::Scalar>,
+    T: Transcript<FC::Field>,
 {
     pub fn compute_next_state(
         &self,
@@ -73,8 +72,8 @@ where
         cf_us: Vec<FS2::IU>,
         cf_proofs: Vec<FS2::Proof>,
     ) -> Result<Vec<FC::Field>, SynthesisError> {
-        let hash = GriffinSpongeVar::new_with_pp_hash(
-            &self.griffin_config,
+        let hash = T::Var::new_with_pp_hash(
+            &self.hash_config,
             &FpVar::new_witness(cs.clone(), || Ok(pp_hash))?,
         )?;
         let sponge = hash.separate_domain("sponge".as_ref())?;
@@ -154,7 +153,7 @@ where
     }
 }
 
-impl<'a, FS1, FS2, FC> ConstraintSynthesizer<FC::Field> for AugmentedCircuit<'a, FS1, FS2, FC>
+impl<'a, FS1, FS2, FC, T> ConstraintSynthesizer<FC::Field> for AugmentedCircuit<'a, FS1, FS2, FC, T>
 where
     FS1: FoldingSchemeCycleFoldExt<
         1,
@@ -171,6 +170,7 @@ where
         VC: VectorCommitment<Commitment: SonobeCurve<BaseField = FC::Field>>,
     >,
     FC: FCircuit<Field = <FS1::VC as VectorCommitment>::Scalar>,
+    T: Transcript<FC::Field>,
 {
     fn generate_constraints(
         self,
@@ -202,38 +202,6 @@ where
 /// randomness.
 pub trait CycleFoldConfig: Sized + Default {
     type C: SonobeCurve;
-
-    /// `N_INPUT_POINTS` specifies the number of input points that are folded in
-    /// [`CycleFoldCircuit`] via random linear combinations.
-    const N_INPUT_POINTS: usize;
-    const N_INPUT_RANDOMNESS_BITS: usize;
-    /// `FIELD_CAPACITY` is the maximum number of bits that can be stored in a
-    /// field element.
-    ///
-    /// By default, `FIELD_CAPACITY` is set to `MODULUS_BIT_SIZE - 1`.
-    ///
-    /// Given a randomness with `N_INPUT_RANDOMNESS_BITS` bits, we need
-    /// `N_INPUT_RANDOMNESS_BITS / FIELD_CAPACITY` field elements to pack it
-    /// *compactly* in-circuit.
-    const FIELD_CAPACITY: usize = CF2::<Self::C>::MODULUS_BIT_SIZE as usize - 1;
-
-    /// Public inputs length for the [`CycleFoldCircuit`], which depends on the
-    /// above constants defined by the concrete folding scheme. For example:
-    /// * In Nova, this is `|r| + |p_1| + |p_2| + |P|`
-    /// * In HyperNova, this is `|r| + |p_i| * n_points + |P|`.
-    /// * In ProtoGalaxy, this is `|[..., r_i, ...]| + |p_i| * n_points + |P|`.
-    ///
-    /// As explained above, `|r|` (i.e., the length of a single randomness) is
-    /// `N_INPUT_RANDOMNESS_BITS / FIELD_CAPACITY`.
-    /// The length of a point `p_i` when treated as public inputs is 2, as we
-    /// only need the `x` and `y` coordinates of the point.
-    ///
-    /// Thus, `IO_LEN` is:
-    /// `N_INPUT_RANDOMNESS_BITS / FIELD_CAPACITY + 2 * (N_INPUT_POINTS + 1)`.
-    const IO_LEN: usize = {
-        Self::N_INPUT_RANDOMNESS_BITS.div_ceil(Self::FIELD_CAPACITY)
-            + 2 * (Self::N_INPUT_POINTS + 1)
-    };
 
     /// `mark_point_as_public` marks a point as public.
     ///

@@ -11,11 +11,10 @@ use rayon::prelude::*;
 use sonobe_primitives::{
     algebra::ops::poly::MLEHelper,
     arithmetizations::{
-        r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
-        Arith, ArithConfig, ArithRelation,
+        Arith, ArithConfig, ArithRelation, r1cs::{R1CS, RelaxedInstance, RelaxedWitness}
     },
     circuits::AssignmentsOwned,
-    commitments::{GroupBasedVectorCommitment, VectorCommitment},
+    commitments::{CommitmentKey, GroupBasedVectorCommitment, VectorCommitment},
     relations::{Relation, WitnessInstanceSampler},
     traits::Dummy,
     transcripts::Transcript,
@@ -67,11 +66,13 @@ where
             &RelaxedWitness { w: &w.w, e: &w.e },
             &RelaxedInstance { x: &u.x, u: &u.u },
         )?;
-        // TODO: handle the error properly
-        assert!(VC::open(&self.ck, &w.w, &w.r_w, &u.cm_w)?);
+        VC::open(&self.ck, &w.w, &w.r_w, &u.cm_w)?;
 
-        assert_eq!(MLE::from_evaluations(&w.e).evaluate(&u.r_e), u.v);
-        Ok(())
+        (MLE::from_evaluations(&w.e).evaluate(&u.r_e) == u.v)
+            .then_some(())
+            .ok_or_else(|| {
+                Error::UnsatisfiedRelation("Error term does not evaluate to claimed value".into())
+            })
     }
 }
 
@@ -177,13 +178,18 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
     type Proof = (MovaProof<VC::Scalar>, VC::Commitment);
 
     fn preprocess(n_witnesses: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
-        let ck = VC::generate_key(&mut rng, n_witnesses)?;
+        let ck = VC::generate_key(n_witnesses, &mut rng)?;
         Ok(ck)
     }
 
     fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
+        if ck.max_scalars_len() < r1cs.n_witnesses() {
+            return Err(Error::InvalidPublicParameters(
+                "The commitment key is too short for the R1CS instance".into(),
+            ));
+        }
         Ok(MovaKey { arith: r1cs, ck })
     }
 

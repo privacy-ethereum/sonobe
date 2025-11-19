@@ -19,9 +19,7 @@ pub enum Error {
     SynthesisError(#[from] SynthesisError),
 }
 
-pub trait ArithConfig: Clone + Debug + PartialEq {
-    fn empty() -> Self;
-
+pub trait ArithConfig: Clone + Debug + Default + PartialEq {
     /// Returns the degree of the constraint system
     fn degree(&self) -> usize;
 
@@ -47,41 +45,45 @@ pub trait ArithConfig: Clone + Debug + PartialEq {
 
 /// [`Arith`] is a trait about constraint systems (R1CS, CCS, etc.), where we
 /// define methods for getting information about the constraint system.
-pub trait Arith: Clone {
+pub trait Arith: Clone + Default {
     type Config: ArithConfig;
 
     fn config(&self) -> &Self::Config;
 
     fn config_mut(&mut self) -> &mut Self::Config;
 
-    fn empty() -> Self;
-
     /// Returns the degree of the constraint system
+    #[inline]
     fn degree(&self) -> usize {
         self.config().degree()
     }
 
     /// Returns the number of constraints in the constraint system
+    #[inline]
     fn n_constraints(&self) -> usize {
         self.config().n_constraints()
     }
 
+    #[inline]
     fn log_constraints(&self) -> usize {
         self.config().log_constraints()
     }
 
     /// Returns the number of variables in the constraint system
+    #[inline]
     fn n_variables(&self) -> usize {
         self.config().n_variables()
     }
 
     /// Returns the number of public inputs / public IO / instances / statements
     /// in the constraint system
+    #[inline]
     fn n_public_inputs(&self) -> usize {
         self.config().n_public_inputs()
     }
 
     /// Returns the number of witnesses / secret inputs in the constraint system
+    #[inline]
     fn n_witnesses(&self) -> usize {
         self.config().n_witnesses()
     }

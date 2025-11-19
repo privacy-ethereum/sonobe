@@ -125,14 +125,15 @@ impl<Base: SonobeField, Target: SonobeField, const ALIGNED: bool> GR1CSVar<Base>
     }
 
     fn value(&self) -> Result<Self::Value, SynthesisError> {
-        self.limbs.value().map(compose).map(|v| {
-            let (sign, abs) = v.into_parts();
-            assert!(abs < Target::MODULUS.into());
-            match sign {
-                Sign::Plus | Sign::NoSign => Target::from(abs),
-                Sign::Minus => Target::zero() - Target::from(abs),
-            }
-        })
+        let v = compose(self.limbs.value()?);
+        let (sign, abs) = v.into_parts();
+        if abs >= Target::MODULUS.into() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        match sign {
+            Sign::Plus | Sign::NoSign => Ok(Target::from(abs)),
+            Sign::Minus => Ok(Target::zero() - Target::from(abs)),
+        }
     }
 }
 
@@ -684,7 +685,9 @@ impl<F: PrimeField, Cfg: Clone> CondSelectGadget<F> for IntVarInner<F, Cfg, true
 impl<F: PrimeField, Cfg> ToBitsGadget<F> for IntVarInner<F, Cfg, true> {
     fn to_bits_le(&self) -> Result<Vec<Boolean<F>>, SynthesisError> {
         for bound in &self.bounds {
-            assert!(bound.0 >= BigInt::zero());
+            if bound.0 < BigInt::zero() {
+                return Err(SynthesisError::Unsatisfiable);
+            }
         }
         Ok(self
             .limbs
@@ -946,6 +949,8 @@ impl<F: SonobeField, G: SonobeField, Cfg> AllocVar<G, F> for IntVarInner<F, Cfg,
 
 impl<F: SonobeField, Cfg> IntVarInner<F, Cfg, true> {
     pub fn constant(x: BigInt) -> Self {
+        // `unwrap` below is safe because we are allocating a constant value,
+        // which is guaranteed to succeed.
         Self::new_constant(ConstraintSystemRef::None, (x.clone(), Bound(x.clone(), x))).unwrap()
     }
 }

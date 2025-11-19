@@ -49,7 +49,6 @@ pub struct Assignments<F, V> {
 }
 
 pub type AssignmentsOwned<F> = Assignments<F, Vec<F>>;
-pub type AssignmentsRef<'a, F> = Assignments<F, &'a [F]>;
 
 impl<F, V> From<(F, V, V)> for Assignments<F, V> {
     fn from((u, x, w): (F, V, V)) -> Self {
@@ -162,7 +161,7 @@ pub trait ConstraintSystemExt<F> {
     fn assignments(&self) -> Result<Assignments<F, Vec<F>>, SynthesisError>;
 }
 
-impl<F: Field> ConstraintSystemExt<F> for ConstraintSystem<F> {
+impl<F: Field> ConstraintSystemExt<F> for ConstraintSystemRef<F> {
     fn assignments(&self) -> Result<Assignments<F, Vec<F>>, SynthesisError> {
         let witness = self.witness_assignment()?.to_vec();
         // skip the first element which is '1'

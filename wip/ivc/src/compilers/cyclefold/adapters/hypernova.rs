@@ -37,7 +37,7 @@ impl<C: SonobeCurve, const M: usize, const N: usize, const CHALLENGE_BITS: usize
     fn default() -> Self {
         Self {
             r: vec![false; CHALLENGE_BITS],
-            points: vec![C::zero(); Self::N_INPUT_POINTS],
+            points: vec![C::zero(); M + N],
         }
     }
 }
@@ -46,9 +46,6 @@ impl<C: SonobeCurve, const M: usize, const N: usize, const CHALLENGE_BITS: usize
     for HyperNovaCycleFoldConfig<C, M, N, CHALLENGE_BITS>
 {
     type C = C;
-
-    const N_INPUT_RANDOMNESS_BITS: usize = CHALLENGE_BITS;
-    const N_INPUT_POINTS: usize = M + N;
 
     fn verify_point_rlc(
         &self,
@@ -65,7 +62,7 @@ impl<C: SonobeCurve, const M: usize, const N: usize, const CHALLENGE_BITS: usize
         }
 
         let mut p_folded = C::Var::zero();
-        for i in (1..Self::N_INPUT_POINTS).rev() {
+        for i in (1..M + N).rev() {
             p_folded += &points[i];
             p_folded = p_folded.scalar_mul_le(rho_bits.iter())?;
         }
@@ -129,11 +126,11 @@ impl<
     }
 }
 
-pub type HyperNovaOvaIVC<VC1, VC2, V = R1CSConfig, const CHALLENGE_BITS: usize = 128> =
-    CycleFoldBasedIVC<HyperNova<VC1, V, CHALLENGE_BITS>, CycleFoldOva<VC2, CHALLENGE_BITS>>;
+pub type HyperNovaOvaIVC<VC1, VC2, T, V = R1CSConfig, const CHALLENGE_BITS: usize = 128> =
+    CycleFoldBasedIVC<HyperNova<VC1, V, CHALLENGE_BITS>, CycleFoldOva<VC2, CHALLENGE_BITS>, T>;
 
-pub type HyperNovaNovaIVC<VC1, VC2, V = R1CSConfig, const CHALLENGE_BITS: usize = 128> =
-    CycleFoldBasedIVC<HyperNova<VC1, V, CHALLENGE_BITS>, CycleFoldNova<VC2, CHALLENGE_BITS>>;
+pub type HyperNovaNovaIVC<VC1, VC2, T, V = R1CSConfig, const CHALLENGE_BITS: usize = 128> =
+    CycleFoldBasedIVC<HyperNova<VC1, V, CHALLENGE_BITS>, CycleFoldNova<VC2, CHALLENGE_BITS>, T>;
 
 #[cfg(test)]
 mod tests {
@@ -142,8 +139,9 @@ mod tests {
     use ark_grumpkin::Projective as C2;
     use ark_std::{error::Error, sync::Arc, test_rng};
     use sonobe_primitives::{
-        circuits::utils::CircuitForTest, commitments::pedersen::Pedersen,
-        transcripts::griffin::GriffinParams,
+        circuits::utils::CircuitForTest,
+        commitments::pedersen::Pedersen,
+        transcripts::griffin::{sponge::GriffinSponge, GriffinParams},
     };
 
     use super::*;
@@ -153,7 +151,7 @@ mod tests {
     fn test_hypernova_ova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
 
-        test_ivc::<HyperNovaOvaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
+        test_ivc::<HyperNovaOvaIVC<Pedersen<C1, true>, Pedersen<C2, true>, GriffinSponge<_>>, _>(
             (65536, (2048, 2048), Arc::new(GriffinParams::new(16, 5, 9))),
             CircuitForTest {
                 x: Fr::rand(&mut rng),
@@ -169,7 +167,7 @@ mod tests {
     fn test_hypernova_nova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
 
-        test_ivc::<HyperNovaNovaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
+        test_ivc::<HyperNovaNovaIVC<Pedersen<C1, true>, Pedersen<C2, true>, GriffinSponge<_>>, _>(
             (65536, 2048, Arc::new(GriffinParams::new(16, 5, 9))),
             CircuitForTest {
                 x: Fr::rand(&mut rng),

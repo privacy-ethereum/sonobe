@@ -14,7 +14,7 @@ use crate::{
 
 pub mod circuits;
 
-pub trait CCSVariant: Clone + Debug + PartialEq + Sync {
+pub trait CCSVariant: Clone + Debug + PartialEq + Default + Sync {
     fn n_matrices() -> usize;
 
     fn degree() -> usize;
@@ -25,7 +25,7 @@ pub trait CCSVariant: Clone + Debug + PartialEq + Sync {
 }
 
 #[allow(non_snake_case)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct CCSConfig<V: CCSVariant> {
     _v: PhantomData<V>,
     /// m: number of rows in M_i (such that M_i \in F^{m, n})
@@ -37,16 +37,6 @@ pub struct CCSConfig<V: CCSVariant> {
 }
 
 impl<V: CCSVariant> ArithConfig for CCSConfig<V> {
-    #[inline]
-    fn empty() -> Self {
-        Self {
-            _v: PhantomData,
-            m: 0,
-            n: 0,
-            l: 0,
-        }
-    }
-
     #[inline]
     fn degree(&self) -> usize {
         V::degree()
@@ -182,16 +172,18 @@ impl<F: Field, V: CCSVariant> CCS<F, V> {
     }
 }
 
-impl<F: Field, V: CCSVariant> Arith for CCS<F, V> {
-    type Config = CCSConfig<V>;
-
+impl<F: Field, V: CCSVariant> Default for CCS<F, V> {
     #[inline]
-    fn empty() -> Self {
+    fn default() -> Self {
         Self {
-            cfg: CCSConfig::empty(),
+            cfg: CCSConfig::default(),
             M: vec![vec![]; V::n_matrices()],
         }
     }
+}
+
+impl<F: Field, V: CCSVariant> Arith for CCS<F, V> {
+    type Config = CCSConfig<V>;
 
     #[inline]
     fn config(&self) -> &Self::Config {

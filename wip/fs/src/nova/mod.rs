@@ -20,7 +20,9 @@ use sonobe_primitives::{
         Arith, ArithRelation,
     },
     circuits::AssignmentsOwned,
-    commitments::{GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget},
+    commitments::{
+        CommitmentKey, GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget,
+    },
     relations::{Relation, WitnessInstanceSampler},
     traits::{SonobeField, CF2},
     transcripts::{Transcript, TranscriptVar},
@@ -72,7 +74,7 @@ impl<A: Arith, VC: VectorCommitment> DeciderKey for NovaKey<A, VC> {
 impl<A, VC> Relation<RW<VC>, RU<VC>> for NovaKey<A, VC>
 where
     A: for<'a> ArithRelation<RelaxedWitness<&'a [VC::Scalar]>, RelaxedInstance<&'a [VC::Scalar]>>,
-    VC: VectorCommitment<Scalar: Field>,
+    VC: VectorCommitment,
 {
     type Error = Error;
 
@@ -81,9 +83,8 @@ where
             &RelaxedWitness { w: &w.w, e: &w.e },
             &RelaxedInstance { x: &u.x, u: &u.u },
         )?;
-        // TODO: handle the error properly
-        assert!(VC::open(&self.ck, &w.w, &w.r_w, &u.cm_w)?);
-        assert!(VC::open(&self.ck, &w.e, &w.r_e, &u.cm_e)?);
+        VC::open(&self.ck, &w.w, &w.r_w, &u.cm_w)?;
+        VC::open(&self.ck, &w.e, &w.r_e, &u.cm_e)?;
         Ok(())
     }
 }
@@ -97,7 +98,7 @@ where
 
     fn check_relation(&self, w: &IW<VC>, u: &IU<VC>) -> Result<(), Self::Error> {
         self.arith.check_relation(&w.w, &u.x)?;
-        assert!(VC::open(&self.ck, &w.w, &w.r_w, &u.cm_w)?);
+        VC::open(&self.ck, &w.w, &w.r_w, &u.cm_w)?;
         Ok(())
     }
 }
@@ -115,9 +116,7 @@ where
     }
 }
 
-impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<VC>>
-    for NovaKey<A, VC>
-{
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC>, IU<VC>> for NovaKey<A, VC> {
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
@@ -150,7 +149,7 @@ where
         RelaxedInstance<&'a [VC::Scalar]>,
         Evaluation = Vec<VC::Scalar>,
     >,
-    VC: VectorCommitment<Scalar: Field>,
+    VC: VectorCommitment,
 {
     type Source = ();
     type Error = Error;
@@ -208,13 +207,18 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
     type Proof = VC::Commitment;
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
-        let ck = VC::generate_key(&mut rng, ck_len)?;
+        let ck = VC::generate_key(ck_len, &mut rng)?;
         Ok(ck)
     }
 
     fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
+        if ck.max_scalars_len() < r1cs.n_constraints().max(r1cs.n_witnesses()) {
+            return Err(Error::InvalidPublicParameters(
+                "The commitment key is too short for the R1CS instance".into(),
+            ));
+        }
         Ok(NovaKey { arith: r1cs, ck })
     }
 
@@ -339,13 +343,18 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
     type Proof = (VC::Commitment, VC::Commitment);
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
-        let ck = VC::generate_key(&mut rng, ck_len)?;
+        let ck = VC::generate_key(ck_len, &mut rng)?;
         Ok(ck)
     }
 
     fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let r1cs = Arc::new(r1cs);
+        if ck.max_scalars_len() < r1cs.n_constraints().max(r1cs.n_witnesses()) {
+            return Err(Error::InvalidPublicParameters(
+                "The commitment key is too short for the R1CS instance".into(),
+            ));
+        }
         Ok(NovaKey { arith: r1cs, ck })
     }
 

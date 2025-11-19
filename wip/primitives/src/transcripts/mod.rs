@@ -7,17 +7,15 @@ pub mod absorbable;
 pub mod griffin;
 pub mod poseidon;
 
-pub trait Transcript<F: PrimeField> {
-    type Config;
+pub trait Transcript<F: PrimeField>: Clone {
+    type Config: Clone;
+    type Var: TranscriptVar<F, Native = Self>;
 
     fn new(config: &Self::Config) -> Self;
 
     /// `new_with_pp_hash` creates a new transcript / sponge with the given
     /// hash of the public parameters.
-    fn new_with_pp_hash(config: &Self::Config, pp_hash: F) -> Self
-    where
-        Self: Sized,
-    {
+    fn new_with_pp_hash(config: &Self::Config, pp_hash: F) -> Self {
         let mut sponge = Self::new(config);
         sponge.add_field_elements(&[pp_hash]);
         sponge
@@ -41,10 +39,7 @@ pub trait Transcript<F: PrimeField> {
     fn get_field_elements(&mut self, num_elements: usize) -> Vec<F>;
 
     /// Creates a new sponge with applied domain separation.
-    fn separate_domain(&self, domain: &[u8]) -> Self
-    where
-        Self: Clone,
-    {
+    fn separate_domain(&self, domain: &[u8]) -> Self {
         let mut new_sponge = self.clone();
 
         let mut input = domain.len().to_le_bytes().to_vec();
@@ -85,22 +80,17 @@ pub trait Transcript<F: PrimeField> {
     }
 }
 
-pub trait TranscriptVar<F: PrimeField> {
-    type Native: Transcript<F>;
+pub trait TranscriptVar<F: PrimeField>: Clone {
+    type Native: Transcript<F, Var = Self>;
 
-    fn new(config: &<Self::Native as Transcript<F>>::Config) -> Self
-    where
-        Self: Sized;
+    fn new(config: &<Self::Native as Transcript<F>>::Config) -> Self;
 
     /// `new_with_pp_hash` creates a new transcript / sponge with the given
     /// hash of the public parameters.
     fn new_with_pp_hash(
         config: &<Self::Native as Transcript<F>>::Config,
         pp_hash: &FpVar<F>,
-    ) -> Result<Self, SynthesisError>
-    where
-        Self: Sized,
-    {
+    ) -> Result<Self, SynthesisError> {
         let mut sponge = Self::new(config);
         sponge.add(&pp_hash)?;
         Ok(sponge)
@@ -115,16 +105,13 @@ pub trait TranscriptVar<F: PrimeField> {
     fn get_bits(&mut self, num_bits: usize) -> Result<Vec<Boolean<F>>, SynthesisError>;
 
     fn get_field_element(&mut self) -> Result<FpVar<F>, SynthesisError> {
-        Ok(self.get_field_elements(1)?.pop().unwrap())
+        Ok(self.get_field_elements(1)?.swap_remove(0))
     }
 
     fn get_field_elements(&mut self, num_elements: usize) -> Result<Vec<FpVar<F>>, SynthesisError>;
 
     /// Creates a new sponge with applied domain separation.
-    fn separate_domain(&self, domain: &[u8]) -> Result<Self, SynthesisError>
-    where
-        Self: Clone,
-    {
+    fn separate_domain(&self, domain: &[u8]) -> Result<Self, SynthesisError> {
         let mut new_sponge = self.clone();
 
         let mut input = domain.len().to_le_bytes().to_vec();
@@ -143,7 +130,7 @@ pub trait TranscriptVar<F: PrimeField> {
     fn challenge_field_element(&mut self) -> Result<FpVar<F>, SynthesisError> {
         let mut c = self.get_field_elements(1)?;
         self.add(&c[0])?;
-        Ok(c.pop().unwrap())
+        Ok(c.swap_remove(0))
     }
 
     fn challenge_bits(&mut self, nbits: usize) -> Result<Vec<Boolean<F>>, SynthesisError> {

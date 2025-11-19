@@ -32,7 +32,7 @@ impl<C: SonobeCurve, const CHALLENGE_BITS: usize> Default
     fn default() -> Self {
         Self {
             r: vec![false; CHALLENGE_BITS],
-            points: vec![C::zero(); Self::N_INPUT_POINTS],
+            points: vec![C::zero(); 2],
         }
     }
 }
@@ -41,9 +41,6 @@ impl<C: SonobeCurve, const CHALLENGE_BITS: usize> CycleFoldConfig
     for OvaCycleFoldConfig<C, CHALLENGE_BITS>
 {
     type C = C;
-
-    const N_INPUT_RANDOMNESS_BITS: usize = CHALLENGE_BITS;
-    const N_INPUT_POINTS: usize = 2;
 
     fn verify_point_rlc(
         &self,
@@ -104,11 +101,11 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
     }
 }
 
-pub type OvaOvaIVC<VC1, VC2, const CHALLENGE_BITS: usize = 128> =
-    CycleFoldBasedIVC<Ova<VC1, CHALLENGE_BITS>, CycleFoldOva<VC2, CHALLENGE_BITS>>;
+pub type OvaOvaIVC<VC1, VC2, T, const CHALLENGE_BITS: usize = 128> =
+    CycleFoldBasedIVC<Ova<VC1, CHALLENGE_BITS>, CycleFoldOva<VC2, CHALLENGE_BITS>, T>;
 
-pub type OvaNovaIVC<VC1, VC2, const CHALLENGE_BITS: usize = 128> =
-    CycleFoldBasedIVC<Ova<VC1, CHALLENGE_BITS>, CycleFoldNova<VC2, CHALLENGE_BITS>>;
+pub type OvaNovaIVC<VC1, VC2, T, const CHALLENGE_BITS: usize = 128> =
+    CycleFoldBasedIVC<Ova<VC1, CHALLENGE_BITS>, CycleFoldNova<VC2, CHALLENGE_BITS>, T>;
 
 #[cfg(test)]
 mod tests {
@@ -118,7 +115,7 @@ mod tests {
     use ark_std::{error::Error, sync::Arc, test_rng};
     use sonobe_primitives::{
         circuits::utils::CircuitForTest, commitments::pedersen::Pedersen,
-        transcripts::griffin::GriffinParams,
+        transcripts::griffin::{GriffinParams, sponge::GriffinSponge},
     };
 
     use super::*;
@@ -128,7 +125,7 @@ mod tests {
     fn test_ova_ova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
 
-        test_ivc::<OvaOvaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
+        test_ivc::<OvaOvaIVC<Pedersen<C1, true>, Pedersen<C2, true>, GriffinSponge<_>>, _>(
             (
                 (65536, 65536),
                 (2048, 2048),
@@ -148,7 +145,7 @@ mod tests {
     fn test_ova_nova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
 
-        test_ivc::<OvaNovaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
+        test_ivc::<OvaNovaIVC<Pedersen<C1, true>, Pedersen<C2, true>, GriffinSponge<_>>, _>(
             ((65536, 65536), 2048, Arc::new(GriffinParams::new(16, 5, 9))),
             CircuitForTest {
                 x: Fr::rand(&mut rng),

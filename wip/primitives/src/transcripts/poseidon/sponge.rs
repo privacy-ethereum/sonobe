@@ -12,6 +12,7 @@ use crate::transcripts::{AbsorbableGadget, Transcript, TranscriptVar};
 
 impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
     type Config = PoseidonConfig<F>;
+    type Var = PoseidonSpongeVar<F>;
 
     fn new(config: &Self::Config) -> Self {
         CryptographicSponge::new(config)

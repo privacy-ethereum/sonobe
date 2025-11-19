@@ -28,8 +28,8 @@ pub struct ProtoGalaxyCycleFoldConfig<C: SonobeCurve, const N: usize> {
 impl<C: SonobeCurve, const N: usize> Default for ProtoGalaxyCycleFoldConfig<C, N> {
     fn default() -> Self {
         Self {
-            r: vec![false; CF1::<C>::MODULUS_BIT_SIZE as usize * Self::N_INPUT_POINTS],
-            points: vec![C::zero(); Self::N_INPUT_POINTS],
+            r: vec![false; CF1::<C>::MODULUS_BIT_SIZE as usize * (1 + N)],
+            points: vec![C::zero(); 1 + N],
         }
     }
 }
@@ -37,32 +37,19 @@ impl<C: SonobeCurve, const N: usize> Default for ProtoGalaxyCycleFoldConfig<C, N
 impl<C: SonobeCurve, const N: usize> CycleFoldConfig for ProtoGalaxyCycleFoldConfig<C, N> {
     type C = C;
 
-    const N_INPUT_RANDOMNESS_BITS: usize =
-        CF1::<C>::MODULUS_BIT_SIZE as usize * Self::N_INPUT_POINTS;
-    const N_INPUT_POINTS: usize = 1 + N;
-
     fn verify_point_rlc(
         &self,
         cs: ConstraintSystemRef<CF2<Self::C>>,
     ) -> Result<(), SynthesisError> {
-        let rhos = self
+        let rho_bits = self
             .r
-            .chunks(Self::FIELD_CAPACITY)
+            .chunks(CF2::<C>::MODULUS_BIT_SIZE as usize - 1)
             .map(|bits| {
                 FpVar::new_input(cs.clone(), || {
                     Ok(CF2::<C>::from(CI2::<C>::from_bits_le(bits)))
-                })
+                })?
+                .to_n_bits_le(bits.len())
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut bit_lengths =
-            vec![Self::FIELD_CAPACITY; Self::N_INPUT_RANDOMNESS_BITS / Self::FIELD_CAPACITY];
-        if !Self::N_INPUT_RANDOMNESS_BITS.is_multiple_of(Self::FIELD_CAPACITY) {
-            bit_lengths.push(Self::N_INPUT_RANDOMNESS_BITS % Self::FIELD_CAPACITY);
-        }
-        let rho_bits = rhos
-            .iter()
-            .zip(bit_lengths)
-            .map(|(rho, len)| rho.to_n_bits_le(len))
             .collect::<Result<Vec<_>, _>>()?
             .concat();
 
@@ -149,11 +136,11 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeCycleFoldExt<1
     }
 }
 
-pub type ProtoGalaxyOvaIVC<VC1, VC2, const CHALLENGE_BITS: usize = 128> =
-    CycleFoldBasedIVC<ProtoGalaxy<VC1>, CycleFoldOva<VC2, CHALLENGE_BITS>>;
+pub type ProtoGalaxyOvaIVC<VC1, VC2, T, const CHALLENGE_BITS: usize = 128> =
+    CycleFoldBasedIVC<ProtoGalaxy<VC1>, CycleFoldOva<VC2, CHALLENGE_BITS>, T>;
 
-pub type ProtoGalaxyNovaIVC<VC1, VC2, const CHALLENGE_BITS: usize = 128> =
-    CycleFoldBasedIVC<ProtoGalaxy<VC1>, CycleFoldNova<VC2, CHALLENGE_BITS>>;
+pub type ProtoGalaxyNovaIVC<VC1, VC2, T, const CHALLENGE_BITS: usize = 128> =
+    CycleFoldBasedIVC<ProtoGalaxy<VC1>, CycleFoldNova<VC2, CHALLENGE_BITS>, T>;
 
 #[cfg(test)]
 mod tests {
@@ -162,8 +149,9 @@ mod tests {
     use ark_grumpkin::Projective as C2;
     use ark_std::{error::Error, sync::Arc, test_rng};
     use sonobe_primitives::{
-        circuits::utils::CircuitForTest, commitments::pedersen::Pedersen,
-        transcripts::griffin::GriffinParams,
+        circuits::utils::CircuitForTest,
+        commitments::pedersen::Pedersen,
+        transcripts::griffin::{sponge::GriffinSponge, GriffinParams},
     };
 
     use super::*;
@@ -173,7 +161,7 @@ mod tests {
     fn test_protogalaxy_ova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
 
-        test_ivc::<ProtoGalaxyOvaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
+        test_ivc::<ProtoGalaxyOvaIVC<Pedersen<C1, true>, Pedersen<C2, true>, GriffinSponge<_>>, _>(
             (65536, (8192, 8192), Arc::new(GriffinParams::new(16, 5, 9))),
             CircuitForTest {
                 x: Fr::rand(&mut rng),
@@ -189,7 +177,7 @@ mod tests {
     fn test_protogalaxy_nova() -> Result<(), Box<dyn Error>> {
         let mut rng = test_rng();
 
-        test_ivc::<ProtoGalaxyNovaIVC<Pedersen<C1, true>, Pedersen<C2, true>>, _>(
+        test_ivc::<ProtoGalaxyNovaIVC<Pedersen<C1, true>, Pedersen<C2, true>, GriffinSponge<_>>, _>(
             (65536, 8192, Arc::new(GriffinParams::new(16, 5, 9))),
             CircuitForTest {
                 x: Fr::rand(&mut rng),

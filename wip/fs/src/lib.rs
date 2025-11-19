@@ -44,6 +44,12 @@ pub enum Error {
     Unsupported(String),
     #[error("Failed to create domain")]
     DomainCreationFailure,
+    #[error("Indivisible by vanishing polynomial")]
+    IndivisibleByVanishingPoly,
+    #[error("Unsatisfied relation: {0}")]
+    UnsatisfiedRelation(String),
+    #[error("Invalid public parameters: {0}")]
+    InvalidPublicParameters(String),
 }
 
 pub trait FoldingWitness<VC: VectorCommitment>: Debug {

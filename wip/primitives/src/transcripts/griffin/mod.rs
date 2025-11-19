@@ -455,12 +455,12 @@ mod tests {
     use ark_bn254::Fr;
     use ark_ff::UniformRand;
     use ark_relations::gr1cs::ConstraintSystem;
-    use ark_std::rand::thread_rng;
+    use ark_std::{error::Error, rand::thread_rng};
 
     use super::*;
 
     #[test]
-    fn test() {
+    fn test() -> Result<(), Box<dyn Error>> {
         let rng = &mut thread_rng();
         let griffin = GriffinParams::new(24, 5, 9);
         let t = griffin.t;
@@ -469,11 +469,13 @@ mod tests {
         let y = griffin.hash(&x);
 
         let cs = ConstraintSystem::new_ref();
-        let x_var = Vec::new_witness(cs.clone(), || Ok(x.clone())).unwrap();
-        let y_var = griffin.hash_gadget(&x_var).unwrap();
-        assert_eq!(y, y_var.value().unwrap());
+        let x_var = Vec::new_witness(cs.clone(), || Ok(x.clone()))?;
+        let y_var = griffin.hash_gadget(&x_var)?;
+        assert_eq!(y, y_var.value()?);
         println!("{}", cs.num_constraints());
-        assert!(cs.is_satisfied().unwrap());
+        assert!(cs.is_satisfied()?);
+
+        Ok(())
     }
 }
 

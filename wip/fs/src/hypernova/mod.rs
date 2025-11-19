@@ -19,17 +19,17 @@ use sonobe_primitives::{
         rlc::{ScalarRLC, SliceRLC},
     },
     arithmetizations::{
-        ccs::{CCSConfig, CCSVariant, CCS},
+        ccs::{self, CCSConfig, CCSVariant, CCS},
         r1cs::R1CSConfig,
         Arith, ArithConfig, ArithRelation, Error as ArithError,
     },
     circuits::{Assignments, AssignmentsOwned},
-    commitments::{GroupBasedVectorCommitment, VectorCommitment},
+    commitments::{CommitmentKey, GroupBasedVectorCommitment, VectorCommitment},
     relations::{Relation, WitnessInstanceSampler},
     sumcheck::{
         circuits::IOPSumCheckGadget,
         utils::{EqPoly, EqPolyVar, VPAuxInfo, VirtualPolynomial},
-        IOPSumCheck,
+        Error as SumCheckError, IOPSumCheck,
     },
     traits::Dummy,
     transcripts::{Transcript, TranscriptVar},
@@ -105,14 +105,13 @@ impl<VC: VectorCommitment<Scalar: Field>, V: CCSVariant> ArithRelation<RW<VC>, R
 impl<A, VC> Relation<RW<VC>, RU<VC>> for HyperNovaKey<A, VC>
 where
     A: ArithRelation<RW<VC>, RU<VC>>,
-    VC: VectorCommitment<Scalar: Field>,
+    VC: VectorCommitment,
 {
     type Error = Error;
 
     fn check_relation(&self, w: &RW<VC>, u: &RU<VC>) -> Result<(), Self::Error> {
         self.arith.check_relation(w, u)?;
-        // TODO: handle the error properly
-        assert!(VC::open(&self.ck, &w.w, &w.r, &u.cm)?);
+        VC::open(&self.ck, &w.w, &w.r, &u.cm)?;
         Ok(())
     }
 }
@@ -126,7 +125,7 @@ where
 
     fn check_relation(&self, w: &IW<VC>, u: &IU<VC>) -> Result<(), Self::Error> {
         self.arith.check_relation(&w.w, &u.x)?;
-        assert!(VC::open(&self.ck, &w.w, &w.r, &u.cm)?);
+        VC::open(&self.ck, &w.w, &w.r, &u.cm)?;
         Ok(())
     }
 }
@@ -144,9 +143,7 @@ where
     }
 }
 
-impl<A, VC: VectorCommitment<Scalar: Field>> WitnessInstanceSampler<IW<VC>, IU<VC>>
-    for HyperNovaKey<A, VC>
-{
+impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC>, IU<VC>> for HyperNovaKey<A, VC> {
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
@@ -175,7 +172,7 @@ impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scal
 impl<A, VC> WitnessInstanceSampler<RW<VC>, RU<VC>> for HyperNovaKey<A, VC>
 where
     A: ArithRelation<RW<VC>, RU<VC>, Evaluation = Vec<VC::Scalar>>,
-    VC: VectorCommitment<Scalar: Field>,
+    VC: VectorCommitment,
 {
     type Source = ();
     type Error = Error;
@@ -259,13 +256,18 @@ impl<
     type Proof = NIMFSProof<VC::Scalar, M, N>;
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
-        let ck = VC::generate_key(&mut rng, ck_len)?;
+        let ck = VC::generate_key(ck_len, &mut rng)?;
         Ok(ck)
     }
 
     fn generate_keys(ck: Self::PublicParam, ccs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let ccs = Arc::new(ccs);
+        if ck.max_scalars_len() < ccs.n_witnesses() {
+            return Err(Error::InvalidPublicParameters(
+                "The commitment key is too short for the CCS instance".into(),
+            ));
+        }
         Ok(HyperNovaKey { arith: ccs, ck })
     }
 
@@ -285,8 +287,8 @@ impl<
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
         let ccs = &pk.arith;
-        let d = ccs.degree();
-        let s = ccs.log_constraints();
+        let d = V::degree();
+        let s = ccs.config().log_constraints();
         let t = V::n_matrices();
         let S = &V::multisets_vec();
         let c = &V::coefficients_vec::<VC::Scalar>();
@@ -440,45 +442,41 @@ impl<
 
         // Step 3: Start verifying the sumcheck
         // First, compute the expected sumcheck sum: \sum gamma^j v_j
-        let mut sum_v_j_gamma = VC::Scalar::zero();
-        for (i, U) in Us.iter().enumerate() {
-            for j in 0..U.v.len() {
-                sum_v_j_gamma += U.v[j] * gamma_powers[i * t + j];
-            }
-        }
+        let sum_v_j_gamma = Us
+            .iter()
+            .zip(gamma_powers.chunks(t))
+            .flat_map(|(U, gammas)| U.v.iter().zip(gammas).map(|(&v, &g)| v * g))
+            .sum();
 
         // Verify the interactive part of the sumcheck
         // Step 2: Dig into the sumcheck claim and extract the randomness used
-        let (expected_eval, r_x_prime) =
+        let (claimed_eval, r_x_prime) =
             IOPSumCheck::verify(sum_v_j_gamma, &proof.sc_proof, &vp_aux_info, transcript)?;
 
         // Step 5: Finish verifying sumcheck (verify the claim c)
-        let c = {
-            let e2 = EqPoly::fix_xy_eval(&beta, &r_x_prime);
-            proof
-                .sigmas
-                .chunks(t)
-                .zip(Us)
-                .flat_map(|(sigmas, u)| {
-                    let e_lcccs = EqPoly::fix_xy_eval(&u.r_x, &r_x_prime);
-                    sigmas.iter().map(move |sigma_j| e_lcccs * sigma_j)
-                })
-                .chain(proof.thetas.chunks(t).map(|thetas| {
-                    e2 * S
-                        .iter()
-                        .zip(c)
-                        .map(|(S_i, &c_i)| {
-                            c_i * S_i.iter().map(|&j| thetas[j]).product::<VC::Scalar>()
-                        })
-                        .sum::<VC::Scalar>()
-                }))
-                .zip(gamma_powers.iter())
-                .map(|(val, gamma_i)| val * gamma_i)
-                .sum::<VC::Scalar>()
-        };
-
+        let e_beta = EqPoly::fix_xy_eval(&beta, &r_x_prime);
+        let c = proof
+            .sigmas
+            .chunks(t)
+            .zip(Us)
+            .flat_map(|(sigmas, u)| {
+                let e_lcccs = EqPoly::fix_xy_eval(&u.r_x, &r_x_prime);
+                sigmas.iter().map(move |sigma_j| e_lcccs * sigma_j)
+            })
+            .chain(proof.thetas.chunks(t).map(|thetas| {
+                S.iter()
+                    .zip(c)
+                    .map(|(S_i, &c_i)| c_i * S_i.iter().map(|&j| thetas[j]).product::<VC::Scalar>())
+                    .sum::<VC::Scalar>()
+                    * e_beta
+            }))
+            .zip(gamma_powers)
+            .map(|(val, gamma_i)| val * gamma_i)
+            .sum::<VC::Scalar>();
         // check that the g(r_x') from the sumcheck proof is equal to the computed c from sigmas&thetas
-        assert_eq!(c, expected_eval);
+        (c == claimed_eval).then_some(()).ok_or_else(|| {
+            SumCheckError::IncorrectEvaluation(claimed_eval.to_string(), c.to_string())
+        })?;
 
         // Step 6: Get the folding challenge
         let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
@@ -541,13 +539,18 @@ impl<
     type Proof = ([VC::Commitment; N], NIMFSProof<VC::Scalar, M, N>);
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
-        let ck = VC::generate_key(&mut rng, ck_len)?;
+        let ck = VC::generate_key(ck_len, &mut rng)?;
         Ok(ck)
     }
 
     fn generate_keys(ck: Self::PublicParam, ccs: Self::Arith) -> Result<Self::DeciderKey, Error> {
         let ck = Arc::new(ck);
         let ccs = Arc::new(ccs);
+        if ck.max_scalars_len() < ccs.n_witnesses() {
+            return Err(Error::InvalidPublicParameters(
+                "The commitment key is too short for the CCS instance".into(),
+            ));
+        }
         Ok(HyperNovaKey { arith: ccs, ck })
     }
 
@@ -567,8 +570,8 @@ impl<
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
 
         let ccs = &pk.arith;
-        let d = ccs.degree();
-        let s = ccs.log_constraints();
+        let d = V::degree();
+        let s = ccs.config().log_constraints();
         let t = V::n_matrices();
         let S = &V::multisets_vec();
         let c = &V::coefficients_vec::<VC::Scalar>();
@@ -731,45 +734,41 @@ impl<
 
         // Step 3: Start verifying the sumcheck
         // First, compute the expected sumcheck sum: \sum gamma^j v_j
-        let mut sum_v_j_gamma = VC::Scalar::zero();
-        for (i, U) in Us.iter().enumerate() {
-            for j in 0..U.v.len() {
-                sum_v_j_gamma += U.v[j] * gamma_powers[i * t + j];
-            }
-        }
+        let sum_v_j_gamma = Us
+            .iter()
+            .zip(gamma_powers.chunks(t))
+            .flat_map(|(U, gammas)| U.v.iter().zip(gammas).map(|(&v, &g)| v * g))
+            .sum();
 
         // Verify the interactive part of the sumcheck
         // Step 2: Dig into the sumcheck claim and extract the randomness used
-        let (expected_eval, r_x_prime) =
+        let (claimed_eval, r_x_prime) =
             IOPSumCheck::verify(sum_v_j_gamma, &proof.sc_proof, &vp_aux_info, transcript)?;
 
         // Step 5: Finish verifying sumcheck (verify the claim c)
-        let c = {
-            let e2 = EqPoly::fix_xy_eval(&beta, &r_x_prime);
-            proof
-                .sigmas
-                .chunks(t)
-                .zip(Us)
-                .flat_map(|(sigmas, u)| {
-                    let e_lcccs = EqPoly::fix_xy_eval(&u.r_x, &r_x_prime);
-                    sigmas.iter().map(move |sigma_j| e_lcccs * sigma_j)
-                })
-                .chain(proof.thetas.chunks(t).map(|thetas| {
-                    e2 * S
-                        .iter()
-                        .zip(c)
-                        .map(|(S_i, &c_i)| {
-                            c_i * S_i.iter().map(|&j| thetas[j]).product::<VC::Scalar>()
-                        })
-                        .sum::<VC::Scalar>()
-                }))
-                .zip(gamma_powers.iter())
-                .map(|(val, gamma_i)| val * gamma_i)
-                .sum::<VC::Scalar>()
-        };
-
+        let e_beta = EqPoly::fix_xy_eval(&beta, &r_x_prime);
+        let c = proof
+            .sigmas
+            .chunks(t)
+            .zip(Us)
+            .flat_map(|(sigmas, u)| {
+                let e_lcccs = EqPoly::fix_xy_eval(&u.r_x, &r_x_prime);
+                sigmas.iter().map(move |sigma_j| e_lcccs * sigma_j)
+            })
+            .chain(proof.thetas.chunks(t).map(|thetas| {
+                S.iter()
+                    .zip(c)
+                    .map(|(S_i, &c_i)| c_i * S_i.iter().map(|&j| thetas[j]).product::<VC::Scalar>())
+                    .sum::<VC::Scalar>()
+                    * e_beta
+            }))
+            .zip(gamma_powers)
+            .map(|(val, gamma_i)| val * gamma_i)
+            .sum::<VC::Scalar>();
         // check that the g(r_x') from the sumcheck proof is equal to the computed c from sigmas&thetas
-        assert_eq!(c, expected_eval);
+        (c == claimed_eval).then_some(()).ok_or_else(|| {
+            SumCheckError::IncorrectEvaluation(claimed_eval.to_string(), c.to_string())
+        })?;
 
         // Step 6: Get the folding challenge
         let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
