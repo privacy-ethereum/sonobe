@@ -6,6 +6,8 @@ use sonobe_primitives::{
 
 use crate::FoldingInstance;
 
+pub mod circuits;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunningInstance<VC: VectorCommitment> {
     // Random evaluation point for the E

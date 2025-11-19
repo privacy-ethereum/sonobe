@@ -1,27 +1,49 @@
-use ark_ff::{Field, One, Zero};
+use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
 use ark_poly::{
     univariate::DensePolynomial, DenseMultilinearExtension as MLE, DenseUVPolynomial, Polynomial,
 };
+use ark_r1cs_std::{
+    alloc::{AllocVar, AllocationMode},
+    fields::fp::FpVar,
+    poly::polynomial::univariate::dense::DensePolynomialVar,
+    prelude::Boolean,
+    GR1CSVar,
+};
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{
     borrow::Borrow, cfg_into_iter, cfg_iter, marker::PhantomData, rand::RngCore, sync::Arc,
     UniformRand,
 };
+use num_bigint::BigInt;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use sonobe_primitives::{
-    algebra::ops::poly::MLEHelper,
+    algebra::{
+        field::emulated::Bound,
+        ops::{bits::FromBitsGadget, poly::MLEHelper},
+    },
     arithmetizations::{
-        Arith, ArithConfig, ArithRelation, r1cs::{R1CS, RelaxedInstance, RelaxedWitness}
+        r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
+        Arith, ArithConfig, ArithRelation,
     },
     circuits::AssignmentsOwned,
-    commitments::{CommitmentKey, GroupBasedVectorCommitment, VectorCommitment},
+    commitments::{
+        CommitmentKey, GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget,
+    },
     relations::{Relation, WitnessInstanceSampler},
-    traits::Dummy,
-    transcripts::Transcript,
+    traits::{Dummy, SonobeCurve, CF1},
+    transcripts::{Transcript, TranscriptVar},
 };
 
-use self::{instance::RunningInstance as RU, witness::RunningWitness as RW};
-use crate::{DeciderKey, Error, FoldingScheme, PlainInstance as IU, PlainWitness as IW};
+use self::{
+    instance::{circuits::RunningInstanceVar as RUVar, RunningInstance as RU},
+    witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW},
+};
+use crate::{
+    DeciderKey, Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget,
+    GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary, PlainInstance as IU,
+    PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar,
+};
 
 pub mod instance;
 pub mod witness;
@@ -141,16 +163,18 @@ where
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MovaProof<F: Field> {
-    pub h1_coeffs: Vec<F>,
-    pub t: F,
+pub struct MovaProof<C: SonobeCurve> {
+    pub h1_coeffs: Vec<CF1<C>>,
+    pub t: CF1<C>,
+    pub cm_w: C,
 }
 
-impl<F: Field, Cfg: ArithConfig> Dummy<&Cfg> for MovaProof<F> {
+impl<C: SonobeCurve, Cfg: ArithConfig> Dummy<&Cfg> for MovaProof<C> {
     fn dummy(cfg: &Cfg) -> Self {
         Self {
-            h1_coeffs: vec![F::zero(); cfg.log_constraints()],
-            t: F::zero(),
+            h1_coeffs: vec![Zero::zero(); cfg.log_constraints()],
+            t: Zero::zero(),
+            cm_w: Zero::zero(),
         }
     }
 }
@@ -174,8 +198,8 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
     type Config = usize;
     type PublicParam = VC::Key;
     type DeciderKey = MovaKey<Self::Arith, VC>;
-    type Challenge = VC::Scalar;
-    type Proof = (MovaProof<VC::Scalar>, VC::Commitment);
+    type Challenge = Vec<bool>;
+    type Proof = MovaProof<VC::Commitment>;
 
     fn preprocess(n_witnesses: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         let ck = VC::generate_key(n_witnesses, &mut rng)?;
@@ -248,7 +272,10 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
         };
         // Step 6.1: Send h1(X) and h2(X), where the constant term is omitted
         // because it always equals v
-        transcript.add(&h1.coeffs[1..]);
+        let mut h1_coeffs = h1.coeffs.clone();
+        h1_coeffs.resize(pk.arith.log_constraints() + 1, Zero::zero());
+        h1_coeffs.remove(0);
+        transcript.add(&h1_coeffs);
 
         // Step 6.2: Get challenge beta
         let beta = transcript.challenge_field_element();
@@ -274,7 +301,8 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
         transcript.add(&t);
 
         // Step 7.2: Get challenge rho
-        let rho = transcript.challenge_field_element();
+        let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
+        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
 
         // Step 7.3: Compute new W and U
         Ok((
@@ -296,14 +324,8 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
                     .map(|(a, b)| rho * b + a)
                     .collect(),
             },
-            (
-                MovaProof {
-                    h1_coeffs: h1.coeffs[1..].to_vec(),
-                    t,
-                },
-                cm_w,
-            ),
-            rho,
+            MovaProof { h1_coeffs, t, cm_w },
+            rho_bits,
         ))
     }
 
@@ -313,7 +335,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; 1],
-        (proof, cm_w): &Self::Proof,
+        proof: &Self::Proof,
     ) -> Result<Self::RU, Error> {
         let (U, u) = (Us[0].borrow(), us[0].borrow());
 
@@ -321,7 +343,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
 
         transcript.add(U);
         transcript.add(u);
-        transcript.add(cm_w);
+        transcript.add(&proof.cm_w);
 
         let r_e = transcript.challenge_field_elements(U.r_e.len());
 
@@ -331,7 +353,8 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
 
         transcript.add(&proof.t);
 
-        let rho = transcript.challenge_field_element();
+        let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
+        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
 
         Ok(RU {
             r_e: U
@@ -342,13 +365,133 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
                 .collect(),
             v: h1.evaluate(&beta) + rho * proof.t,
             u: U.u + rho,
-            cm_w: U.cm_w + *cm_w * rho,
+            cm_w: U.cm_w + proof.cm_w * rho,
             x: cfg_iter!(U.x)
                 .zip(&u[..])
                 .map(|(a, b)| rho * b + a)
                 .collect(),
         })
     }
+}
+
+#[derive(Clone)]
+pub struct MovaProofVar<C: SonobeCurve> {
+    pub h1_coeffs: Vec<FpVar<CF1<C>>>,
+    pub t: FpVar<CF1<C>>,
+    pub cm_w: C::EmulatedVar<CF1<C>>,
+}
+
+impl<C: SonobeCurve> AllocVar<MovaProof<C>, CF1<C>> for MovaProofVar<C> {
+    fn new_variable<T: Borrow<MovaProof<C>>>(
+        cs: impl Into<Namespace<CF1<C>>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        mode: AllocationMode,
+    ) -> Result<Self, SynthesisError> {
+        let ns = cs.into();
+        let cs = ns.cs();
+
+        let proof = f()?.borrow().clone();
+
+        Ok(Self {
+            h1_coeffs: Vec::new_variable(cs.clone(), || Ok(&proof.h1_coeffs[..]), mode)?,
+            t: FpVar::new_variable(cs.clone(), || Ok(proof.t), mode)?,
+            cm_w: AllocVar::new_variable(cs.clone(), || Ok(proof.cm_w), mode)?,
+        })
+    }
+}
+
+impl<C: SonobeCurve> GR1CSVar<CF1<C>> for MovaProofVar<C> {
+    type Value = MovaProof<C>;
+
+    fn cs(&self) -> ConstraintSystemRef<CF1<C>> {
+        self.h1_coeffs.cs().or(self.t.cs()).or(self.cm_w.cs())
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(MovaProof {
+            h1_coeffs: self.h1_coeffs.value()?,
+            t: self.t.value()?,
+            cm_w: self.cm_w.value()?,
+        })
+    }
+}
+
+pub struct MovaGadget<VC, const CHALLENGE_BITS: usize = 128> {
+    _vc: PhantomData<VC>,
+}
+
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemePartialGadget<1, 1>
+    for MovaGadget<VC, CHALLENGE_BITS>
+{
+    type Native = Mova<VC, CHALLENGE_BITS>;
+
+    type VC = VC::EmulatedGadget;
+    type RW = RWVar<VC::EmulatedGadget>;
+    type RU = RUVar<VC::EmulatedGadget>;
+    type IW = IWVar<VC::EmulatedGadget>;
+    type IU = IUVar<VC::EmulatedGadget>;
+    type VerifierKey = ();
+    type Challenge = Vec<Boolean<VC::Scalar>>;
+    type Proof = MovaProofVar<VC::Commitment>;
+
+    #[allow(non_snake_case)]
+    fn verify_hinted(
+        _vk: &Self::VerifierKey,
+        transcript: &mut impl TranscriptVar<VC::Scalar>,
+        [U]: [&Self::RU; 1],
+        [u]: [&Self::IU; 1],
+        proof: &Self::Proof,
+    ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
+        let h1 = DensePolynomialVar::from_coefficients_vec(
+            [&[U.v.clone()][..], &proof.h1_coeffs].concat(),
+        );
+
+        transcript.add(U)?;
+        transcript.add(u)?;
+        transcript.add(&proof.cm_w)?;
+
+        let r_e = transcript.challenge_field_elements(U.r_e.len())?;
+
+        transcript.add(&proof.h1_coeffs)?;
+
+        let beta = transcript.challenge_field_element()?;
+
+        transcript.add(&proof.t)?;
+
+        let rho_bits = transcript.challenge_bits(CHALLENGE_BITS)?;
+        let rho = FpVar::from_bits_le(
+            &rho_bits,
+            Bound(
+                BigInt::zero(),
+                (BigInt::one() << CHALLENGE_BITS) - BigInt::one(),
+            ),
+        )?;
+
+        Ok((
+            RUVar {
+                r_e: U
+                    .r_e
+                    .iter()
+                    .zip(r_e)
+                    .map(|(r1, r2)| r1 + &beta * (r2 - r1))
+                    .collect(),
+                v: h1.evaluate(&beta)? + &rho * &proof.t,
+                u: &U.u + &rho,
+                cm_w: AllocVar::new_witness(U.cm_w.cs().or(proof.cm_w.cs()).or(rho.cs()), || {
+                    Ok(U.cm_w.value().unwrap_or_default()
+                        + proof.cm_w.value().unwrap_or_default() * rho.value().unwrap_or_default())
+                })?,
+                x: U.x.iter().zip(&u[..]).map(|(a, b)| &rho * b + a).collect(),
+            },
+            rho_bits,
+        ))
+    }
+}
+
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
+    GroupBasedFoldingSchemePrimary<1, 1> for Mova<VC, CHALLENGE_BITS>
+{
+    type Gadget = MovaGadget<VC, CHALLENGE_BITS>;
 }
 
 #[cfg(test)]
