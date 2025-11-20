@@ -120,11 +120,11 @@ where
 
     type PublicParam = (FS1::PublicParam, FS2::PublicParam, T::Config);
 
-    type ProverKey = Key<FS1, FS2, (T::Config, Self::Field)>;
+    type ProverKey<FC> = Key<FS1, FS2, (T::Config, Self::Field)>;
 
-    type VerifierKey = Key<FS1, FS2, (T::Config, Self::Field)>;
+    type VerifierKey<FC> = Key<FS1, FS2, (T::Config, Self::Field)>;
 
-    type Proof = Proof<FS1, FS2>;
+    type Proof<FC> = Proof<FS1, FS2>;
 
     fn preprocess(
         (cfg1, cfg2, hash_config): Self::Config,
@@ -140,7 +140,7 @@ where
     fn generate_keys<FC: FCircuit<Field = Self::Field>>(
         (pp1, pp2, hash_config): Self::PublicParam,
         step_circuit: &FC,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey), Error> {
+    ) -> Result<(Self::ProverKey<FC>, Self::VerifierKey<FC>), Error> {
         let cyclefold_circuit = CycleFoldCircuit::<FS1::CFConfig>::default();
 
         let cs = ConstraintSystemBuilder::new()
@@ -181,15 +181,15 @@ where
     }
 
     fn prove<FC: FCircuit<Field = Self::Field>>(
-        Key(dk1, dk2, (hash_config, pp_hash)): &Self::ProverKey,
+        Key(dk1, dk2, (hash_config, pp_hash)): &Self::ProverKey<FC>,
         step_circuit: &FC,
         i: usize,
-        initial_state: &[FC::Field],
-        current_state: &[FC::Field],
+        initial_state: &FC::State,
+        current_state: &FC::State,
         external_inputs: FC::ExternalInputs,
-        Proof(W, U, w, u, cf_W, cf_U): &Self::Proof,
+        Proof(W, U, w, u, cf_W, cf_U): &Self::Proof<FC>,
         mut rng: impl RngCore,
-    ) -> Result<(Vec<FC::Field>, Self::Proof), Error> {
+    ) -> Result<(FC::State, Self::Proof<FC>), Error> {
         let mode = SynthesisMode::Prove {
             construct_matrices: false,
             generate_lc_assignments: false,
@@ -270,12 +270,12 @@ where
         Ok((next_state, Proof(WW, UU, ww, uu, cf_WW, cf_UU)))
     }
 
-    fn verify(
-        Key(dk1, dk2, (hash_config, pp_hash)): &Self::VerifierKey,
+    fn verify<FC: FCircuit<Field = Self::Field>>(
+        Key(dk1, dk2, (hash_config, pp_hash)): &Self::VerifierKey<FC>,
         i: usize,
-        initial_state: &[Self::Field],
-        current_state: &[Self::Field],
-        Proof(W, U, w, u, cf_W, cf_U): &Self::Proof,
+        initial_state: &FC::State,
+        current_state: &FC::State,
+        Proof(W, U, w, u, cf_W, cf_U): &Self::Proof<FC>,
     ) -> Result<(), Error> {
         if i == 0 {
             return (initial_state == current_state)

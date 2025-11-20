@@ -7,8 +7,8 @@ use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, Synthesis
 
 use super::Assignments;
 use crate::{
-    arithmetizations::r1cs::{R1CSConfig, R1CS},
-    circuits::FCircuit,
+    arithmetizations::r1cs::{R1CS, R1CSConfig},
+    circuits::FCircuit, traits::SonobeField,
 };
 
 pub struct CircuitForTest<F: PrimeField> {
@@ -47,24 +47,26 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for CircuitForTest<F> {
     }
 }
 
-impl<F: PrimeField> FCircuit for CircuitForTest<F> {
+impl<F: SonobeField> FCircuit for CircuitForTest<F> {
     type Field = F;
+    type State = [F; 1];
+    type StateVar = [FpVar<F>; 1];
 
     type ExternalInputs = ();
 
-    fn dummy_external_inputs(&self) -> Self::ExternalInputs {}
-
-    fn state_len(&self) -> usize {
-        1
+    fn dummy_state(&self) -> Self::State {
+        [F::zero(); 1]
     }
+
+    fn dummy_external_inputs(&self) -> Self::ExternalInputs {}
 
     fn generate_step_constraints(
         &self,
         cs: ConstraintSystemRef<Self::Field>,
         _i: FpVar<Self::Field>,
-        z_i: Vec<FpVar<Self::Field>>,
+        z_i: Self::StateVar,
         _external_inputs: Self::ExternalInputs,
-    ) -> Result<Vec<FpVar<Self::Field>>, SynthesisError> {
+    ) -> Result<Self::StateVar, SynthesisError> {
         // Variable 0 (implicitly added by arkworks as 1)
         // Variable 1
         let x = if let FpVar::Var(x) = z_i[0].clone() {
@@ -97,7 +99,7 @@ impl<F: PrimeField> FCircuit for CircuitForTest<F> {
             || Variable::one().into(),
             || y.variable.into(),
         )?;
-        Ok(vec![FpVar::Var(x_cube_plus_x_plus_5)])
+        Ok([FpVar::Var(x_cube_plus_x_plus_5)])
     }
 }
 

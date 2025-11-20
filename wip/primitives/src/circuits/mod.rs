@@ -1,5 +1,5 @@
 use ark_ff::{Field, PrimeField};
-use ark_r1cs_std::fields::fp::FpVar;
+use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, GR1CSVar};
 use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError, SynthesisMode,
 };
@@ -7,6 +7,11 @@ use ark_std::{
     fmt::Debug,
     marker::PhantomData,
     ops::{Index, IndexMut},
+};
+
+use crate::{
+    traits::Dummy,
+    transcripts::{Absorbable, AbsorbableGadget},
 };
 
 pub mod utils;
@@ -21,13 +26,15 @@ pub mod utils;
 /// contains a vector, it is initialized at the expected length).
 pub trait FCircuit {
     type Field: PrimeField;
+    type State: Clone + PartialEq + Absorbable;
+    type StateVar: GR1CSVar<Self::Field, Value = Self::State>
+        + AllocVar<Self::State, Self::Field>
+        + AbsorbableGadget<Self::Field>;
     type ExternalInputs;
 
-    fn dummy_external_inputs(&self) -> Self::ExternalInputs;
+    fn dummy_state(&self) -> Self::State;
 
-    /// returns the number of elements in the state of the FCircuit, which corresponds to the
-    /// FCircuit inputs.
-    fn state_len(&self) -> usize;
+    fn dummy_external_inputs(&self) -> Self::ExternalInputs;
 
     /// generates the constraints for the step of F for the given z_i
     fn generate_step_constraints(
@@ -36,9 +43,9 @@ pub trait FCircuit {
         &self,
         cs: ConstraintSystemRef<Self::Field>,
         i: FpVar<Self::Field>,
-        z_i: Vec<FpVar<Self::Field>>,
+        z_i: Self::StateVar,
         external_inputs: Self::ExternalInputs, // inputs that are not part of the state
-    ) -> Result<Vec<FpVar<Self::Field>>, SynthesisError>;
+    ) -> Result<Self::StateVar, SynthesisError>;
 }
 
 #[derive(Clone, Debug, PartialEq)]

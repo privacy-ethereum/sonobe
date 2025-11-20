@@ -62,8 +62,8 @@ where
         cs: ConstraintSystemRef<FC::Field>,
         pp_hash: FC::Field,
         i: usize,
-        initial_state: &[FC::Field],
-        current_state: &[FC::Field],
+        initial_state: &FC::State,
+        current_state: &FC::State,
         external_inputs: FC::ExternalInputs,
         U: &FS1::RU,
         u: &FS1::IU,
@@ -71,7 +71,7 @@ where
         cf_U: &FS2::RU,
         cf_us: Vec<FS2::IU>,
         cf_proofs: Vec<FS2::Proof>,
-    ) -> Result<Vec<FC::Field>, SynthesisError> {
+    ) -> Result<FC::State, SynthesisError> {
         let hash = T::Var::new_with_pp_hash(
             &self.hash_config,
             &FpVar::new_witness(cs.clone(), || Ok(pp_hash))?,
@@ -84,8 +84,8 @@ where
 
         let is_basecase = i.is_zero()?;
 
-        let initial_state = Vec::<FpVar<_>>::new_witness(cs.clone(), || Ok(initial_state))?;
-        let current_state = Vec::new_witness(cs.clone(), || Ok(current_state))?;
+        let initial_state = FC::StateVar::new_witness(cs.clone(), || Ok(initial_state))?;
+        let current_state = FC::StateVar::new_witness(cs.clone(), || Ok(current_state))?;
 
         let U_dummy = AllocVar::new_constant(cs.clone(), FS1::RU::dummy(self.arith1_config))?;
         let U = AllocVar::new_witness(cs.clone(), || Ok(U))?;
@@ -149,7 +149,7 @@ where
 
         Ok(next_state
             .value()
-            .unwrap_or(vec![Default::default(); self.step_circuit.state_len()]))
+            .unwrap_or(self.step_circuit.dummy_state()))
     }
 }
 
@@ -180,8 +180,8 @@ where
             cs,
             Default::default(),
             0,
-            &Vec::dummy(self.step_circuit.state_len()),
-            &Vec::dummy(self.step_circuit.state_len()),
+            &self.step_circuit.dummy_state(),
+            &self.step_circuit.dummy_state(),
             self.step_circuit.dummy_external_inputs(),
             &Dummy::dummy(self.arith1_config),
             &Dummy::dummy(self.arith1_config),

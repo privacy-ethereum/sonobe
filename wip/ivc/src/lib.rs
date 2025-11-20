@@ -23,51 +23,51 @@ pub trait IVC {
 
     type Config;
     type PublicParam;
-    type ProverKey;
-    type VerifierKey;
-    type Proof: for<'a> Dummy<&'a Self::ProverKey>;
+    type ProverKey<FC>;
+    type VerifierKey<FC>;
+    type Proof<FC>: for<'a> Dummy<&'a Self::ProverKey<FC>>;
 
     fn preprocess(config: Self::Config, rng: impl RngCore) -> Result<Self::PublicParam, Error>;
 
     fn generate_keys<FC: FCircuit<Field = Self::Field>>(
         pp: Self::PublicParam,
         step_circuit: &FC,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey), Error>;
+    ) -> Result<(Self::ProverKey<FC>, Self::VerifierKey<FC>), Error>;
 
     fn prove<FC: FCircuit<Field = Self::Field>>(
-        pk: &Self::ProverKey,
+        pk: &Self::ProverKey<FC>,
         step_circuit: &FC,
         i: usize,
-        initial_state: &[Self::Field],
-        current_state: &[Self::Field],
+        initial_state: &FC::State,
+        current_state: &FC::State,
         external_inputs: FC::ExternalInputs,
-        current_proof: &Self::Proof,
+        current_proof: &Self::Proof<FC>,
         rng: impl RngCore,
-    ) -> Result<(Vec<Self::Field>, Self::Proof), Error>;
+    ) -> Result<(FC::State, Self::Proof<FC>), Error>;
 
-    fn verify(
-        vk: &Self::VerifierKey,
+    fn verify<FC: FCircuit<Field = Self::Field>>(
+        vk: &Self::VerifierKey<FC>,
         i: usize,
-        initial_state: &[Self::Field],
-        current_state: &[Self::Field],
-        proof: &Self::Proof,
+        initial_state: &FC::State,
+        current_state: &FC::State,
+        proof: &Self::Proof<FC>,
     ) -> Result<(), Error>;
 }
 
 pub struct IVCStatefulProver<FC: FCircuit, I: IVC> {
-    pub pk: I::ProverKey,
+    pub pk: I::ProverKey<FC>,
     pub step_circuit: FC,
     pub i: usize,
-    pub initial_state: Vec<FC::Field>,
-    pub current_state: Vec<FC::Field>,
-    pub current_proof: I::Proof,
+    pub initial_state: FC::State,
+    pub current_state: FC::State,
+    pub current_proof: I::Proof<FC>,
 }
 
 impl<FC: FCircuit<Field = I::Field>, I: IVC> IVCStatefulProver<FC, I> {
     pub fn new(
-        pk: I::ProverKey,
+        pk: I::ProverKey<FC>,
         step_circuit: FC,
-        initial_state: Vec<FC::Field>,
+        initial_state: FC::State,
     ) -> Result<Self, Error> {
         Ok(Self {
             step_circuit,
@@ -110,8 +110,8 @@ pub trait Decider {
     type Witness;
     type Proof;
 
-    fn preprocess_and_generate_keys(
-        ivc_pk: &<Self::IVC as IVC>::ProverKey,
+    fn preprocess_and_generate_keys<FC>(
+        ivc_pk: &<Self::IVC as IVC>::ProverKey<FC>,
         rng: impl RngCore,
     ) -> Result<(Self::ProverKey, Self::VerifierKey), Error>;
 
@@ -128,7 +128,6 @@ pub trait Decider {
 
 #[cfg(test)]
 mod tests {
-    use ark_ff::UniformRand;
     use ark_std::{error::Error, rand::Rng};
 
     use super::*;
@@ -143,7 +142,7 @@ mod tests {
 
         let (pk, vk) = I::generate_keys(pp, &step_circuit)?;
 
-        let initial_state = vec![UniformRand::rand(&mut rng); step_circuit.state_len()];
+        let initial_state = step_circuit.dummy_state();
 
         let mut prover = IVCStatefulProver::<_, I>::new(pk, step_circuit, initial_state)?;
 
