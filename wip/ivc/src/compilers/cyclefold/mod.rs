@@ -292,9 +292,9 @@ where
             .add(current_state)
             .add(U)
             .add(cf_U)
-            .get_field_elements(2);
+            .get_field_element();
 
-        if u.public_inputs() != &u_x[..] {
+        if u.public_inputs() != [u_x] {
             return Err(Error::IVCVerificationFail);
         }
 
