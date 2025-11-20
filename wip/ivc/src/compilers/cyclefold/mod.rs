@@ -57,18 +57,18 @@ pub trait FoldingSchemeCycleFoldExt<const M: usize, const N: usize>:
 }
 
 pub struct Key<FS1: FoldingScheme<1, 1>, FS2: FoldingScheme<1, 1>, T>(
-    FS1::DeciderKey,
-    FS2::DeciderKey,
-    T,
+    pub FS1::DeciderKey,
+    pub FS2::DeciderKey,
+    pub T,
 );
 
 pub struct Proof<FS1: FoldingScheme<1, 1>, FS2: FoldingScheme<1, 1>>(
-    FS1::RW,
-    FS1::RU,
-    FS1::IW,
-    FS1::IU,
-    FS2::RW,
-    FS2::RU,
+    pub FS1::RW,
+    pub FS1::RU,
+    pub FS1::IW,
+    pub FS1::IU,
+    pub FS2::RW,
+    pub FS2::RU,
 );
 
 impl<FS1: FoldingScheme<1, 1>, FS2: FoldingScheme<1, 1>, T> Dummy<&Key<FS1, FS2, T>>
