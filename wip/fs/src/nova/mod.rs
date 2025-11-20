@@ -230,7 +230,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         Us: &[impl Borrow<Self::RU>; 1],
         ws: &[impl Borrow<Self::IW>; 1],
         us: &[impl Borrow<Self::IU>; 1],
-        _rng: impl RngCore,
+        rng: impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let (w, u) = (ws[0].borrow(), us[0].borrow());
@@ -247,13 +247,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
             .map(|(a, b)| a - b)
             .collect::<Vec<_>>();
 
-        // Use `StepRng::new(0, 0)`, which is a dummy RNG that always generates
-        // 0 for the randomness (i.e., `r_T = 0`), no matter whether `VC` itself
-        // is hiding or not.
-        //
-        // This is because in Nova, we don't need hiding property for commitment
-        // to `T`.
-        let (cm_t, r_t) = VC::commit(&pk.ck, &t, StepRng::new(0, 0))?;
+        let (cm_t, r_t) = VC::commit(&pk.ck, &t, rng)?;
 
         let rho_bits = {
             transcript.add(&U);
@@ -366,7 +360,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         Us: &[impl Borrow<Self::RU>; 1],
         ws: &[impl Borrow<Self::IW>; 1],
         us: &[impl Borrow<Self::IU>; 1],
-        rng: impl RngCore,
+        mut rng: impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let (w, u) = (ws[0].borrow(), us[0].borrow());
@@ -383,15 +377,9 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
             .map(|(a, b)| a - b)
             .collect::<Vec<_>>();
 
-        let (cm_w, r_w) = VC::commit(&pk.ck, w, rng)?;
+        let (cm_w, r_w) = VC::commit(&pk.ck, w, &mut rng)?;
 
-        // Use `StepRng::new(0, 0)`, which is a dummy RNG that always generates
-        // 0 for the randomness (i.e., `r_T = 0`), no matter whether `VC` itself
-        // is hiding or not.
-        //
-        // This is because in Nova, we don't need hiding property for commitment
-        // to `T`.
-        let (cm_t, r_t) = VC::commit(&pk.ck, &t, StepRng::new(0, 0))?;
+        let (cm_t, r_t) = VC::commit(&pk.ck, &t, &mut rng)?;
 
         let pi = (cm_w, cm_t);
 
