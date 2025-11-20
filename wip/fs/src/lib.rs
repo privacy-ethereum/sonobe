@@ -72,9 +72,9 @@ pub trait FoldingInstance<VC: VectorCommitment>: Clone + Debug + PartialEq + Abs
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PlainWitness<V>(pub Vec<V>);
+pub struct TaggedVec<V, const TAG: char>(pub Vec<V>);
 
-impl<V> Deref for PlainWitness<V> {
+impl<V, const TAG: char> Deref for TaggedVec<V, TAG> {
     type Target = Vec<V>;
 
     fn deref(&self) -> &Self::Target {
@@ -82,42 +82,48 @@ impl<V> Deref for PlainWitness<V> {
     }
 }
 
-impl<V> DerefMut for PlainWitness<V> {
+impl<V, const TAG: char> DerefMut for TaggedVec<V, TAG> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<V> From<Vec<V>> for PlainWitness<V> {
+impl<V, const TAG: char> From<Vec<V>> for TaggedVec<V, TAG> {
     fn from(v: Vec<V>) -> Self {
         Self(v)
     }
 }
 
-impl<V: Absorbable> Absorbable for PlainWitness<V> {
+impl<V: Absorbable, const TAG: char> Absorbable for TaggedVec<V, TAG> {
     fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
         self.0.absorb_into(dest)
     }
 }
 
-impl<F: PrimeField, V: AbsorbableGadget<F>> AbsorbableGadget<F> for PlainWitness<V> {
+impl<F: PrimeField, V: AbsorbableGadget<F>, const TAG: char> AbsorbableGadget<F>
+    for TaggedVec<V, TAG>
+{
     fn absorb_into(&self, dest: &mut Vec<FpVar<F>>) -> Result<(), SynthesisError> {
         self.0.absorb_into(dest)
     }
 }
 
-impl<X: AllocVar<Y, F>, Y, F: Field> AllocVar<PlainWitness<Y>, F> for PlainWitness<X> {
-    fn new_variable<T: Borrow<PlainWitness<Y>>>(
+impl<F: Field, X: AllocVar<Y, F>, Y, const TAG: char> AllocVar<TaggedVec<Y, TAG>, F>
+    for TaggedVec<X, TAG>
+{
+    fn new_variable<T: Borrow<TaggedVec<Y, TAG>>>(
         cs: impl Into<Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
         let v = f()?;
-        Vec::new_variable(cs, || Ok(&v.borrow()[..]), mode).map(|v| Self(v))
+        Vec::new_variable(cs, || Ok(&v.borrow()[..]), mode).map(Self)
     }
 }
 
-impl<F: PrimeField, X: CondSelectGadget<F>> CondSelectGadget<F> for PlainWitness<X> {
+impl<F: PrimeField, X: CondSelectGadget<F>, const TAG: char> CondSelectGadget<F>
+    for TaggedVec<X, TAG>
+{
     fn conditionally_select(
         cond: &Boolean<F>,
         true_value: &Self,
@@ -126,28 +132,28 @@ impl<F: PrimeField, X: CondSelectGadget<F>> CondSelectGadget<F> for PlainWitness
         if true_value.len() != false_value.len() {
             return Err(SynthesisError::Unsatisfiable);
         }
-        Ok(Self(
-            true_value
-                .0
-                .iter()
-                .zip(false_value.0.iter())
-                .map(|(t, f)| cond.select(t, f))
-                .collect::<Result<_, _>>()?,
-        ))
+        true_value
+            .iter()
+            .zip(false_value.iter())
+            .map(|(t, f)| cond.select(t, f))
+            .collect::<Result<_, _>>()
+            .map(Self)
     }
 }
 
-impl<F: Field, V: GR1CSVar<F>> GR1CSVar<F> for PlainWitness<V> {
-    type Value = PlainWitness<V::Value>;
+impl<F: Field, V: GR1CSVar<F>, const TAG: char> GR1CSVar<F> for TaggedVec<V, TAG> {
+    type Value = TaggedVec<V::Value, TAG>;
 
     fn cs(&self) -> ConstraintSystemRef<F> {
         self.0.cs()
     }
 
     fn value(&self) -> Result<Self::Value, SynthesisError> {
-        self.0.value().map(PlainWitness)
+        self.0.value().map(TaggedVec)
     }
 }
+
+pub type PlainWitness<V> = TaggedVec<V, 'w'>;
 
 impl<V: Default + Clone, A: ArithConfig> Dummy<&A> for PlainWitness<V> {
     fn dummy(cfg: &A) -> Self {
@@ -163,95 +169,11 @@ impl<VC: VectorCommitment> FoldingWitness<VC> for PlainWitness<VC::Scalar> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PlainInstance<V>(pub Vec<V>);
-
-impl<V> Deref for PlainInstance<V> {
-    type Target = Vec<V>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<V> DerefMut for PlainInstance<V> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl<V> From<Vec<V>> for PlainInstance<V> {
-    fn from(v: Vec<V>) -> Self {
-        Self(v)
-    }
-}
-
-impl<V: Absorbable> Absorbable for PlainInstance<V> {
-    fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
-        self.0.absorb_into(dest)
-    }
-}
-
-impl<F: PrimeField, V: AbsorbableGadget<F>> AbsorbableGadget<F> for PlainInstance<V> {
-    fn absorb_into(&self, dest: &mut Vec<FpVar<F>>) -> Result<(), SynthesisError> {
-        self.0.absorb_into(dest)
-    }
-}
-
-impl<X: AllocVar<Y, F>, Y, F: Field> AllocVar<PlainInstance<Y>, F> for PlainInstance<X> {
-    fn new_variable<T: Borrow<PlainInstance<Y>>>(
-        cs: impl Into<Namespace<F>>,
-        f: impl FnOnce() -> Result<T, SynthesisError>,
-        mode: AllocationMode,
-    ) -> Result<Self, SynthesisError> {
-        let v = f()?;
-        Vec::new_variable(cs, || Ok(&v.borrow()[..]), mode).map(|v| Self(v))
-    }
-}
-
-impl<F: PrimeField, X: CondSelectGadget<F>> CondSelectGadget<F> for PlainInstance<X> {
-    fn conditionally_select(
-        cond: &Boolean<F>,
-        true_value: &Self,
-        false_value: &Self,
-    ) -> Result<Self, SynthesisError> {
-        if true_value.len() != false_value.len() {
-            return Err(SynthesisError::Unsatisfiable);
-        }
-        Ok(Self(
-            true_value
-                .0
-                .iter()
-                .zip(false_value.0.iter())
-                .map(|(t, f)| cond.select(t, f))
-                .collect::<Result<_, _>>()?,
-        ))
-    }
-}
-
-impl<F: Field, V: GR1CSVar<F>> GR1CSVar<F> for PlainInstance<V> {
-    type Value = PlainInstance<V::Value>;
-
-    fn cs(&self) -> ConstraintSystemRef<F> {
-        self.0.cs()
-    }
-
-    fn value(&self) -> Result<Self::Value, SynthesisError> {
-        self.0.value().map(PlainInstance)
-    }
-}
+pub type PlainInstance<V> = TaggedVec<V, 'u'>;
 
 impl<V: Default + Clone, A: ArithConfig> Dummy<&A> for PlainInstance<V> {
     fn dummy(cfg: &A) -> Self {
         vec![V::default(); cfg.n_public_inputs()].into()
-    }
-}
-
-impl<VC: VectorCommitment> FoldingWitness<VC> for PlainInstance<VC::Scalar> {
-    const N_OPENINGS: usize = 0;
-
-    fn openings(&self) -> Vec<(&[VC::Scalar], &VC::Randomness)> {
-        vec![]
     }
 }
 
@@ -446,9 +368,7 @@ pub trait FoldingSchemePartialGadget<const M: usize = 1, const N: usize = 1> {
     type Native: FoldingScheme<M, N>;
 
     type VC: VectorCommitmentGadget<Native = <Self::Native as FoldingScheme<M, N>>::VC>;
-    type RW: FoldingWitnessVar<Self::VC, Value = <Self::Native as FoldingScheme<M, N>>::RW>;
     type RU: FoldingInstanceVar<Self::VC, Value = <Self::Native as FoldingScheme<M, N>>::RU>;
-    type IW: FoldingWitnessVar<Self::VC, Value = <Self::Native as FoldingScheme<M, N>>::IW>;
     type IU: FoldingInstanceVar<Self::VC, Value = <Self::Native as FoldingScheme<M, N>>::IU>;
 
     type VerifierKey;

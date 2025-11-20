@@ -426,9 +426,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeP
     type Native = Mova<VC, CHALLENGE_BITS>;
 
     type VC = VC::EmulatedGadget;
-    type RW = RWVar<VC::EmulatedGadget>;
     type RU = RUVar<VC::EmulatedGadget>;
-    type IW = IWVar<VC::EmulatedGadget>;
     type IU = IUVar<VC::EmulatedGadget>;
     type VerifierKey = ();
     type Challenge = Vec<Boolean<VC::Scalar>>;

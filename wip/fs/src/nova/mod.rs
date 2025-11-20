@@ -471,9 +471,7 @@ where
     type Native = AbstractNova<VC::Native, VC::ConstraintField, CHALLENGE_BITS>;
 
     type VC = VC;
-    type RW = RWVar<VC>;
     type RU = RUVar<VC>;
-    type IW = IWVar<VC>;
     type IU = IUVar<VC>;
     type VerifierKey = ();
     type Challenge = Vec<Boolean<VC::ConstraintField>>;
