@@ -1,5 +1,7 @@
 use ark_ff::{BigInteger, PrimeField, Zero};
-use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, groups::CurveVar, prelude::Boolean};
+use ark_r1cs_std::{
+    alloc::AllocVar, fields::fp::FpVar, groups::CurveVar, prelude::Boolean, GR1CSVar,
+};
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::{borrow::Borrow, iter::once};
 use sonobe_fs::{
@@ -10,6 +12,7 @@ use sonobe_fs::{
 use sonobe_primitives::{
     algebra::{
         field::emulated::{Bound, EmulatedFieldVar},
+        group::emulated::EmulatedAffineVar,
         ops::bits::{FromBitsGadget, ToBitsGadgetExt},
     },
     commitments::GroupBasedVectorCommitment,
@@ -113,6 +116,80 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
             once(rho)
                 .chain(
                     [U.cm_w, u.cm_w, UU.cm_w]
+                        .into_iter()
+                        .flat_map(|p| [p.x, p.y]),
+                )
+                .collect(),
+        ])
+    }
+}
+
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeCycleFoldExt<2, 0>
+    for Nova<VC, CHALLENGE_BITS>
+{
+    const N_CYCLEFOLDS: usize = 3;
+
+    type CFConfig = NovaCycleFoldConfig<VC::Commitment, CHALLENGE_BITS>;
+
+    fn to_cyclefold_configs(
+        [U1, U2]: &[impl Borrow<Self::RU>; 2],
+        _: &[impl Borrow<Self::IU>; 0],
+        proof: &Self::Proof,
+        rho_bits: Self::Challenge,
+    ) -> Vec<Self::CFConfig> {
+        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        vec![
+            NovaCycleFoldConfig {
+                r: rho_bits.clone(),
+                points: vec![*proof, U2.borrow().cm_e],
+            },
+            NovaCycleFoldConfig {
+                r: rho_bits.clone(),
+                points: vec![U1.borrow().cm_e, U2.borrow().cm_e * rho + proof],
+            },
+            NovaCycleFoldConfig {
+                r: rho_bits,
+                points: vec![U1.borrow().cm_w, U2.borrow().cm_w],
+            },
+        ]
+    }
+
+    fn to_cyclefold_inputs(
+        [U1, U2]: [<Self::Gadget as FoldingSchemePartialGadget<1, 1>>::RU; 2],
+        _: [<Self::Gadget as FoldingSchemePartialGadget<1, 1>>::IU; 0],
+        UU: <Self::Gadget as FoldingSchemePartialGadget<1, 1>>::RU,
+        proof: <Self::Gadget as FoldingSchemePartialGadget<1, 1>>::Proof,
+        mut rho_bits: <Self::Gadget as FoldingSchemePartialGadget<1, 1>>::Challenge,
+    ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>>>>, SynthesisError> {
+        rho_bits.resize(
+            CF2::<VC::Commitment>::MODULUS_BIT_SIZE as usize,
+            Boolean::FALSE,
+        );
+        let rho = EmulatedFieldVar::from_bits_le(
+            &rho_bits,
+            Bound(Zero::zero(), CF2::<VC::Commitment>::MODULUS.into().into()),
+        )?;
+        let x =
+            EmulatedAffineVar::new_witness(U2.cm_e.cs().or(proof.cs()).or(rho_bits.cs()), || {
+                let rho_bits = rho_bits.value().unwrap_or_default();
+                let rho =
+                    VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+                Ok(proof.value().unwrap_or_default() + U2.cm_e.value().unwrap_or_default() * rho)
+            })?;
+        Ok(vec![
+            once(rho.clone())
+                .chain(
+                    [proof, U2.cm_e, x.clone()]
+                        .into_iter()
+                        .flat_map(|p| [p.x, p.y]),
+                )
+                .collect(),
+            once(rho.clone())
+                .chain([U1.cm_e, x, UU.cm_e].into_iter().flat_map(|p| [p.x, p.y]))
+                .collect(),
+            once(rho)
+                .chain(
+                    [U1.cm_w, U2.cm_w, UU.cm_w]
                         .into_iter()
                         .flat_map(|p| [p.x, p.y]),
                 )

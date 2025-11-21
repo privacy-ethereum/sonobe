@@ -13,8 +13,10 @@ use thiserror::Error;
 
 use crate::{
     algebra::{
-        field::emulated::EmulatedFieldVar, group::emulated::EmulatedAffineVar,
-        ops::bits::FromBitsGadget, Var,
+        field::emulated::{EmulatedFieldVar, IntVarInner},
+        group::emulated::EmulatedAffineVar,
+        ops::bits::FromBitsGadget,
+        Var,
     },
     traits::{SonobeCurve, SonobeField, CF1, CF2},
     transcripts::{Absorbable, AbsorbableGadget},
@@ -85,6 +87,7 @@ pub trait GroupBasedVectorCommitment:
         Native = Self,
         ConstraintField = CF2<Self::Commitment>,
         ScalarVar = EmulatedFieldVar<CF2<Self::Commitment>, Self::Scalar>,
+        IntermediateScalarVar = IntVarInner<CF2<Self::Commitment>, Self::Scalar, false>,
         CommitmentVar = Var<Self::Commitment>,
     >,
     Commitment: SonobeCurve,
@@ -95,6 +98,7 @@ pub trait GroupBasedVectorCommitment:
         Native = Self,
         ConstraintField = Self::Scalar,
         ScalarVar = FpVar<Self::Scalar>,
+        IntermediateScalarVar = FpVar<Self::Scalar>,
         CommitmentVar = EmulatedAffineVar<Self::Scalar, Self::Commitment>,
     >;
 }

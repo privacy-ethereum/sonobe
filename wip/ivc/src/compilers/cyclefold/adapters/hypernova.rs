@@ -21,12 +21,8 @@ use crate::compilers::cyclefold::{
 };
 
 /// Configuration for HyperNova's CycleFold circuit
-pub struct HyperNovaCycleFoldConfig<
-    C,
-    const MU: usize,
-    const NU: usize,
-    const CHALLENGE_BITS: usize,
-> {
+pub struct HyperNovaCycleFoldConfig<C, const M: usize, const N: usize, const CHALLENGE_BITS: usize>
+{
     r: Vec<bool>,
     points: Vec<C>,
 }

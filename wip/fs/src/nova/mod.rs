@@ -648,6 +648,76 @@ where
     }
 }
 
+impl<VC, const CHALLENGE_BITS: usize> FoldingSchemePartialGadget<2, 0>
+    for AbstractNovaGadget<VC, CHALLENGE_BITS>
+where
+    VC: VectorCommitmentGadget<Native: GroupBasedVectorCommitment>,
+{
+    type Native = AbstractNova<VC::Native, VC::ConstraintField, CHALLENGE_BITS>;
+
+    type VC = VC;
+    type RU = RUVar<VC>;
+    type IU = IUVar<VC>;
+    type VerifierKey = ();
+    type Challenge = Vec<Boolean<VC::ConstraintField>>;
+    type Proof = VC::CommitmentVar;
+
+    #[allow(non_snake_case)]
+    fn verify_hinted(
+        _vk: &Self::VerifierKey,
+        transcript: &mut impl TranscriptVar<VC::ConstraintField>,
+        [U1, U2]: [&Self::RU; 2],
+        _: [&Self::IU; 0],
+        proof: &Self::Proof,
+    ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
+        let rho_bits = {
+            transcript.add(&U1)?;
+            transcript.add(&U2)?;
+            transcript.add(proof)?;
+            transcript.challenge_bits(CHALLENGE_BITS)?
+        };
+        let rho = VC::ScalarVar::from_bits_le(
+            &rho_bits,
+            Bound(
+                BigInt::zero(),
+                (BigInt::one() << CHALLENGE_BITS) - BigInt::one(),
+            ),
+        )?;
+
+        Ok((
+            RUVar {
+                u: (U2.u.clone() * &rho + &U1.u)
+                    .try_into()
+                    .map_err(|_| SynthesisError::Unsatisfiable)?,
+                cm_e: VC::CommitmentVar::new_witness(
+                    U1.cm_e.cs().or(U2.cm_e.cs()).or(proof.cs()).or(rho.cs()),
+                    || {
+                        let rho = rho.value().unwrap_or_default();
+                        Ok(U1.cm_e.value().unwrap_or_default()
+                            + proof.value().unwrap_or_default() * rho
+                            + U2.cm_e.value().unwrap_or_default() * rho * rho)
+                    },
+                )?,
+                cm_w: VC::CommitmentVar::new_witness(
+                    U1.cm_w.cs().or(U2.cm_w.cs()).or(rho.cs()),
+                    || {
+                        Ok(U1.cm_w.value().unwrap_or_default()
+                            + U2.cm_w.value().unwrap_or_default() * rho.value().unwrap_or_default())
+                    },
+                )?,
+                x: U1
+                    .x
+                    .iter()
+                    .zip(&U2.x)
+                    .map(|(a, b)| (b.clone() * &rho + a).try_into())
+                    .collect::<Result<_, _>>()
+                    .map_err(|_| SynthesisError::Unsatisfiable)?,
+            },
+            rho_bits,
+        ))
+    }
+}
+
 impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeFullGadget<1, 1>
     for AbstractNovaGadget<VC, CHALLENGE_BITS>
 where
@@ -694,6 +764,12 @@ where
 
 impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
     GroupBasedFoldingSchemePrimary<1, 1> for AbstractNova<VC, VC::Scalar, CHALLENGE_BITS>
+{
+    type Gadget = AbstractNovaGadget<VC::EmulatedGadget, CHALLENGE_BITS>;
+}
+
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
+    GroupBasedFoldingSchemePrimary<2, 0> for AbstractNova<VC, VC::Scalar, CHALLENGE_BITS>
 {
     type Gadget = AbstractNovaGadget<VC::EmulatedGadget, CHALLENGE_BITS>;
 }
