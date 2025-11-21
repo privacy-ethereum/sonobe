@@ -289,7 +289,7 @@ where
 
     type VC = VC;
     type RU = RUVar<VC>;
-    type IU = IUVar<VC>;
+    type IU = IUVar<VC::ScalarVar>;
     type VerifierKey = ();
     type Challenge = Vec<Boolean<VC::ConstraintField>>;
     type Proof = VC::CommitmentVar;

@@ -311,10 +311,10 @@ pub trait FoldingInstanceVar<VC: VectorCommitmentGadget>:
     ) -> Result<Self, SynthesisError>;
 }
 
-pub type PlainWitnessVar<VC> = PlainWitness<<VC as VectorCommitmentGadget>::ScalarVar>;
-pub type PlainInstanceVar<VC> = PlainInstance<<VC as VectorCommitmentGadget>::ScalarVar>;
+pub type PlainWitnessVar<V> = PlainWitness<V>;
+pub type PlainInstanceVar<V> = PlainInstance<V>;
 
-impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for PlainInstanceVar<VC> {
+impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for PlainInstanceVar<VC::ScalarVar> {
     fn commitments(&self) -> Vec<&VC::CommitmentVar> {
         vec![]
     }

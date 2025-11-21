@@ -302,6 +302,136 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
     }
 }
 
+impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
+    FoldingScheme<2, 0> for AbstractNova<VC, TF, CHALLENGE_BITS>
+{
+    type VC = VC;
+    type RW = RW<VC>;
+    type RU = RU<VC>;
+    type IW = IW<VC>;
+    type IU = IU<VC>;
+
+    type TranscriptField = TF;
+    type Arith = R1CS<VC::Scalar>;
+
+    type Config = usize;
+    type PublicParam = VC::Key;
+    type DeciderKey = NovaKey<Self::Arith, VC>;
+    type Challenge = Vec<bool>;
+    type Proof = VC::Commitment;
+
+    fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
+        let ck = VC::generate_key(ck_len, &mut rng)?;
+        Ok(ck)
+    }
+
+    fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
+        let ck = Arc::new(ck);
+        let r1cs = Arc::new(r1cs);
+        if ck.max_scalars_len() < r1cs.n_constraints().max(r1cs.n_witnesses()) {
+            return Err(Error::InvalidPublicParameters(
+                "The commitment key is too short for the R1CS instance".into(),
+            ));
+        }
+        Ok(NovaKey { arith: r1cs, ck })
+    }
+
+    #[allow(non_snake_case)]
+    fn prove(
+        pk: &NovaKey<Self::Arith, VC>,
+        transcript: &mut impl Transcript<TF>,
+        [W1, W2]: &[impl Borrow<Self::RW>; 2],
+        [U1, U2]: &[impl Borrow<Self::RU>; 2],
+        _: &[impl Borrow<Self::IW>; 0],
+        _: &[impl Borrow<Self::IU>; 0],
+        rng: impl RngCore,
+    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+        let (W1, U1) = (W1.borrow(), U1.borrow());
+        let (W2, U2) = (W2.borrow(), U2.borrow());
+
+        // Compute the cross term `T` by following the optimized approach in
+        // [Mova](https://eprint.iacr.org/2024/1220.pdf)'s section 5.2.
+        let v = pk.arith.eval_assignments(AssignmentsOwned::from((
+            U1.u + U2.u,
+            cfg_iter!(U1.x).zip(&U2.x).map(|(a, b)| *a + b).collect(),
+            cfg_iter!(W1.w).zip(&W2.w).map(|(a, b)| *a + b).collect(),
+        )))?;
+        let t = cfg_into_iter!(v)
+            .zip(&W1.e)
+            .zip(&W2.e)
+            .map(|((a, b), c)| a - b - c)
+            .collect::<Vec<_>>();
+
+        let (cm_t, r_t) = VC::commit(&pk.ck, &t, rng)?;
+
+        let rho_bits = {
+            transcript.add(&U1);
+            transcript.add(&U2);
+            transcript.add(&cm_t);
+            transcript.challenge_bits(CHALLENGE_BITS)
+        };
+        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        let rho_squared = rho * rho;
+
+        Ok((
+            RW {
+                e: cfg_iter!(W1.e)
+                    .zip(&t)
+                    .zip(&W2.e)
+                    .map(|((a, b), c)| rho_squared * c + rho * b + a)
+                    .collect(),
+                r_e: W1.r_e + r_t * rho + W2.r_e * rho_squared,
+                w: cfg_iter!(W1.w)
+                    .zip(&W2.w)
+                    .map(|(a, b)| rho * b + a)
+                    .collect(),
+                r_w: W1.r_w + W2.r_w * rho,
+            },
+            RU {
+                cm_e: U1.cm_e + cm_t.mul(rho) + U2.cm_e.mul(rho_squared),
+                u: U1.u + rho * U2.u,
+                cm_w: U1.cm_w + U2.cm_w.mul(rho),
+                x: cfg_iter!(U1.x)
+                    .zip(&U2.x)
+                    .map(|(a, b)| rho * b + a)
+                    .collect(),
+            },
+            cm_t,
+            rho_bits,
+        ))
+    }
+
+    #[allow(non_snake_case)]
+    fn verify(
+        _vk: &(),
+        transcript: &mut impl Transcript<TF>,
+        [U1, U2]: &[impl Borrow<Self::RU>; 2],
+        _: &[impl Borrow<Self::IU>; 0],
+        cm_t: &Self::Proof,
+    ) -> Result<Self::RU, Error> {
+        let (U1, U2) = (U1.borrow(), U2.borrow());
+
+        let rho_bits = {
+            transcript.add(&U1);
+            transcript.add(&U2);
+            transcript.add(cm_t);
+            transcript.challenge_bits(CHALLENGE_BITS)
+        };
+        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        let rho_squared = rho * rho;
+
+        Ok(RU {
+            cm_e: U1.cm_e + cm_t.mul(rho) + U2.cm_e.mul(rho_squared),
+            u: U1.u + rho * U2.u,
+            cm_w: U1.cm_w + U2.cm_w.mul(rho),
+            x: cfg_iter!(U1.x)
+                .zip(&U2.x)
+                .map(|(a, b)| rho * b + a)
+                .collect(),
+        })
+    }
+}
+
 // used for the RO challenges.
 // From [Srinath Setty](https://microsoft.com/en-us/research/people/srinath/): In Nova, soundness
 // error ≤ 2/|S|, where S is the subset of the field F from which the challenges are drawn. In this
@@ -604,6 +734,28 @@ mod tests {
         )?;
 
         test_folding_scheme::<AbstractNova<Pedersen<G1Projective, false>, TF>, 1, 1>(
+            8,
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            (0..rounds)
+                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
+                .collect(),
+            &mut rng,
+        )?;
+
+        test_folding_scheme::<AbstractNova<Pedersen<G1Projective, true>, TF>, 2, 0>(
+            8,
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            (0..rounds)
+                .map(|_| satisfying_assignments_for_test(Fr::rand(&mut rng)))
+                .collect(),
+            &mut rng,
+        )?;
+
+        test_folding_scheme::<AbstractNova<Pedersen<G1Projective, false>, TF>, 2, 0>(
             8,
             CircuitForTest {
                 x: Fr::rand(&mut rng),
