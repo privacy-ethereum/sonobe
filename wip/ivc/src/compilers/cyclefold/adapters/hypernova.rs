@@ -3,7 +3,8 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, groups::CurveVar, prelude
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::{borrow::Borrow, iter::once};
 use sonobe_fs::{
-    hypernova::HyperNova, nova::CycleFoldNova, ova::CycleFoldOva, FoldingSchemePartialGadget,
+    hypernova::HyperNova, nova::CycleFoldNova, ova::CycleFoldOva, FoldingSchemeGadgetDef,
+    FoldingSchemeGadgetOpsPartial,
 };
 use sonobe_primitives::{
     algebra::{
@@ -83,7 +84,7 @@ impl<
     fn to_cyclefold_configs(
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
-        _proof: &Self::Proof,
+        _proof: &Self::Proof<M, N>,
         rho: Self::Challenge,
     ) -> Vec<Self::CFConfig> {
         vec![HyperNovaCycleFoldConfig {
@@ -97,11 +98,11 @@ impl<
     }
 
     fn to_cyclefold_inputs(
-        Us: [<Self::Gadget as FoldingSchemePartialGadget<M, N>>::RU; M],
-        us: [<Self::Gadget as FoldingSchemePartialGadget<M, N>>::IU; N],
-        UU: <Self::Gadget as FoldingSchemePartialGadget<M, N>>::RU,
-        _proof: <Self::Gadget as FoldingSchemePartialGadget<M, N>>::Proof,
-        mut rho: <Self::Gadget as FoldingSchemePartialGadget<M, N>>::Challenge,
+        Us: [<Self::Gadget as FoldingSchemeGadgetDef>::RU; M],
+        us: [<Self::Gadget as FoldingSchemeGadgetDef>::IU; N],
+        UU: <Self::Gadget as FoldingSchemeGadgetDef>::RU,
+        _proof: <Self::Gadget as FoldingSchemeGadgetDef>::Proof<M, N>,
+        mut rho: <Self::Gadget as FoldingSchemeGadgetDef>::Challenge,
     ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>>>>, SynthesisError> {
         rho.resize(
             CF2::<VC::Commitment>::MODULUS_BIT_SIZE as usize,

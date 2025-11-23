@@ -28,7 +28,8 @@ use sonobe_primitives::{
     },
     circuits::AssignmentsOwned,
     commitments::{
-        CommitmentKey, GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget,
+        CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentOps,
+        VectorCommitmentGadgetDef,
     },
     relations::{Relation, WitnessInstanceSampler},
     traits::{Dummy, SonobeCurve, CF1},
@@ -40,21 +41,22 @@ use self::{
     witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW},
 };
 use crate::{
-    DeciderKey, Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget,
-    GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary, PlainInstance as IU,
-    PlainInstanceVar as IUVar, PlainWitness as IW, PlainWitnessVar as IWVar,
+    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeOps, FoldingSchemeGadgetDef,
+    FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary,
+    GroupBasedFoldingSchemeSecondary, PlainInstance as IU, PlainInstanceVar as IUVar,
+    PlainWitness as IW, PlainWitnessVar as IWVar,
 };
 
 pub mod instance;
 pub mod witness;
 
 #[derive(Clone)]
-pub struct MovaKey<A, VC: VectorCommitment> {
+pub struct MovaKey<A, VC: VectorCommitmentDef> {
     pub arith: Arc<A>,
     pub ck: Arc<VC::Key>,
 }
 
-impl<A: Arith, VC: VectorCommitment> DeciderKey for MovaKey<A, VC> {
+impl<A: Arith, VC: VectorCommitmentDef> DeciderKey for MovaKey<A, VC> {
     type ProverKey = Self;
     type VerifierKey = ();
     type ArithConfig = A::Config;
@@ -79,7 +81,7 @@ where
         RelaxedInstance<&'a [VC::Scalar]>,
         Evaluation = Vec<VC::Scalar>,
     >,
-    VC: VectorCommitment<Scalar: Field>,
+    VC: VectorCommitmentOps<Scalar: Field>,
 {
     type Error = Error;
 
@@ -101,7 +103,7 @@ where
 impl<A, VC> Relation<IW<VC::Scalar>, IU<VC::Scalar>> for MovaKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
-    VC: VectorCommitment,
+    VC: VectorCommitmentDef,
 {
     type Error = Error;
 
@@ -111,7 +113,7 @@ where
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC::Scalar>, IU<VC::Scalar>>
+impl<A, VC: VectorCommitmentDef> WitnessInstanceSampler<IW<VC::Scalar>, IU<VC::Scalar>>
     for MovaKey<A, VC>
 {
     type Source = AssignmentsOwned<VC::Scalar>;
@@ -133,7 +135,7 @@ where
         RelaxedInstance<&'a [VC::Scalar]>,
         Evaluation = Vec<VC::Scalar>,
     >,
-    VC: VectorCommitment<Scalar: Field>,
+    VC: VectorCommitmentOps<Scalar: Field>,
 {
     type Source = ();
     type Error = Error;
@@ -183,7 +185,7 @@ pub struct Mova<VC, const CHALLENGE_BITS: usize = 128> {
     _vc: PhantomData<VC>,
 }
 
-impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<1, 1>
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeDef
     for Mova<VC, CHALLENGE_BITS>
 {
     type VC = VC;
@@ -199,8 +201,12 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
     type PublicParam = VC::Key;
     type DeciderKey = MovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
-    type Proof = MovaProof<VC::Commitment>;
+    type Proof<const M: usize, const N: usize> = MovaProof<VC::Commitment>;
+}
 
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeOps<1, 1>
+    for Mova<VC, CHALLENGE_BITS>
+{
     fn preprocess(n_witnesses: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         let ck = VC::generate_key(n_witnesses, &mut rng)?;
         Ok(ck)
@@ -226,7 +232,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
         ws: &[impl Borrow<Self::IW>; 1],
         us: &[impl Borrow<Self::IU>; 1],
         rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, 1>, Self::Challenge), Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let (w, u) = (ws[0].borrow(), us[0].borrow());
 
@@ -335,7 +341,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingScheme<
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; 1],
-        proof: &Self::Proof,
+        proof: &Self::Proof<1, 1>,
     ) -> Result<Self::RU, Error> {
         let (U, u) = (Us[0].borrow(), us[0].borrow());
 
@@ -420,25 +426,29 @@ pub struct MovaGadget<VC, const CHALLENGE_BITS: usize = 128> {
     _vc: PhantomData<VC>,
 }
 
-impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemePartialGadget<1, 1>
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeGadgetDef
     for MovaGadget<VC, CHALLENGE_BITS>
 {
     type Native = Mova<VC, CHALLENGE_BITS>;
 
-    type VC = VC::EmulatedGadget;
-    type RU = RUVar<VC::EmulatedGadget>;
-    type IU = IUVar<<VC::EmulatedGadget as VectorCommitmentGadget>::ScalarVar>;
+    type VC = VC::Gadget2;
+    type RU = RUVar<VC::Gadget2>;
+    type IU = IUVar<<VC::Gadget2 as VectorCommitmentGadgetDef>::ScalarVar>;
     type VerifierKey = ();
     type Challenge = Vec<Boolean<VC::Scalar>>;
-    type Proof = MovaProofVar<VC::Commitment>;
+    type Proof<const M: usize, const N: usize> = MovaProofVar<VC::Commitment>;
+}
 
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
+    FoldingSchemeGadgetOpsPartial<1, 1> for MovaGadget<VC, CHALLENGE_BITS>
+{
     #[allow(non_snake_case)]
     fn verify_hinted(
         _vk: &Self::VerifierKey,
         transcript: &mut impl TranscriptVar<VC::Scalar>,
         [U]: [&Self::RU; 1],
         [u]: [&Self::IU; 1],
-        proof: &Self::Proof,
+        proof: &Self::Proof<1, 1>,
     ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
         let h1 = DensePolynomialVar::from_coefficients_vec(
             [&[U.v.clone()][..], &proof.h1_coeffs].concat(),

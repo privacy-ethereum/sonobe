@@ -7,13 +7,13 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
-use sonobe_primitives::{commitments::VectorCommitmentGadget, transcripts::AbsorbableGadget};
+use sonobe_primitives::{commitments::VectorCommitmentGadgetDef, transcripts::AbsorbableGadget};
 
 use super::{CCCSInstance, LCCCSInstance};
 use crate::FoldingInstanceVar;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct LCCCSInstanceVar<VC: VectorCommitmentGadget> {
+pub struct LCCCSInstanceVar<VC: VectorCommitmentGadgetDef> {
     pub cm: VC::CommitmentVar,
     pub u: VC::ScalarVar,
     pub x: Vec<VC::ScalarVar>,
@@ -21,7 +21,7 @@ pub struct LCCCSInstanceVar<VC: VectorCommitmentGadget> {
     pub v: Vec<VC::ScalarVar>,
 }
 
-impl<VC: VectorCommitmentGadget> AllocVar<LCCCSInstance<VC::Native>, VC::ConstraintField>
+impl<VC: VectorCommitmentGadgetDef> AllocVar<LCCCSInstance<VC::Native>, VC::ConstraintField>
     for LCCCSInstanceVar<VC>
 {
     fn new_variable<T: Borrow<LCCCSInstance<VC::Native>>>(
@@ -42,7 +42,7 @@ impl<VC: VectorCommitmentGadget> AllocVar<LCCCSInstance<VC::Native>, VC::Constra
     }
 }
 
-impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for LCCCSInstanceVar<VC> {
+impl<VC: VectorCommitmentGadgetDef> GR1CSVar<VC::ConstraintField> for LCCCSInstanceVar<VC> {
     type Value = LCCCSInstance<VC::Native>;
 
     fn cs(&self) -> ConstraintSystemRef<VC::ConstraintField> {
@@ -65,7 +65,7 @@ impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for LCCCSInstance
     }
 }
 
-impl<VC: VectorCommitmentGadget> AbsorbableGadget<VC::ConstraintField> for LCCCSInstanceVar<VC> {
+impl<VC: VectorCommitmentGadgetDef> AbsorbableGadget<VC::ConstraintField> for LCCCSInstanceVar<VC> {
     fn absorb_into(
         &self,
         dest: &mut Vec<FpVar<VC::ConstraintField>>,
@@ -78,7 +78,7 @@ impl<VC: VectorCommitmentGadget> AbsorbableGadget<VC::ConstraintField> for LCCCS
     }
 }
 
-impl<VC: VectorCommitmentGadget> CondSelectGadget<VC::ConstraintField> for LCCCSInstanceVar<VC> {
+impl<VC: VectorCommitmentGadgetDef> CondSelectGadget<VC::ConstraintField> for LCCCSInstanceVar<VC> {
     fn conditionally_select(
         cond: &Boolean<VC::ConstraintField>,
         true_value: &Self,
@@ -118,7 +118,7 @@ impl<VC: VectorCommitmentGadget> CondSelectGadget<VC::ConstraintField> for LCCCS
     }
 }
 
-impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for LCCCSInstanceVar<VC> {
+impl<VC: VectorCommitmentGadgetDef> FoldingInstanceVar<VC> for LCCCSInstanceVar<VC> {
     fn commitments(&self) -> Vec<&VC::CommitmentVar> {
         vec![&self.cm]
     }
@@ -144,12 +144,12 @@ impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for LCCCSInstanceVar<VC>
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CCCSInstanceVar<VC: VectorCommitmentGadget> {
+pub struct CCCSInstanceVar<VC: VectorCommitmentGadgetDef> {
     pub cm: VC::CommitmentVar,
     pub x: Vec<VC::ScalarVar>,
 }
 
-impl<VC: VectorCommitmentGadget> AllocVar<CCCSInstance<VC::Native>, VC::ConstraintField>
+impl<VC: VectorCommitmentGadgetDef> AllocVar<CCCSInstance<VC::Native>, VC::ConstraintField>
     for CCCSInstanceVar<VC>
 {
     fn new_variable<T: Borrow<CCCSInstance<VC::Native>>>(
@@ -167,7 +167,7 @@ impl<VC: VectorCommitmentGadget> AllocVar<CCCSInstance<VC::Native>, VC::Constrai
     }
 }
 
-impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for CCCSInstanceVar<VC> {
+impl<VC: VectorCommitmentGadgetDef> GR1CSVar<VC::ConstraintField> for CCCSInstanceVar<VC> {
     type Value = CCCSInstance<VC::Native>;
 
     fn cs(&self) -> ConstraintSystemRef<VC::ConstraintField> {
@@ -182,7 +182,7 @@ impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for CCCSInstanceV
     }
 }
 
-impl<VC: VectorCommitmentGadget> AbsorbableGadget<VC::ConstraintField> for CCCSInstanceVar<VC> {
+impl<VC: VectorCommitmentGadgetDef> AbsorbableGadget<VC::ConstraintField> for CCCSInstanceVar<VC> {
     fn absorb_into(
         &self,
         dest: &mut Vec<FpVar<VC::ConstraintField>>,
@@ -192,7 +192,7 @@ impl<VC: VectorCommitmentGadget> AbsorbableGadget<VC::ConstraintField> for CCCSI
     }
 }
 
-impl<VC: VectorCommitmentGadget> CondSelectGadget<VC::ConstraintField> for CCCSInstanceVar<VC> {
+impl<VC: VectorCommitmentGadgetDef> CondSelectGadget<VC::ConstraintField> for CCCSInstanceVar<VC> {
     fn conditionally_select(
         cond: &Boolean<VC::ConstraintField>,
         true_value: &Self,
@@ -213,7 +213,7 @@ impl<VC: VectorCommitmentGadget> CondSelectGadget<VC::ConstraintField> for CCCSI
     }
 }
 
-impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for CCCSInstanceVar<VC> {
+impl<VC: VectorCommitmentGadgetDef> FoldingInstanceVar<VC> for CCCSInstanceVar<VC> {
     fn commitments(&self) -> Vec<&VC::CommitmentVar> {
         vec![&self.cm]
     }

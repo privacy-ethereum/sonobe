@@ -24,7 +24,9 @@ use sonobe_primitives::{
         Arith, ArithConfig, ArithRelation, Error as ArithError,
     },
     circuits::{Assignments, AssignmentsOwned},
-    commitments::{CommitmentKey, GroupBasedVectorCommitment, VectorCommitment},
+    commitments::{
+        CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentOps,
+    },
     relations::{Relation, WitnessInstanceSampler},
     sumcheck::{
         circuits::IOPSumCheckGadget,
@@ -40,26 +42,24 @@ use self::{
         circuits::{CCCSInstanceVar as IUVar, LCCCSInstanceVar as RUVar},
         CCCSInstance as IU, LCCCSInstance as RU,
     },
-    witness::{
-        circuits::{CCCSWitnessVar as IWVar, LCCCSWitnessVar as RWVar},
-        CCCSWitness as IW, LCCCSWitness as RW,
-    },
+    witness::{CCCSWitness as IW, LCCCSWitness as RW},
 };
 use crate::{
-    DeciderKey, Error, FoldingScheme, FoldingSchemePartialGadget, GroupBasedFoldingSchemePrimary,
-    PlainInstance as PU, PlainWitness as PW,
+    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeOps, FoldingSchemeGadgetDef,
+    FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary, PlainInstance as PU,
+    PlainWitness as PW,
 };
 
 pub mod instance;
 pub mod witness;
 
 #[derive(Clone)]
-pub struct HyperNovaKey<A, VC: VectorCommitment> {
+pub struct HyperNovaKey<A, VC: VectorCommitmentDef> {
     arith: Arc<A>,
     ck: Arc<VC::Key>,
 }
 
-impl<A: Arith, VC: VectorCommitment> DeciderKey for HyperNovaKey<A, VC> {
+impl<A: Arith, VC: VectorCommitmentDef> DeciderKey for HyperNovaKey<A, VC> {
     type ProverKey = Self;
     type VerifierKey = ();
     type ArithConfig = A::Config;
@@ -77,7 +77,7 @@ impl<A: Arith, VC: VectorCommitment> DeciderKey for HyperNovaKey<A, VC> {
     }
 }
 
-impl<VC: VectorCommitment<Scalar: Field>, V: CCSVariant> ArithRelation<RW<VC>, RU<VC>>
+impl<VC: VectorCommitmentDef<Scalar: Field>, V: CCSVariant> ArithRelation<RW<VC>, RU<VC>>
     for CCS<VC::Scalar, V>
 {
     type Evaluation = Vec<VC::Scalar>;
@@ -105,7 +105,7 @@ impl<VC: VectorCommitment<Scalar: Field>, V: CCSVariant> ArithRelation<RW<VC>, R
 impl<A, VC> Relation<RW<VC>, RU<VC>> for HyperNovaKey<A, VC>
 where
     A: ArithRelation<RW<VC>, RU<VC>>,
-    VC: VectorCommitment,
+    VC: VectorCommitmentOps,
 {
     type Error = Error;
 
@@ -119,7 +119,7 @@ where
 impl<A, VC> Relation<IW<VC>, IU<VC>> for HyperNovaKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
-    VC: VectorCommitment,
+    VC: VectorCommitmentOps,
 {
     type Error = Error;
 
@@ -133,7 +133,7 @@ where
 impl<A, VC> Relation<PW<VC::Scalar>, PU<VC::Scalar>> for HyperNovaKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
-    VC: VectorCommitment,
+    VC: VectorCommitmentDef,
 {
     type Error = Error;
 
@@ -143,7 +143,7 @@ where
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC>, IU<VC>> for HyperNovaKey<A, VC> {
+impl<A, VC: VectorCommitmentOps> WitnessInstanceSampler<IW<VC>, IU<VC>> for HyperNovaKey<A, VC> {
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
@@ -154,7 +154,7 @@ impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC>, IU<VC>> for HyperNo
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scalar>>
+impl<A, VC: VectorCommitmentDef> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scalar>>
     for HyperNovaKey<A, VC>
 {
     type Source = AssignmentsOwned<VC::Scalar>;
@@ -172,7 +172,7 @@ impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scal
 impl<A, VC> WitnessInstanceSampler<RW<VC>, RU<VC>> for HyperNovaKey<A, VC>
 where
     A: ArithRelation<RW<VC>, RU<VC>, Evaluation = Vec<VC::Scalar>>,
-    VC: VectorCommitment,
+    VC: VectorCommitmentOps,
 {
     type Source = ();
     type Error = Error;
@@ -232,13 +232,8 @@ pub struct HyperNova<VC, V: CCSVariant = R1CSConfig, const CHALLENGE_BITS: usize
     _v: PhantomData<(VC, V)>,
 }
 
-impl<
-        VC: GroupBasedVectorCommitment,
-        V: CCSVariant,
-        const M: usize,
-        const N: usize,
-        const CHALLENGE_BITS: usize,
-    > FoldingScheme<M, N> for HyperNova<VC, V, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, V: CCSVariant, const CHALLENGE_BITS: usize> FoldingSchemeDef
+    for HyperNova<VC, V, CHALLENGE_BITS>
 {
     type VC = VC;
     type RW = RW<VC>;
@@ -253,8 +248,17 @@ impl<
     type PublicParam = VC::Key;
     type DeciderKey = HyperNovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
-    type Proof = NIMFSProof<VC::Scalar, M, N>;
+    type Proof<const M: usize, const N: usize> = NIMFSProof<VC::Scalar, M, N>;
+}
 
+impl<
+        VC: GroupBasedVectorCommitment,
+        V: CCSVariant,
+        const M: usize,
+        const N: usize,
+        const CHALLENGE_BITS: usize,
+    > FoldingSchemeOps<M, N> for HyperNova<VC, V, CHALLENGE_BITS>
+{
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         let ck = VC::generate_key(ck_len, &mut rng)?;
         Ok(ck)
@@ -280,7 +284,7 @@ impl<
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
         _rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+    ) -> Result<(Self::RW, Self::RU, Self::Proof<M, N>, Self::Challenge), Error> {
         let Ws = &Ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -414,7 +418,7 @@ impl<
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
-        proof: &Self::Proof,
+        proof: &Self::Proof<M, N>,
     ) -> Result<Self::RU, Error> {
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -515,13 +519,8 @@ struct HyperNova2<VC, V: CCSVariant = R1CSConfig, const CHALLENGE_BITS: usize = 
     _v: PhantomData<(VC, V)>,
 }
 
-impl<
-        VC: GroupBasedVectorCommitment,
-        V: CCSVariant,
-        const M: usize,
-        const N: usize,
-        const CHALLENGE_BITS: usize,
-    > FoldingScheme<M, N> for HyperNova2<VC, V, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, V: CCSVariant, const CHALLENGE_BITS: usize> FoldingSchemeDef
+    for HyperNova2<VC, V, CHALLENGE_BITS>
 {
     type VC = VC;
     type RW = RW<VC>;
@@ -536,8 +535,18 @@ impl<
     type PublicParam = VC::Key;
     type DeciderKey = HyperNovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
-    type Proof = ([VC::Commitment; N], NIMFSProof<VC::Scalar, M, N>);
+    type Proof<const M: usize, const N: usize> =
+        ([VC::Commitment; N], NIMFSProof<VC::Scalar, M, N>);
+}
 
+impl<
+        VC: GroupBasedVectorCommitment,
+        V: CCSVariant,
+        const M: usize,
+        const N: usize,
+        const CHALLENGE_BITS: usize,
+    > FoldingSchemeOps<M, N> for HyperNova2<VC, V, CHALLENGE_BITS>
+{
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         let ck = VC::generate_key(ck_len, &mut rng)?;
         Ok(ck)
@@ -563,7 +572,7 @@ impl<
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
         mut rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+    ) -> Result<(Self::RW, Self::RU, Self::Proof<M, N>, Self::Challenge), Error> {
         let Ws = &Ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -705,7 +714,7 @@ impl<
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
-        (cms, proof): &Self::Proof,
+        (cms, proof): &Self::Proof<M, N>,
     ) -> Result<Self::RU, Error> {
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -862,30 +871,34 @@ pub struct HyperNovaGadget<VC, V: CCSVariant = R1CSConfig, const CHALLENGE_BITS:
     _v: PhantomData<(VC, V)>,
 }
 
+impl<VC: GroupBasedVectorCommitment, V: CCSVariant, const CHALLENGE_BITS: usize> FoldingSchemeGadgetDef
+    for HyperNovaGadget<VC, V, CHALLENGE_BITS>
+{
+    type Native = HyperNova<VC, V, CHALLENGE_BITS>;
+
+    type VC = VC::Gadget2;
+    type RU = RUVar<VC::Gadget2>;
+    type IU = IUVar<VC::Gadget2>;
+    type VerifierKey = ();
+    type Challenge = Vec<Boolean<VC::Scalar>>;
+    type Proof<const M: usize, const N: usize> = NIMFSProofVar<VC::Scalar, M, N>;
+}
+
 impl<
         VC: GroupBasedVectorCommitment,
         V: CCSVariant,
         const M: usize,
         const N: usize,
         const CHALLENGE_BITS: usize,
-    > FoldingSchemePartialGadget<M, N> for HyperNovaGadget<VC, V, CHALLENGE_BITS>
+    > FoldingSchemeGadgetOpsPartial<M, N> for HyperNovaGadget<VC, V, CHALLENGE_BITS>
 {
-    type Native = HyperNova<VC, V, CHALLENGE_BITS>;
-
-    type VC = VC::EmulatedGadget;
-    type RU = RUVar<VC::EmulatedGadget>;
-    type IU = IUVar<VC::EmulatedGadget>;
-    type VerifierKey = ();
-    type Challenge = Vec<Boolean<VC::Scalar>>;
-    type Proof = NIMFSProofVar<VC::Scalar, M, N>;
-
     #[allow(non_snake_case)]
     fn verify_hinted(
         _vk: &Self::VerifierKey,
         transcript: &mut impl TranscriptVar<VC::Scalar>,
         Us: [&Self::RU; M],
         us: [&Self::IU; N],
-        proof: &Self::Proof,
+        proof: &Self::Proof<M, N>,
     ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
         let d = V::degree();
         let s = proof.sc_proof.len();

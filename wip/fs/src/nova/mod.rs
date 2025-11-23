@@ -21,7 +21,8 @@ use sonobe_primitives::{
     },
     circuits::AssignmentsOwned,
     commitments::{
-        CommitmentKey, GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget,
+        CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentOps,
+        VectorCommitmentGadgetDef,
     },
     relations::{Relation, WitnessInstanceSampler},
     traits::{SonobeField, CF2},
@@ -39,21 +40,21 @@ use self::{
     },
 };
 use crate::{
-    DeciderKey, Error, FoldingScheme, FoldingSchemeFullGadget, FoldingSchemePartialGadget,
-    GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary, PlainInstance as PU,
-    PlainWitness as PW,
+    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeOps, FoldingSchemeGadgetOpsFull,
+    FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary,
+    GroupBasedFoldingSchemeSecondary, PlainInstance as PU, PlainWitness as PW,
 };
 
 pub mod instance;
 pub mod witness;
 
 #[derive(Clone)]
-pub struct NovaKey<A, VC: VectorCommitment> {
+pub struct NovaKey<A, VC: VectorCommitmentDef> {
     arith: Arc<A>,
     ck: Arc<VC::Key>,
 }
 
-impl<A: Arith, VC: VectorCommitment> DeciderKey for NovaKey<A, VC> {
+impl<A: Arith, VC: VectorCommitmentDef> DeciderKey for NovaKey<A, VC> {
     type ProverKey = Self;
     type VerifierKey = ();
     type ArithConfig = A::Config;
@@ -74,7 +75,7 @@ impl<A: Arith, VC: VectorCommitment> DeciderKey for NovaKey<A, VC> {
 impl<A, VC> Relation<RW<VC>, RU<VC>> for NovaKey<A, VC>
 where
     A: for<'a> ArithRelation<RelaxedWitness<&'a [VC::Scalar]>, RelaxedInstance<&'a [VC::Scalar]>>,
-    VC: VectorCommitment,
+    VC: VectorCommitmentOps,
 {
     type Error = Error;
 
@@ -92,7 +93,7 @@ where
 impl<A, VC> Relation<IW<VC>, IU<VC>> for NovaKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
-    VC: VectorCommitment,
+    VC: VectorCommitmentOps,
 {
     type Error = Error;
 
@@ -106,7 +107,7 @@ where
 impl<A, VC> Relation<PW<VC::Scalar>, PU<VC::Scalar>> for NovaKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
-    VC: VectorCommitment,
+    VC: VectorCommitmentDef,
 {
     type Error = Error;
 
@@ -116,7 +117,7 @@ where
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC>, IU<VC>> for NovaKey<A, VC> {
+impl<A, VC: VectorCommitmentOps> WitnessInstanceSampler<IW<VC>, IU<VC>> for NovaKey<A, VC> {
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
@@ -127,7 +128,7 @@ impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC>, IU<VC>> for NovaKey
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scalar>>
+impl<A, VC: VectorCommitmentDef> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scalar>>
     for NovaKey<A, VC>
 {
     type Source = AssignmentsOwned<VC::Scalar>;
@@ -149,7 +150,7 @@ where
         RelaxedInstance<&'a [VC::Scalar]>,
         Evaluation = Vec<VC::Scalar>,
     >,
-    VC: VectorCommitment,
+    VC: VectorCommitmentOps,
 {
     type Source = ();
     type Error = Error;
@@ -183,13 +184,13 @@ pub struct AbstractNova<VC, TF, const CHALLENGE_BITS: usize = 128> {
 }
 
 pub type Nova<VC, const CHALLENGE_BITS: usize = 128> =
-    AbstractNova<VC, <VC as VectorCommitment>::Scalar, CHALLENGE_BITS>;
+    AbstractNova<VC, <VC as VectorCommitmentDef>::Scalar, CHALLENGE_BITS>;
 
 pub type CycleFoldNova<VC, const CHALLENGE_BITS: usize = 128> =
-    AbstractNova<VC, CF2<<VC as VectorCommitment>::Commitment>, CHALLENGE_BITS>;
+    AbstractNova<VC, CF2<<VC as VectorCommitmentDef>::Commitment>, CHALLENGE_BITS>;
 
-impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
-    FoldingScheme<1, 1> for AbstractNova<VC, TF, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingSchemeDef
+    for AbstractNova<VC, TF, CHALLENGE_BITS>
 {
     type VC = VC;
     type RW = RW<VC>;
@@ -204,7 +205,12 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
     type PublicParam = VC::Key;
     type DeciderKey = NovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
-    type Proof = VC::Commitment;
+    type Proof<const M: usize, const N: usize> = VC::Commitment;
+}
+
+impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
+    FoldingSchemeOps<1, 1> for AbstractNova<VC, TF, CHALLENGE_BITS>
+{
 
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         let ck = VC::generate_key(ck_len, &mut rng)?;
@@ -231,7 +237,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         ws: &[impl Borrow<Self::IW>; 1],
         us: &[impl Borrow<Self::IU>; 1],
         rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, 1>, Self::Challenge), Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let (w, u) = (ws[0].borrow(), us[0].borrow());
 
@@ -281,7 +287,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         transcript: &mut impl Transcript<TF>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; 1],
-        cm_t: &Self::Proof,
+        cm_t: &Self::Proof<1, 1>,
     ) -> Result<Self::RU, Error> {
         let (U, u) = (Us[0].borrow(), us[0].borrow());
 
@@ -303,23 +309,8 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
 }
 
 impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
-    FoldingScheme<2, 0> for AbstractNova<VC, TF, CHALLENGE_BITS>
+    FoldingSchemeOps<2, 0> for AbstractNova<VC, TF, CHALLENGE_BITS>
 {
-    type VC = VC;
-    type RW = RW<VC>;
-    type RU = RU<VC>;
-    type IW = IW<VC>;
-    type IU = IU<VC>;
-
-    type TranscriptField = TF;
-    type Arith = R1CS<VC::Scalar>;
-
-    type Config = usize;
-    type PublicParam = VC::Key;
-    type DeciderKey = NovaKey<Self::Arith, VC>;
-    type Challenge = Vec<bool>;
-    type Proof = VC::Commitment;
-
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         let ck = VC::generate_key(ck_len, &mut rng)?;
         Ok(ck)
@@ -345,7 +336,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         _: &[impl Borrow<Self::IW>; 0],
         _: &[impl Borrow<Self::IU>; 0],
         rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+    ) -> Result<(Self::RW, Self::RU, Self::Proof<2, 0>, Self::Challenge), Error> {
         let (W1, U1) = (W1.borrow(), U1.borrow());
         let (W2, U2) = (W2.borrow(), U2.borrow());
 
@@ -407,7 +398,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         transcript: &mut impl Transcript<TF>,
         [U1, U2]: &[impl Borrow<Self::RU>; 2],
         _: &[impl Borrow<Self::IU>; 0],
-        cm_t: &Self::Proof,
+        cm_t: &Self::Proof<2, 0>,
     ) -> Result<Self::RU, Error> {
         let (U1, U2) = (U1.borrow(), U2.borrow());
 
@@ -443,13 +434,13 @@ struct AbstractNova2<VC, TF, const CHALLENGE_BITS: usize = 128> {
 }
 
 type Nova2<VC, const CHALLENGE_BITS: usize = 128> =
-    AbstractNova2<VC, <VC as VectorCommitment>::Scalar, CHALLENGE_BITS>;
+    AbstractNova2<VC, <VC as VectorCommitmentDef>::Scalar, CHALLENGE_BITS>;
 
 type CycleFoldNova2<VC, const CHALLENGE_BITS: usize = 128> =
-    AbstractNova2<VC, CF2<<VC as VectorCommitment>::Commitment>, CHALLENGE_BITS>;
+    AbstractNova2<VC, CF2<<VC as VectorCommitmentDef>::Commitment>, CHALLENGE_BITS>;
 
-impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
-    FoldingScheme<1, 1> for AbstractNova2<VC, TF, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingSchemeDef
+    for AbstractNova2<VC, TF, CHALLENGE_BITS>
 {
     type VC = VC;
     type RW = RW<VC>;
@@ -464,8 +455,12 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
     type PublicParam = VC::Key;
     type DeciderKey = NovaKey<Self::Arith, VC>;
     type Challenge = Vec<bool>;
-    type Proof = (VC::Commitment, VC::Commitment);
+    type Proof<const M: usize, const N: usize> = (VC::Commitment, VC::Commitment);
+}
 
+impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
+    FoldingSchemeOps<1, 1> for AbstractNova2<VC, TF, CHALLENGE_BITS>
+{
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         let ck = VC::generate_key(ck_len, &mut rng)?;
         Ok(ck)
@@ -491,7 +486,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         ws: &[impl Borrow<Self::IW>; 1],
         us: &[impl Borrow<Self::IU>; 1],
         mut rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, 1>, Self::Challenge), Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let (w, u) = (ws[0].borrow(), us[0].borrow());
 
@@ -551,7 +546,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         transcript: &mut impl Transcript<TF>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; 1],
-        pi: &Self::Proof,
+        pi: &Self::Proof<1, 1>,
     ) -> Result<Self::RU, Error> {
         let (U, u) = (Us[0].borrow(), us[0].borrow());
 
@@ -581,10 +576,9 @@ pub struct AbstractNovaGadget<VC, const CHALLENGE_BITS: usize = 128> {
     _vc: PhantomData<VC>,
 }
 
-impl<VC, const CHALLENGE_BITS: usize> FoldingSchemePartialGadget<1, 1>
-    for AbstractNovaGadget<VC, CHALLENGE_BITS>
+impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeGadgetDef for AbstractNovaGadget<VC, CHALLENGE_BITS>
 where
-    VC: VectorCommitmentGadget<Native: GroupBasedVectorCommitment>,
+    VC: VectorCommitmentGadgetDef<Native: GroupBasedVectorCommitment>,
 {
     type Native = AbstractNova<VC::Native, VC::ConstraintField, CHALLENGE_BITS>;
 
@@ -593,15 +587,21 @@ where
     type IU = IUVar<VC>;
     type VerifierKey = ();
     type Challenge = Vec<Boolean<VC::ConstraintField>>;
-    type Proof = VC::CommitmentVar;
+    type Proof<const M: usize, const N: usize> = VC::CommitmentVar;
+}
 
+impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeGadgetOpsPartial<1, 1>
+    for AbstractNovaGadget<VC, CHALLENGE_BITS>
+where
+    VC: VectorCommitmentGadgetDef<Native: GroupBasedVectorCommitment>,
+{
     #[allow(non_snake_case)]
     fn verify_hinted(
         _vk: &Self::VerifierKey,
         transcript: &mut impl TranscriptVar<VC::ConstraintField>,
         [U]: [&Self::RU; 1],
         [u]: [&Self::IU; 1],
-        proof: &Self::Proof,
+        proof: &Self::Proof<1, 1>,
     ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
         let rho_bits = {
             transcript.add(&U)?;
@@ -648,27 +648,18 @@ where
     }
 }
 
-impl<VC, const CHALLENGE_BITS: usize> FoldingSchemePartialGadget<2, 0>
+impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeGadgetOpsPartial<2, 0>
     for AbstractNovaGadget<VC, CHALLENGE_BITS>
 where
-    VC: VectorCommitmentGadget<Native: GroupBasedVectorCommitment>,
+    VC: VectorCommitmentGadgetDef<Native: GroupBasedVectorCommitment>,
 {
-    type Native = AbstractNova<VC::Native, VC::ConstraintField, CHALLENGE_BITS>;
-
-    type VC = VC;
-    type RU = RUVar<VC>;
-    type IU = IUVar<VC>;
-    type VerifierKey = ();
-    type Challenge = Vec<Boolean<VC::ConstraintField>>;
-    type Proof = VC::CommitmentVar;
-
     #[allow(non_snake_case)]
     fn verify_hinted(
         _vk: &Self::VerifierKey,
         transcript: &mut impl TranscriptVar<VC::ConstraintField>,
         [U1, U2]: [&Self::RU; 2],
         _: [&Self::IU; 0],
-        proof: &Self::Proof,
+        proof: &Self::Proof<2, 0>,
     ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
         let rho_bits = {
             transcript.add(&U1)?;
@@ -718,11 +709,11 @@ where
     }
 }
 
-impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeFullGadget<1, 1>
+impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeGadgetOpsFull<1, 1>
     for AbstractNovaGadget<VC, CHALLENGE_BITS>
 where
-    VC: VectorCommitmentGadget<Native: GroupBasedVectorCommitment>,
-    VC::CommitmentVar: CurveVar<<VC::Native as VectorCommitment>::Commitment, VC::ConstraintField>,
+    VC: VectorCommitmentGadgetDef<Native: GroupBasedVectorCommitment>,
+    VC::CommitmentVar: CurveVar<<VC::Native as VectorCommitmentDef>::Commitment, VC::ConstraintField>,
 {
     #[allow(non_snake_case)]
     fn verify(
@@ -730,7 +721,7 @@ where
         transcript: &mut impl TranscriptVar<VC::ConstraintField>,
         [U]: [&Self::RU; 1],
         [u]: [&Self::IU; 1],
-        proof: &Self::Proof,
+        proof: &Self::Proof<1, 1>,
     ) -> Result<Self::RU, SynthesisError> {
         let rho_bits = {
             transcript.add(&U)?;
@@ -762,23 +753,22 @@ where
     }
 }
 
-impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
-    GroupBasedFoldingSchemePrimary<1, 1> for AbstractNova<VC, VC::Scalar, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemePrimary<1, 1>
+    for AbstractNova<VC, VC::Scalar, CHALLENGE_BITS>
 {
-    type Gadget = AbstractNovaGadget<VC::EmulatedGadget, CHALLENGE_BITS>;
+    type Gadget = AbstractNovaGadget<VC::Gadget2, CHALLENGE_BITS>;
 }
 
-impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
-    GroupBasedFoldingSchemePrimary<2, 0> for AbstractNova<VC, VC::Scalar, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemePrimary<2, 0>
+    for AbstractNova<VC, VC::Scalar, CHALLENGE_BITS>
 {
-    type Gadget = AbstractNovaGadget<VC::EmulatedGadget, CHALLENGE_BITS>;
+    type Gadget = AbstractNovaGadget<VC::Gadget2, CHALLENGE_BITS>;
 }
 
-impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
-    GroupBasedFoldingSchemeSecondary<1, 1>
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemeSecondary<1, 1>
     for AbstractNova<VC, CF2<VC::Commitment>, CHALLENGE_BITS>
 {
-    type Gadget = AbstractNovaGadget<VC::Gadget, CHALLENGE_BITS>;
+    type Gadget = AbstractNovaGadget<VC::Gadget1, CHALLENGE_BITS>;
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use sonobe_primitives::{
         ccs::{CCSConfig, CCSVariant},
         ArithConfig,
     },
-    commitments::VectorCommitment,
+    commitments::VectorCommitmentDef,
     traits::Dummy,
     transcripts::Absorbable,
 };
@@ -14,7 +14,7 @@ use crate::FoldingInstance;
 pub mod circuits;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LCCCSInstance<VC: VectorCommitment> {
+pub struct LCCCSInstance<VC: VectorCommitmentDef> {
     pub cm: VC::Commitment,
     pub u: VC::Scalar,
     pub x: Vec<VC::Scalar>,
@@ -22,7 +22,7 @@ pub struct LCCCSInstance<VC: VectorCommitment> {
     pub v: Vec<VC::Scalar>,
 }
 
-impl<VC: VectorCommitment> FoldingInstance<VC> for LCCCSInstance<VC> {
+impl<VC: VectorCommitmentDef> FoldingInstance<VC> for LCCCSInstance<VC> {
     const N_COMMITMENTS: usize = 1;
 
     fn commitments(&self) -> Vec<&VC::Commitment> {
@@ -38,7 +38,7 @@ impl<VC: VectorCommitment> FoldingInstance<VC> for LCCCSInstance<VC> {
     }
 }
 
-impl<VC: VectorCommitment, V: CCSVariant> Dummy<&CCSConfig<V>> for LCCCSInstance<VC> {
+impl<VC: VectorCommitmentDef, V: CCSVariant> Dummy<&CCSConfig<V>> for LCCCSInstance<VC> {
     fn dummy(cfg: &CCSConfig<V>) -> Self {
         Self {
             cm: Default::default(),
@@ -50,7 +50,7 @@ impl<VC: VectorCommitment, V: CCSVariant> Dummy<&CCSConfig<V>> for LCCCSInstance
     }
 }
 
-impl<VC: VectorCommitment> Absorbable for LCCCSInstance<VC> {
+impl<VC: VectorCommitmentDef> Absorbable for LCCCSInstance<VC> {
     fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
         self.cm.absorb_into(dest);
         self.u.absorb_into(dest);
@@ -61,12 +61,12 @@ impl<VC: VectorCommitment> Absorbable for LCCCSInstance<VC> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CCCSInstance<VC: VectorCommitment> {
+pub struct CCCSInstance<VC: VectorCommitmentDef> {
     pub cm: VC::Commitment,
     pub x: Vec<VC::Scalar>,
 }
 
-impl<VC: VectorCommitment> FoldingInstance<VC> for CCCSInstance<VC> {
+impl<VC: VectorCommitmentDef> FoldingInstance<VC> for CCCSInstance<VC> {
     const N_COMMITMENTS: usize = 1;
 
     fn commitments(&self) -> Vec<&VC::Commitment> {
@@ -82,7 +82,7 @@ impl<VC: VectorCommitment> FoldingInstance<VC> for CCCSInstance<VC> {
     }
 }
 
-impl<VC: VectorCommitment, Cfg: ArithConfig> Dummy<&Cfg> for CCCSInstance<VC> {
+impl<VC: VectorCommitmentDef, Cfg: ArithConfig> Dummy<&Cfg> for CCCSInstance<VC> {
     fn dummy(cfg: &Cfg) -> Self {
         Self {
             cm: Default::default(),
@@ -91,7 +91,7 @@ impl<VC: VectorCommitment, Cfg: ArithConfig> Dummy<&Cfg> for CCCSInstance<VC> {
     }
 }
 
-impl<VC: VectorCommitment> Absorbable for CCCSInstance<VC> {
+impl<VC: VectorCommitmentDef> Absorbable for CCCSInstance<VC> {
     fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
         self.cm.absorb_into(dest);
         self.x.absorb_into(dest);

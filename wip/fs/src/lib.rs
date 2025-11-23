@@ -22,7 +22,7 @@ use ark_std::{
 use sonobe_primitives::{
     arithmetizations::{Arith, ArithConfig},
     circuits::AssignmentsOwned,
-    commitments::{GroupBasedVectorCommitment, VectorCommitment, VectorCommitmentGadget},
+    commitments::{GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentGadgetDef},
     relations::{Relation, WitnessInstanceSampler},
     sumcheck::Error as SumCheckError,
     traits::{Dummy, SonobeField, CF2},
@@ -52,7 +52,7 @@ pub enum Error {
     InvalidPublicParameters(String),
 }
 
-pub trait FoldingWitness<VC: VectorCommitment>: Debug {
+pub trait FoldingWitness<VC: VectorCommitmentDef>: Debug {
     const N_OPENINGS: usize;
 
     /// Returns the reference to all openings contained in the witness, each
@@ -60,7 +60,7 @@ pub trait FoldingWitness<VC: VectorCommitment>: Debug {
     fn openings(&self) -> Vec<(&[VC::Scalar], &VC::Randomness)>;
 }
 
-pub trait FoldingInstance<VC: VectorCommitment>: Clone + Debug + PartialEq + Absorbable {
+pub trait FoldingInstance<VC: VectorCommitmentDef>: Clone + Debug + PartialEq + Absorbable {
     const N_COMMITMENTS: usize;
 
     /// Returns the commitments contained in the committed instance.
@@ -161,7 +161,7 @@ impl<V: Default + Clone, A: ArithConfig> Dummy<&A> for PlainWitness<V> {
     }
 }
 
-impl<VC: VectorCommitment> FoldingWitness<VC> for PlainWitness<VC::Scalar> {
+impl<VC: VectorCommitmentDef> FoldingWitness<VC> for PlainWitness<VC::Scalar> {
     const N_OPENINGS: usize = 0;
 
     fn openings(&self) -> Vec<(&[VC::Scalar], &VC::Randomness)> {
@@ -177,7 +177,7 @@ impl<V: Default + Clone, A: ArithConfig> Dummy<&A> for PlainInstance<V> {
     }
 }
 
-impl<VC: VectorCommitment> FoldingInstance<VC> for PlainInstance<VC::Scalar> {
+impl<VC: VectorCommitmentDef> FoldingInstance<VC> for PlainInstance<VC::Scalar> {
     const N_COMMITMENTS: usize = 0;
 
     fn commitments(&self) -> Vec<&VC::Commitment> {
@@ -203,8 +203,8 @@ pub trait DeciderKey {
     fn to_arith_config(&self) -> &Self::ArithConfig;
 }
 
-pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
-    type VC: VectorCommitment<Scalar: SonobeField>;
+pub trait FoldingSchemeDef {
+    type VC: VectorCommitmentDef<Scalar: SonobeField>;
     type RW: FoldingWitness<Self::VC> + for<'a> Dummy<&'a <Self::Arith as Arith>::Config>;
     type RU: FoldingInstance<Self::VC> + for<'a> Dummy<&'a <Self::Arith as Arith>::Config>;
     type IW: FoldingWitness<Self::VC> + for<'a> Dummy<&'a <Self::Arith as Arith>::Config>;
@@ -221,12 +221,15 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
         + WitnessInstanceSampler<
             Self::IW,
             Self::IU,
-            Source = AssignmentsOwned<<Self::VC as VectorCommitment>::Scalar>,
+            Source = AssignmentsOwned<<Self::VC as VectorCommitmentDef>::Scalar>,
             Error = Error,
         >;
     type Challenge;
-    type Proof: Clone + for<'a> Dummy<&'a <Self::Arith as Arith>::Config>;
+    type Proof<const M: usize, const N: usize>: Clone
+        + for<'a> Dummy<&'a <Self::Arith as Arith>::Config>;
+}
 
+pub trait FoldingSchemeOps<const M: usize, const N: usize>: FoldingSchemeDef {
     /// The preprocessing method is a randomized algorithm that takes as input
     /// the size bounds of the folding scheme, which are contained in the
     /// `config` parameter, and outputs the public parameters.
@@ -260,7 +263,7 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
         rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error>;
+    ) -> Result<(Self::RW, Self::RU, Self::Proof<M, N>, Self::Challenge), Error>;
 
     #[allow(non_snake_case)]
     fn verify(
@@ -268,7 +271,7 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
         transcript: &mut impl Transcript<Self::TranscriptField>,
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
-        proof: &Self::Proof,
+        proof: &Self::Proof<M, N>,
     ) -> Result<Self::RU, Error>;
 
     #[allow(non_snake_case)]
@@ -281,19 +284,19 @@ pub trait FoldingScheme<const M: usize = 1, const N: usize = 1> {
     }
 }
 
-pub trait FoldingWitnessVar<VC: VectorCommitmentGadget>:
+pub trait FoldingWitnessVar<VC: VectorCommitmentGadgetDef>:
     AllocVar<Self::Value, VC::ConstraintField>
     + GR1CSVar<VC::ConstraintField, Value: FoldingWitness<VC::Native>>
 {
 }
 
-impl<VC: VectorCommitmentGadget, T> FoldingWitnessVar<VC> for T where
+impl<VC: VectorCommitmentGadgetDef, T> FoldingWitnessVar<VC> for T where
     T: AllocVar<Self::Value, VC::ConstraintField>
         + GR1CSVar<VC::ConstraintField, Value: FoldingWitness<VC::Native>>
 {
 }
 
-pub trait FoldingInstanceVar<VC: VectorCommitmentGadget>:
+pub trait FoldingInstanceVar<VC: VectorCommitmentGadgetDef>:
     AllocVar<Self::Value, VC::ConstraintField>
     + GR1CSVar<VC::ConstraintField, Value: FoldingInstance<VC::Native>>
     + AbsorbableGadget<VC::ConstraintField>
@@ -314,7 +317,7 @@ pub trait FoldingInstanceVar<VC: VectorCommitmentGadget>:
 pub type PlainWitnessVar<V> = PlainWitness<V>;
 pub type PlainInstanceVar<V> = PlainInstance<V>;
 
-impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for PlainInstanceVar<VC::ScalarVar> {
+impl<VC: VectorCommitmentGadgetDef> FoldingInstanceVar<VC> for PlainInstanceVar<VC::ScalarVar> {
     fn commitments(&self) -> Vec<&VC::CommitmentVar> {
         vec![]
     }
@@ -332,78 +335,77 @@ impl<VC: VectorCommitmentGadget> FoldingInstanceVar<VC> for PlainInstanceVar<VC:
     }
 }
 
-pub trait GroupBasedFoldingSchemePrimary<const M: usize = 1, const N: usize = 1>:
-    FoldingScheme<
-    M,
-    N,
-    VC: GroupBasedVectorCommitment,
-    TranscriptField = <<Self as FoldingScheme<M, N>>::VC as VectorCommitment>::Scalar,
->
-{
-    type Gadget: FoldingSchemePartialGadget<
-        M,
-        N,
-        Native = Self,
-        VC = <Self::VC as GroupBasedVectorCommitment>::EmulatedGadget,
-    >;
-}
+pub trait FoldingSchemeGadgetDef {
+    type Native: FoldingSchemeDef;
 
-pub trait GroupBasedFoldingSchemeSecondary<const M: usize = 1, const N: usize = 1>:
-    FoldingScheme<
-    M,
-    N,
-    VC: GroupBasedVectorCommitment,
-    TranscriptField = CF2<<<Self as FoldingScheme<M, N>>::VC as VectorCommitment>::Commitment>,
->
-{
-    type Gadget: FoldingSchemeFullGadget<
-        M,
-        N,
-        Native = Self,
-        VC = <Self::VC as VectorCommitment>::Gadget,
-    >;
-}
-
-pub trait FoldingSchemePartialGadget<const M: usize = 1, const N: usize = 1> {
-    type Native: FoldingScheme<M, N>;
-
-    type VC: VectorCommitmentGadget<Native = <Self::Native as FoldingScheme<M, N>>::VC>;
-    type RU: FoldingInstanceVar<Self::VC, Value = <Self::Native as FoldingScheme<M, N>>::RU>;
-    type IU: FoldingInstanceVar<Self::VC, Value = <Self::Native as FoldingScheme<M, N>>::IU>;
+    type VC: VectorCommitmentGadgetDef<Native = <Self::Native as FoldingSchemeDef>::VC>;
+    type RU: FoldingInstanceVar<Self::VC, Value = <Self::Native as FoldingSchemeDef>::RU>;
+    type IU: FoldingInstanceVar<Self::VC, Value = <Self::Native as FoldingSchemeDef>::IU>;
 
     type VerifierKey;
 
     type Challenge;
-
-    type Proof: AllocVar<
-            <Self::Native as FoldingScheme<M, N>>::Proof,
-            <Self::VC as VectorCommitmentGadget>::ConstraintField,
+    type Proof<const M: usize, const N: usize>: AllocVar<
+            <Self::Native as FoldingSchemeDef>::Proof<M, N>,
+            <Self::VC as VectorCommitmentGadgetDef>::ConstraintField,
         > + GR1CSVar<
-            <Self::VC as VectorCommitmentGadget>::ConstraintField,
-            Value = <Self::Native as FoldingScheme<M, N>>::Proof,
+            <Self::VC as VectorCommitmentGadgetDef>::ConstraintField,
+            Value = <Self::Native as FoldingSchemeDef>::Proof<M, N>,
         >;
+}
 
+pub trait FoldingSchemeGadgetOpsPartial<const M: usize, const N: usize>:
+    FoldingSchemeGadgetDef<Native: FoldingSchemeOps<M, N>>
+{
     #[allow(non_snake_case)]
     fn verify_hinted(
         vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptVar<<Self::VC as VectorCommitmentGadget>::ConstraintField>,
+        transcript: &mut impl TranscriptVar<<Self::VC as VectorCommitmentGadgetDef>::ConstraintField>,
         Us: [&Self::RU; M],
         us: [&Self::IU; N],
-        proof: &Self::Proof,
+        proof: &Self::Proof<M, N>,
     ) -> Result<(Self::RU, Self::Challenge), SynthesisError>;
 }
 
-pub trait FoldingSchemeFullGadget<const M: usize = 1, const N: usize = 1>:
-    FoldingSchemePartialGadget<M, N>
+pub trait FoldingSchemeGadgetOpsFull<const M: usize, const N: usize>:
+    FoldingSchemeGadgetOpsPartial<M, N>
 {
     #[allow(non_snake_case)]
     fn verify(
         vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptVar<<Self::VC as VectorCommitmentGadget>::ConstraintField>,
+        transcript: &mut impl TranscriptVar<<Self::VC as VectorCommitmentGadgetDef>::ConstraintField>,
         Us: [&Self::RU; M],
         us: [&Self::IU; N],
-        proof: &Self::Proof,
+        proof: &Self::Proof<M, N>,
     ) -> Result<Self::RU, SynthesisError>;
+}
+
+pub trait GroupBasedFoldingSchemePrimary<const M: usize, const N: usize>:
+    FoldingSchemeDef<
+        VC: GroupBasedVectorCommitment,
+        TranscriptField = <<Self as FoldingSchemeDef>::VC as VectorCommitmentDef>::Scalar,
+    > + FoldingSchemeOps<M, N>
+{
+    type Gadget: FoldingSchemeGadgetOpsPartial<
+        M,
+        N,
+        Native = Self,
+        VC = <Self::VC as GroupBasedVectorCommitment>::Gadget2,
+    >;
+}
+
+pub trait GroupBasedFoldingSchemeSecondary<const M: usize, const N: usize>:
+    FoldingSchemeDef<
+        VC: GroupBasedVectorCommitment,
+        TranscriptField = CF2<<<Self as FoldingSchemeDef>::VC as VectorCommitmentDef>::Commitment>,
+    > + FoldingSchemeOps<M, N>
+{
+    type Gadget: FoldingSchemeGadgetOpsFull<
+        M,
+        N,
+        Native = Self,
+        VC = <Self::VC as GroupBasedVectorCommitment>::Gadget1,
+    >;
 }
 
 #[cfg(test)]
@@ -419,14 +421,14 @@ mod tests {
     use super::*;
 
     #[allow(non_snake_case)]
-    pub fn test_folding_scheme<FS: FoldingScheme<M, N>, const M: usize, const N: usize>(
+    pub fn test_folding_scheme<FS: FoldingSchemeOps<M, N>, const M: usize, const N: usize>(
         config: FS::Config,
-        circuit: impl ConstraintSynthesizer<<FS::VC as VectorCommitment>::Scalar>,
-        assignments_vec: Vec<AssignmentsOwned<<FS::VC as VectorCommitment>::Scalar>>,
+        circuit: impl ConstraintSynthesizer<<FS::VC as VectorCommitmentDef>::Scalar>,
+        assignments_vec: Vec<AssignmentsOwned<<FS::VC as VectorCommitmentDef>::Scalar>>,
         mut rng: impl Rng,
     ) -> Result<(), Box<dyn Error>>
     where
-        FS::Arith: From<ConstraintSystem<<FS::VC as VectorCommitment>::Scalar>>,
+        FS::Arith: From<ConstraintSystem<<FS::VC as VectorCommitmentDef>::Scalar>>,
     {
         let pp = FS::preprocess(config, &mut rng)?;
 

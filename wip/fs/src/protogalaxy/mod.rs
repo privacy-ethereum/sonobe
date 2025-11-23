@@ -24,7 +24,9 @@ use sonobe_primitives::{
     },
     arithmetizations::{r1cs::R1CS, Arith, ArithConfig, ArithRelation, Error as ArithError},
     circuits::{Assignments, AssignmentsOwned},
-    commitments::{CommitmentKey, GroupBasedVectorCommitment, VectorCommitment},
+    commitments::{
+        CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentOps,
+    },
     relations::{Relation, WitnessInstanceSampler},
     traits::Dummy,
     transcripts::{Transcript, TranscriptVar},
@@ -41,20 +43,21 @@ use self::{
     },
 };
 use crate::{
-    DeciderKey, Error, FoldingScheme, FoldingSchemePartialGadget, GroupBasedFoldingSchemePrimary,
-    PlainInstance as PU, PlainWitness as PW,
+    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeOps, FoldingSchemeGadgetOpsFull,
+    FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary,
+    GroupBasedFoldingSchemeSecondary, PlainInstance as PU, PlainWitness as PW,
 };
 
 pub mod instance;
 pub mod witness;
 
 #[derive(Clone)]
-pub struct ProtoGalaxyKey<A, VC: VectorCommitment> {
+pub struct ProtoGalaxyKey<A, VC: VectorCommitmentDef> {
     arith: Arc<A>,
     ck: Arc<VC::Key>,
 }
 
-impl<A: Arith, VC: VectorCommitment> DeciderKey for ProtoGalaxyKey<A, VC> {
+impl<A: Arith, VC: VectorCommitmentDef> DeciderKey for ProtoGalaxyKey<A, VC> {
     type ProverKey = Self;
     type VerifierKey = ();
     type ArithConfig = A::Config;
@@ -72,7 +75,7 @@ impl<A: Arith, VC: VectorCommitment> DeciderKey for ProtoGalaxyKey<A, VC> {
     }
 }
 
-impl<VC: VectorCommitment<Scalar: Field>> ArithRelation<RW<VC>, RU<VC>> for R1CS<VC::Scalar> {
+impl<VC: VectorCommitmentDef<Scalar: Field>> ArithRelation<RW<VC>, RU<VC>> for R1CS<VC::Scalar> {
     type Evaluation = Vec<VC::Scalar>;
 
     fn eval_relation(&self, w: &RW<VC>, u: &RU<VC>) -> Result<Self::Evaluation, ArithError> {
@@ -103,7 +106,7 @@ impl<VC: VectorCommitment<Scalar: Field>> ArithRelation<RW<VC>, RU<VC>> for R1CS
 impl<A, VC> Relation<RW<VC>, RU<VC>> for ProtoGalaxyKey<A, VC>
 where
     A: ArithRelation<RW<VC>, RU<VC>>,
-    VC: VectorCommitment,
+    VC: VectorCommitmentOps,
 {
     type Error = Error;
 
@@ -117,7 +120,7 @@ where
 impl<A, VC> Relation<IW<VC>, IU<VC>> for ProtoGalaxyKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
-    VC: VectorCommitment,
+    VC: VectorCommitmentOps,
 {
     type Error = Error;
 
@@ -131,7 +134,7 @@ where
 impl<A, VC> Relation<PW<VC::Scalar>, PU<VC::Scalar>> for ProtoGalaxyKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>>,
-    VC: VectorCommitment,
+    VC: VectorCommitmentDef,
 {
     type Error = Error;
 
@@ -141,7 +144,7 @@ where
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC>, IU<VC>> for ProtoGalaxyKey<A, VC> {
+impl<A, VC: VectorCommitmentOps> WitnessInstanceSampler<IW<VC>, IU<VC>> for ProtoGalaxyKey<A, VC> {
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
@@ -152,7 +155,7 @@ impl<A, VC: VectorCommitment> WitnessInstanceSampler<IW<VC>, IU<VC>> for ProtoGa
     }
 }
 
-impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scalar>>
+impl<A, VC: VectorCommitmentDef> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scalar>>
     for ProtoGalaxyKey<A, VC>
 {
     type Source = AssignmentsOwned<VC::Scalar>;
@@ -170,7 +173,7 @@ impl<A, VC: VectorCommitment> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::Scal
 impl<A, VC> WitnessInstanceSampler<RW<VC>, RU<VC>> for ProtoGalaxyKey<A, VC>
 where
     A: ArithRelation<Vec<VC::Scalar>, Vec<VC::Scalar>, Evaluation = Vec<VC::Scalar>>,
-    VC: VectorCommitment<Scalar: Field>,
+    VC: VectorCommitmentOps<Scalar: Field>,
 {
     type Source = ();
     type Error = Error;
@@ -218,7 +221,7 @@ pub struct ProtoGalaxy<VC> {
     _vc: PhantomData<VC>,
 }
 
-impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for ProtoGalaxy<VC> {
+impl<VC: GroupBasedVectorCommitment> FoldingSchemeDef for ProtoGalaxy<VC> {
     type VC = VC;
     type RW = RW<VC>;
     type RU = RU<VC>;
@@ -232,8 +235,12 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
     type PublicParam = VC::Key;
     type DeciderKey = ProtoGalaxyKey<Self::Arith, VC>;
     type Challenge = Vec<VC::Scalar>;
-    type Proof = ProtoGalaxyProof<VC::Scalar, N>;
+    type Proof<const M: usize, const N: usize> = ProtoGalaxyProof<VC::Scalar, N>;
+}
 
+impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeOps<1, N>
+    for ProtoGalaxy<VC>
+{
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         if !(N + 1).is_power_of_two() {
             return Err(Error::Unsupported("N + 1 must be a power of two".into()));
@@ -262,7 +269,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
         _rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, N>, Self::Challenge), Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -423,7 +430,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; N],
-        proof: &Self::Proof,
+        proof: &Self::Proof<1, N>,
     ) -> Result<Self::RU, Error> {
         let U = Us[0].borrow();
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -476,7 +483,7 @@ struct ProtoGalaxy2<VC> {
     _vc: PhantomData<VC>,
 }
 
-impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for ProtoGalaxy2<VC> {
+impl<VC: GroupBasedVectorCommitment> FoldingSchemeDef for ProtoGalaxy2<VC> {
     type VC = VC;
     type RW = RW<VC>;
     type RU = RU<VC>;
@@ -490,8 +497,12 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
     type PublicParam = VC::Key;
     type DeciderKey = ProtoGalaxyKey<Self::Arith, VC>;
     type Challenge = Vec<VC::Scalar>;
-    type Proof = ([VC::Commitment; N], ProtoGalaxyProof<VC::Scalar, N>);
+    type Proof<const M: usize, const N: usize> = ([VC::Commitment; N], ProtoGalaxyProof<VC::Scalar, N>);
+}
 
+impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeOps<1, N>
+    for ProtoGalaxy2<VC>
+{
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         if !(N + 1).is_power_of_two() {
             return Err(Error::Unsupported("N + 1 must be a power of two".into()));
@@ -520,7 +531,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
         mut rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof, Self::Challenge), Error> {
+    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, N>, Self::Challenge), Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -689,7 +700,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingScheme<1, N> for Pro
         transcript: &mut impl Transcript<VC::Scalar>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; N],
-        (phis, proof): &Self::Proof,
+        (phis, proof): &Self::Proof<1, N>,
     ) -> Result<Self::RU, Error> {
         let U = Us[0].borrow();
         let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -801,25 +812,27 @@ pub struct ProtoGalaxyGadget<VC> {
     _v: PhantomData<VC>,
 }
 
-impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemePartialGadget<1, N>
-    for ProtoGalaxyGadget<VC>
-{
+impl<VC: GroupBasedVectorCommitment> FoldingSchemeGadgetDef for ProtoGalaxyGadget<VC> {
     type Native = ProtoGalaxy<VC>;
 
-    type VC = VC::EmulatedGadget;
-    type RU = RUVar<VC::EmulatedGadget>;
-    type IU = IUVar<VC::EmulatedGadget>;
+    type VC = VC::Gadget2;
+    type RU = RUVar<VC::Gadget2>;
+    type IU = IUVar<VC::Gadget2>;
     type VerifierKey = ();
     type Challenge = Vec<FpVar<VC::Scalar>>;
-    type Proof = ProtoGalaxyProofVar<VC::Scalar, N>;
+    type Proof<const M: usize, const N: usize> = ProtoGalaxyProofVar<VC::Scalar, N>;
+}
 
+impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeGadgetOpsPartial<1, N>
+    for ProtoGalaxyGadget<VC>
+{
     #[allow(non_snake_case)]
     fn verify_hinted(
         _vk: &Self::VerifierKey,
         transcript: &mut impl TranscriptVar<VC::Scalar>,
         [U]: [&Self::RU; 1],
         us: [&Self::IU; N],
-        proof: &Self::Proof,
+        proof: &Self::Proof<1, N>,
     ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
         transcript.add(&FpVar::constant((proof.f_coeffs.len() as u64).into()))?;
         transcript.add(&FpVar::constant((proof.k_coeffs.len() as u64).into()))?;

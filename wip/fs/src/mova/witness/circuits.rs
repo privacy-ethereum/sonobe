@@ -4,18 +4,18 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
-use sonobe_primitives::commitments::VectorCommitmentGadget;
+use sonobe_primitives::commitments::VectorCommitmentGadgetDef;
 
 use super::RunningWitness;
 
 #[derive(Debug, PartialEq)]
-pub struct RunningWitnessVar<VC: VectorCommitmentGadget> {
+pub struct RunningWitnessVar<VC: VectorCommitmentGadgetDef> {
     pub w: Vec<VC::ScalarVar>,
     pub r_w: VC::RandomnessVar,
     pub e: Vec<VC::ScalarVar>,
 }
 
-impl<VC: VectorCommitmentGadget> AllocVar<RunningWitness<VC::Native>, VC::ConstraintField>
+impl<VC: VectorCommitmentGadgetDef> AllocVar<RunningWitness<VC::Native>, VC::ConstraintField>
     for RunningWitnessVar<VC>
 {
     fn new_variable<T: Borrow<RunningWitness<VC::Native>>>(
@@ -34,7 +34,7 @@ impl<VC: VectorCommitmentGadget> AllocVar<RunningWitness<VC::Native>, VC::Constr
     }
 }
 
-impl<VC: VectorCommitmentGadget> GR1CSVar<VC::ConstraintField> for RunningWitnessVar<VC> {
+impl<VC: VectorCommitmentGadgetDef> GR1CSVar<VC::ConstraintField> for RunningWitnessVar<VC> {
     type Value = RunningWitness<VC::Native>;
 
     fn cs(&self) -> ConstraintSystemRef<VC::ConstraintField> {

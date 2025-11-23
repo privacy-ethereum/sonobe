@@ -2,14 +2,15 @@ use ark_ff::{PrimeField, Zero};
 use ark_relations::gr1cs::{ConstraintSystem, SynthesisError, SynthesisMode};
 use ark_std::{borrow::Borrow, marker::PhantomData, rand::RngCore, sync::Arc};
 use sonobe_fs::{
-    DeciderKey, FoldingInstance, FoldingScheme, FoldingSchemeFullGadget,
-    FoldingSchemePartialGadget, GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary,
+    DeciderKey, FoldingInstance, FoldingSchemeDef, FoldingSchemeGadgetOpsFull,
+    FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary,
+    GroupBasedFoldingSchemeSecondary,
 };
 use sonobe_primitives::{
     algebra::field::emulated::EmulatedFieldVar,
     arithmetizations::{Arith, ArithConfig},
     circuits::{ConstraintSystemBuilder, ConstraintSystemExt, FCircuit},
-    commitments::VectorCommitment,
+    commitments::VectorCommitmentDef,
     relations::WitnessInstanceSampler,
     traits::{Dummy, SonobeCurve, CF1, CF2},
     transcripts::Transcript,
@@ -26,29 +27,29 @@ pub mod circuits;
 pub trait FoldingSchemeCycleFoldExt<const M: usize, const N: usize>:
     GroupBasedFoldingSchemePrimary<M, N>
 {
-    type CFConfig: CycleFoldConfig<C = <Self::VC as VectorCommitment>::Commitment>;
+    type CFConfig: CycleFoldConfig<C = <Self::VC as VectorCommitmentDef>::Commitment>;
 
     const N_CYCLEFOLDS: usize;
 
     fn to_cyclefold_configs(
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
-        proof: &Self::Proof,
+        proof: &Self::Proof<M, N>,
         rho: Self::Challenge,
     ) -> Vec<Self::CFConfig>;
 
     fn to_cyclefold_inputs(
-        Us: [<Self::Gadget as FoldingSchemePartialGadget<M, N>>::RU; M],
-        us: [<Self::Gadget as FoldingSchemePartialGadget<M, N>>::IU; N],
-        UU: <Self::Gadget as FoldingSchemePartialGadget<M, N>>::RU,
-        proof: <Self::Gadget as FoldingSchemePartialGadget<M, N>>::Proof,
-        rho: <Self::Gadget as FoldingSchemePartialGadget<M, N>>::Challenge,
+        Us: [<Self::Gadget as FoldingSchemeGadgetDef>::RU; M],
+        us: [<Self::Gadget as FoldingSchemeGadgetDef>::IU; N],
+        UU: <Self::Gadget as FoldingSchemeGadgetDef>::RU,
+        proof: <Self::Gadget as FoldingSchemeGadgetDef>::Proof<M, N>,
+        rho: <Self::Gadget as FoldingSchemeGadgetDef>::Challenge,
     ) -> Result<
         Vec<
             Vec<
                 EmulatedFieldVar<
-                    <Self::VC as VectorCommitment>::Scalar,
-                    CF2<<Self::VC as VectorCommitment>::Commitment>,
+                    <Self::VC as VectorCommitmentDef>::Scalar,
+                    CF2<<Self::VC as VectorCommitmentDef>::Commitment>,
                 >,
             >,
         >,
@@ -56,13 +57,13 @@ pub trait FoldingSchemeCycleFoldExt<const M: usize, const N: usize>:
     >;
 }
 
-pub struct Key<FS1: FoldingScheme<1, 1>, FS2: FoldingScheme<1, 1>, T>(
+pub struct Key<FS1: FoldingSchemeDef, FS2: FoldingSchemeDef, T>(
     pub FS1::DeciderKey,
     pub FS2::DeciderKey,
     pub T,
 );
 
-pub struct Proof<FS1: FoldingScheme<1, 1>, FS2: FoldingScheme<1, 1>>(
+pub struct Proof<FS1: FoldingSchemeDef, FS2: FoldingSchemeDef>(
     pub FS1::RW,
     pub FS1::RU,
     pub FS1::IW,
@@ -71,9 +72,7 @@ pub struct Proof<FS1: FoldingScheme<1, 1>, FS2: FoldingScheme<1, 1>>(
     pub FS2::RU,
 );
 
-impl<FS1: FoldingScheme<1, 1>, FS2: FoldingScheme<1, 1>, T> Dummy<&Key<FS1, FS2, T>>
-    for Proof<FS1, FS2>
-{
+impl<FS1: FoldingSchemeDef, FS2: FoldingSchemeDef, T> Dummy<&Key<FS1, FS2, T>> for Proof<FS1, FS2> {
     fn dummy(pk: &Key<FS1, FS2, T>) -> Self {
         let cfg1 = pk.0.to_arith_config();
         let cfg2 = pk.1.to_arith_config();
@@ -97,24 +96,24 @@ where
     FS1: FoldingSchemeCycleFoldExt<
         1,
         1,
-        Arith: From<ConstraintSystem<CF1<<FS1::VC as VectorCommitment>::Commitment>>>,
-        Gadget: FoldingSchemePartialGadget<1, 1, VerifierKey = ()>,
-        VC: VectorCommitment<
-            Commitment: SonobeCurve<BaseField = <FS2::VC as VectorCommitment>::Scalar>,
+        Arith: From<ConstraintSystem<CF1<<FS1::VC as VectorCommitmentDef>::Commitment>>>,
+        Gadget: FoldingSchemeGadgetOpsPartial<1, 1, VerifierKey = ()>,
+        VC: VectorCommitmentDef<
+            Commitment: SonobeCurve<BaseField = <FS2::VC as VectorCommitmentDef>::Scalar>,
         >,
     >,
     FS2: GroupBasedFoldingSchemeSecondary<
         1,
         1,
-        Arith: From<ConstraintSystem<CF1<<FS2::VC as VectorCommitment>::Commitment>>>,
-        Gadget: FoldingSchemeFullGadget<1, 1, VerifierKey = ()>,
-        VC: VectorCommitment<
-            Commitment: SonobeCurve<BaseField = <FS1::VC as VectorCommitment>::Scalar>,
+        Arith: From<ConstraintSystem<CF1<<FS2::VC as VectorCommitmentDef>::Commitment>>>,
+        Gadget: FoldingSchemeGadgetOpsFull<1, 1, VerifierKey = ()>,
+        VC: VectorCommitmentDef<
+            Commitment: SonobeCurve<BaseField = <FS1::VC as VectorCommitmentDef>::Scalar>,
         >,
     >,
-    T: Transcript<CF1<<FS1::VC as VectorCommitment>::Commitment>>,
+    T: Transcript<CF1<<FS1::VC as VectorCommitmentDef>::Commitment>>,
 {
-    type Field = <FS1::VC as VectorCommitment>::Scalar;
+    type Field = <FS1::VC as VectorCommitmentDef>::Scalar;
 
     type Config = (FS1::Config, FS2::Config, T::Config);
 

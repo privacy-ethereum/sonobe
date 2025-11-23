@@ -9,14 +9,13 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_std::marker::PhantomData;
 use sonobe_fs::{
-    FoldingInstanceVar, FoldingSchemeFullGadget, FoldingSchemePartialGadget,
-    GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary,
+    FoldingInstanceVar, FoldingSchemeGadgetOpsFull, FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary
 };
 use sonobe_primitives::{
     algebra::Val,
     arithmetizations::Arith,
     circuits::FCircuit,
-    commitments::VectorCommitment,
+    commitments::VectorCommitmentDef,
     traits::{Dummy, SonobeCurve, CF2},
     transcripts::{Transcript, TranscriptVar},
 };
@@ -41,20 +40,20 @@ where
     FS1: FoldingSchemeCycleFoldExt<
         1,
         1,
-        Gadget: FoldingSchemePartialGadget<1, 1, VerifierKey = ()>,
-        VC: VectorCommitment<
-            Commitment: SonobeCurve<BaseField = <FS2::VC as VectorCommitment>::Scalar>,
+        Gadget: FoldingSchemeGadgetOpsPartial<1, 1, VerifierKey = ()>,
+        VC: VectorCommitmentDef<
+            Commitment: SonobeCurve<BaseField = <FS2::VC as VectorCommitmentDef>::Scalar>,
         >,
     >,
     FS2: GroupBasedFoldingSchemeSecondary<
         1,
         1,
-        Gadget: FoldingSchemeFullGadget<1, 1, VerifierKey = ()>,
-        VC: VectorCommitment<
-            Commitment: SonobeCurve<BaseField = <FS1::VC as VectorCommitment>::Scalar>,
+        Gadget: FoldingSchemeGadgetOpsFull<1, 1, VerifierKey = ()>,
+        VC: VectorCommitmentDef<
+            Commitment: SonobeCurve<BaseField = <FS1::VC as VectorCommitmentDef>::Scalar>,
         >,
     >,
-    FC: FCircuit<Field = <FS1::VC as VectorCommitment>::Scalar>,
+    FC: FCircuit<Field = <FS1::VC as VectorCommitmentDef>::Scalar>,
     T: Transcript<FC::Field>,
 {
     pub fn compute_next_state(
@@ -67,10 +66,10 @@ where
         external_inputs: FC::ExternalInputs,
         U: &FS1::RU,
         u: &FS1::IU,
-        proof: FS1::Proof,
+        proof: FS1::Proof<1, 1>,
         cf_U: &FS2::RU,
         cf_us: Vec<FS2::IU>,
-        cf_proofs: Vec<FS2::Proof>,
+        cf_proofs: Vec<FS2::Proof<1, 1>>,
     ) -> Result<FC::State, SynthesisError> {
         let hash = T::Var::new_with_pp_hash(
             &self.hash_config,
@@ -160,18 +159,20 @@ where
     FS1: FoldingSchemeCycleFoldExt<
         1,
         1,
-        Gadget: FoldingSchemePartialGadget<1, 1, VerifierKey = ()>,
-        VC: VectorCommitment<
-            Commitment: SonobeCurve<BaseField = <FS2::VC as VectorCommitment>::Scalar>,
+        Gadget: FoldingSchemeGadgetOpsPartial<1, 1, VerifierKey = ()>,
+        VC: VectorCommitmentDef<
+            Commitment: SonobeCurve<BaseField = <FS2::VC as VectorCommitmentDef>::Scalar>,
         >,
     >,
     FS2: GroupBasedFoldingSchemeSecondary<
         1,
         1,
-        Gadget: FoldingSchemeFullGadget<1, 1, VerifierKey = ()>,
-        VC: VectorCommitment<Commitment: SonobeCurve<BaseField = FC::Field>>,
+        Gadget: FoldingSchemeGadgetOpsFull<1, 1, VerifierKey = ()>,
+        VC: VectorCommitmentDef<
+            Commitment: SonobeCurve<BaseField = <FS1::VC as VectorCommitmentDef>::Scalar>,
+        >,
     >,
-    FC: FCircuit<Field = <FS1::VC as VectorCommitment>::Scalar>,
+    FC: FCircuit<Field = <FS1::VC as VectorCommitmentDef>::Scalar>,
     T: Transcript<FC::Field>,
 {
     fn generate_constraints(

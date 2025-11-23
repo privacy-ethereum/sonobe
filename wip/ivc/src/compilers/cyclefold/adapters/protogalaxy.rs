@@ -3,7 +3,7 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, groups::CurveVar, prelude
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::{borrow::Borrow, iter::once};
 use sonobe_fs::{
-    nova::CycleFoldNova, ova::CycleFoldOva, protogalaxy::ProtoGalaxy, FoldingSchemePartialGadget,
+    FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial, nova::CycleFoldNova, ova::CycleFoldOva, protogalaxy::ProtoGalaxy
 };
 use sonobe_primitives::{
     algebra::{
@@ -80,7 +80,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeCycleFoldExt<1
     fn to_cyclefold_configs(
         [U]: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; N],
-        _proof: &Self::Proof,
+        _proof: &Self::Proof<1, N>,
         lagrange_evals: Self::Challenge,
     ) -> Vec<Self::CFConfig> {
         vec![ProtoGalaxyCycleFoldConfig {
@@ -99,10 +99,10 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeCycleFoldExt<1
     }
 
     fn to_cyclefold_inputs(
-        [U]: [<Self::Gadget as FoldingSchemePartialGadget<1, N>>::RU; 1],
-        us: [<Self::Gadget as FoldingSchemePartialGadget<1, N>>::IU; N],
-        UU: <Self::Gadget as FoldingSchemePartialGadget<1, N>>::RU,
-        _proof: <Self::Gadget as FoldingSchemePartialGadget<1, N>>::Proof,
+        [U]: [<Self::Gadget as FoldingSchemeGadgetDef>::RU; 1],
+        us: [<Self::Gadget as FoldingSchemeGadgetDef>::IU; N],
+        UU: <Self::Gadget as FoldingSchemeGadgetDef>::RU,
+        _proof: <Self::Gadget as FoldingSchemeGadgetDef>::Proof<1, N>,
         lagrange_evals: Vec<FpVar<VC::Scalar>>,
     ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>>>>, SynthesisError> {
         let lagrange_evals_bits = lagrange_evals

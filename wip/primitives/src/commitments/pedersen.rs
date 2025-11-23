@@ -4,21 +4,18 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::{iter::repeat_with, marker::PhantomData, rand::RngCore, UniformRand};
 
-use super::{Error, VectorCommitment};
+use super::{
+    CommitmentKey, Error, VectorCommitmentDef, VectorCommitmentGadgetDef, VectorCommitmentOps,
+};
 use crate::{
     algebra::{
         field::emulated::{EmulatedFieldVar, IntVarInner},
         group::emulated::EmulatedAffineVar,
     },
-    commitments::{CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentGadget},
+    commitments::{GroupBasedVectorCommitment, VectorCommitmentGadgetOps},
     traits::{SonobeCurve, CF1, CF2},
     utils::null::Null,
 };
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Pedersen<C: SonobeCurve, const H: bool> {
-    _c: PhantomData<C>,
-}
 
 #[derive(Clone)]
 pub struct PedersenKey<C: SonobeCurve, const H: bool> {
@@ -66,81 +63,150 @@ impl<C: SonobeCurve> PedersenKey<C, false> {
     }
 }
 
-impl<C: SonobeCurve> VectorCommitment for Pedersen<C, false> {
-    const IS_HIDING: bool = false;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pedersen<C: SonobeCurve, const H: bool> {
+    _c: PhantomData<C>,
+}
 
-    type Gadget = PedersenGadget<C, false>;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PedersenEmulatedGadget<C: SonobeCurve, const H: bool> {
+    _c: PhantomData<C>,
+}
+
+impl<C: SonobeCurve> VectorCommitmentDef for Pedersen<C, false> {
+    const IS_HIDING: bool = false;
 
     type Key = PedersenKey<C, false>;
     type Scalar = C::ScalarField;
     type Commitment = C;
     type Randomness = Null;
+}
 
-    fn generate_key(len: usize, rng: impl RngCore) -> Result<Self::Key, Error> {
+impl<C: SonobeCurve> VectorCommitmentDef for Pedersen<C, true> {
+    const IS_HIDING: bool = true;
+
+    type Key = PedersenKey<C, true>;
+    type Scalar = C::ScalarField;
+    type Commitment = C;
+    type Randomness = C::ScalarField;
+}
+
+impl<C: SonobeCurve> VectorCommitmentGadgetDef for PedersenGadget<C, false> {
+    type ConstraintField = CF2<C>;
+
+    type KeyVar = Vec<C::Var>;
+
+    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
+
+    type IntermediateScalarVar = IntVarInner<CF2<C>, CF1<C>, false>;
+
+    type CommitmentVar = C::Var;
+
+    type RandomnessVar = Null;
+
+    type Native = Pedersen<C, false>;
+}
+
+impl<C: SonobeCurve> VectorCommitmentGadgetDef for PedersenGadget<C, true> {
+    type ConstraintField = CF2<C>;
+
+    type KeyVar = (Vec<C::Var>, C::Var);
+
+    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
+
+    type IntermediateScalarVar = IntVarInner<CF2<C>, CF1<C>, false>;
+
+    type CommitmentVar = C::Var;
+
+    type RandomnessVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
+
+    type Native = Pedersen<C, true>;
+}
+
+impl<C: SonobeCurve> VectorCommitmentGadgetDef for PedersenEmulatedGadget<C, false> {
+    type ConstraintField = CF1<C>;
+
+    type KeyVar = Vec<EmulatedAffineVar<CF1<C>, C>>;
+
+    type ScalarVar = FpVar<CF1<C>>;
+
+    type IntermediateScalarVar = FpVar<CF1<C>>;
+
+    type CommitmentVar = EmulatedAffineVar<CF1<C>, C>;
+
+    type RandomnessVar = Null;
+
+    type Native = Pedersen<C, false>;
+}
+
+impl<C: SonobeCurve> VectorCommitmentGadgetDef for PedersenEmulatedGadget<C, true> {
+    type ConstraintField = CF1<C>;
+
+    type KeyVar = (
+        Vec<EmulatedAffineVar<CF1<C>, C>>,
+        EmulatedAffineVar<CF1<C>, C>,
+    );
+
+    type ScalarVar = FpVar<CF1<C>>;
+
+    type IntermediateScalarVar = FpVar<CF1<C>>;
+
+    type CommitmentVar = EmulatedAffineVar<CF1<C>, C>;
+
+    type RandomnessVar = FpVar<CF1<C>>;
+
+    type Native = Pedersen<C, true>;
+}
+
+impl<C: SonobeCurve> GroupBasedVectorCommitment for Pedersen<C, false> {
+    type Gadget1 = PedersenGadget<C, false>;
+    type Gadget2 = PedersenEmulatedGadget<C, false>;
+}
+
+impl<C: SonobeCurve> GroupBasedVectorCommitment for Pedersen<C, true> {
+    type Gadget1 = PedersenGadget<C, true>;
+    type Gadget2 = PedersenEmulatedGadget<C, true>;
+}
+
+impl<C: SonobeCurve> VectorCommitmentOps for Pedersen<C, false> {
+    fn generate_key(len: usize, rng: impl RngCore) -> Result<PedersenKey<C, false>, Error> {
         Ok(PedersenKey::new(len, rng))
     }
 
     fn commit(
-        ck: &Self::Key,
-        v: &[Self::Scalar],
+        ck: &PedersenKey<C, false>,
+        v: &[CF1<C>],
         _rng: impl RngCore,
-    ) -> Result<(Self::Commitment, Self::Randomness), Error> {
+    ) -> Result<(C, Null), Error> {
         Ok((ck.commit(v)?, Null))
     }
 
-    fn open(
-        ck: &Self::Key,
-        v: &[Self::Scalar],
-        _r: &Self::Randomness,
-        cm: &Self::Commitment,
-    ) -> Result<(), Error> {
+    fn open(ck: &PedersenKey<C, false>, v: &[CF1<C>], _r: &Null, cm: &C) -> Result<(), Error> {
         (&ck.commit(v)? == cm)
             .then_some(())
             .ok_or(Error::CommitmentVerificationFail)
     }
 }
 
-impl<C: SonobeCurve> VectorCommitment for Pedersen<C, true> {
-    const IS_HIDING: bool = true;
-
-    type Gadget = PedersenGadget<C, true>;
-
-    type Key = PedersenKey<C, true>;
-    type Scalar = C::ScalarField;
-    type Commitment = C;
-    type Randomness = C::ScalarField;
-
-    fn generate_key(len: usize, rng: impl RngCore) -> Result<Self::Key, Error> {
+impl<C: SonobeCurve> VectorCommitmentOps for Pedersen<C, true> {
+    fn generate_key(len: usize, rng: impl RngCore) -> Result<PedersenKey<C, true>, Error> {
         Ok(PedersenKey::new(len, rng))
     }
 
     fn commit(
-        ck: &Self::Key,
-        v: &[Self::Scalar],
+        ck: &PedersenKey<C, true>,
+        v: &[CF1<C>],
         mut rng: impl RngCore,
-    ) -> Result<(Self::Commitment, Self::Randomness), Error> {
+    ) -> Result<(C, CF1<C>), Error> {
         let r = C::ScalarField::rand(&mut rng);
         Ok((ck.commit(v, &r)?, r))
     }
 
-    fn open(
-        ck: &Self::Key,
-        v: &[Self::Scalar],
-        r: &Self::Randomness,
-        cm: &Self::Commitment,
-    ) -> Result<(), Error> {
+    fn open(ck: &PedersenKey<C, true>, v: &[CF1<C>], r: &CF1<C>, cm: &C) -> Result<(), Error> {
         (&(ck.commit(v, r)?) == cm)
             .then_some(())
             .ok_or(Error::CommitmentVerificationFail)
     }
-}
-
-impl<C: SonobeCurve> GroupBasedVectorCommitment for Pedersen<C, false> {
-    type EmulatedGadget = PedersenEmulatedGadget<C, false>;
-}
-
-impl<C: SonobeCurve> GroupBasedVectorCommitment for Pedersen<C, true> {
-    type EmulatedGadget = PedersenEmulatedGadget<C, true>;
 }
 
 #[derive(Clone)]
@@ -258,25 +324,12 @@ impl<C: SonobeCurve, const H: bool> PedersenGadget<C, H> {
     }
 }
 
-impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, false> {
-    type Native = Pedersen<C, false>;
-    type ConstraintField = CF2<C>;
-
-    type KeyVar = Vec<C::Var>;
-
-    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
-
-    type IntermediateScalarVar = IntVarInner<CF2<C>, CF1<C>, false>;
-
-    type CommitmentVar = C::Var;
-
-    type RandomnessVar = Null;
-
+impl<C: SonobeCurve> VectorCommitmentGadgetOps for PedersenGadget<C, false> {
     fn open(
-        ck: &Self::KeyVar,
-        v: &[Self::ScalarVar],
-        _r: &Self::RandomnessVar,
-        cm: &Self::CommitmentVar,
+        ck: &Vec<C::Var>,
+        v: &[EmulatedFieldVar<CF2<C>, CF1<C>>],
+        _r: &Null,
+        cm: &C::Var,
     ) -> Result<(), SynthesisError> {
         Self::msm(
             ck,
@@ -288,25 +341,12 @@ impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, false> {
     }
 }
 
-impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, true> {
-    type Native = Pedersen<C, true>;
-    type ConstraintField = CF2<C>;
-
-    type KeyVar = (Vec<C::Var>, C::Var);
-
-    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
-
-    type IntermediateScalarVar = IntVarInner<CF2<C>, CF1<C>, false>;
-
-    type CommitmentVar = C::Var;
-
-    type RandomnessVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
-
+impl<C: SonobeCurve> VectorCommitmentGadgetOps for PedersenGadget<C, true> {
     fn open(
-        (g, h): &Self::KeyVar,
-        v: &[Self::ScalarVar],
-        r: &Self::RandomnessVar,
-        cm: &Self::CommitmentVar,
+        (g, h): &(Vec<C::Var>, C::Var),
+        v: &[EmulatedFieldVar<CF2<C>, CF1<C>>],
+        r: &EmulatedFieldVar<CF2<C>, CF1<C>>,
+        cm: &C::Var,
     ) -> Result<(), SynthesisError> {
         let gv = Self::msm(
             g,
@@ -316,62 +356,6 @@ impl<C: SonobeCurve> VectorCommitmentGadget for PedersenGadget<C, true> {
         )?;
         let hr = h.scalar_mul_le(r.to_bits_le()?.iter())?;
         (gv + hr).enforce_equal(cm)
-    }
-}
-
-#[derive(Clone)]
-pub struct PedersenEmulatedGadget<C: SonobeCurve, const H: bool> {
-    _c: PhantomData<C>,
-}
-
-impl<C: SonobeCurve> VectorCommitmentGadget for PedersenEmulatedGadget<C, false> {
-    type Native = Pedersen<C, false>;
-    type ConstraintField = CF1<C>;
-
-    type KeyVar = Vec<EmulatedAffineVar<CF1<C>, C>>;
-
-    type ScalarVar = FpVar<CF1<C>>;
-
-    type IntermediateScalarVar = FpVar<CF1<C>>;
-
-    type CommitmentVar = EmulatedAffineVar<CF1<C>, C>;
-
-    type RandomnessVar = Null;
-
-    fn open(
-        ck: &Self::KeyVar,
-        v: &[Self::ScalarVar],
-        _r: &Self::RandomnessVar,
-        cm: &Self::CommitmentVar,
-    ) -> Result<(), SynthesisError> {
-        unimplemented!()
-    }
-}
-
-impl<C: SonobeCurve> VectorCommitmentGadget for PedersenEmulatedGadget<C, true> {
-    type Native = Pedersen<C, true>;
-    type ConstraintField = CF1<C>;
-
-    type KeyVar = (
-        Vec<EmulatedAffineVar<CF1<C>, C>>,
-        EmulatedAffineVar<CF1<C>, C>,
-    );
-
-    type ScalarVar = FpVar<CF1<C>>;
-
-    type IntermediateScalarVar = FpVar<CF1<C>>;
-
-    type CommitmentVar = EmulatedAffineVar<CF1<C>, C>;
-
-    type RandomnessVar = FpVar<CF1<C>>;
-
-    fn open(
-        (g, h): &Self::KeyVar,
-        v: &[Self::ScalarVar],
-        r: &Self::RandomnessVar,
-        cm: &Self::CommitmentVar,
-    ) -> Result<(), SynthesisError> {
-        unimplemented!()
     }
 }
 
