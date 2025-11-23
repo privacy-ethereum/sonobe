@@ -70,7 +70,7 @@ where
         cf_U: &FS2::RU,
         cf_us: Vec<FS2::IU>,
         cf_proofs: Vec<FS2::Proof<1, 1>>,
-    ) -> Result<FC::State, SynthesisError> {
+    ) -> Result<(FC::State, FC::ExternalOutputs), SynthesisError> {
         let hash = T::Var::new_with_pp_hash(
             &self.hash_config,
             &FpVar::new_witness(cs.clone(), || Ok(pp_hash))?,
@@ -118,7 +118,7 @@ where
         }
         let actual_cf_UU = is_basecase.select(&cf_U_dummy, &cf_UU)?;
 
-        let next_state = self.step_circuit.generate_step_constraints(
+        let (next_state, external_outputs) = self.step_circuit.generate_step_constraints(
             cs.clone(),
             i,
             current_state,
@@ -147,9 +147,9 @@ where
         })?)?;
 
         if cs.is_in_setup_mode() {
-            Ok(self.step_circuit.dummy_state())
+            Ok((self.step_circuit.dummy_state(), external_outputs))
         } else {
-            next_state.value()
+            Ok((next_state.value()?, external_outputs))
         }
     }
 }

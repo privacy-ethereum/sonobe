@@ -53,6 +53,7 @@ impl<F: SonobeField> FCircuit for CircuitForTest<F> {
     type StateVar = [FpVar<F>; 1];
 
     type ExternalInputs = ();
+    type ExternalOutputs = ();
 
     fn dummy_state(&self) -> Self::State {
         [F::zero(); 1]
@@ -66,7 +67,7 @@ impl<F: SonobeField> FCircuit for CircuitForTest<F> {
         _i: FpVar<Self::Field>,
         z_i: Self::StateVar,
         _external_inputs: Self::ExternalInputs,
-    ) -> Result<Self::StateVar, SynthesisError> {
+    ) -> Result<(Self::StateVar, Self::ExternalOutputs), SynthesisError> {
         // Variable 0 (implicitly added by arkworks as 1)
         // Variable 1
         let x = if let FpVar::Var(x) = z_i[0].clone() {
@@ -99,7 +100,7 @@ impl<F: SonobeField> FCircuit for CircuitForTest<F> {
             || Variable::one().into(),
             || y.variable.into(),
         )?;
-        Ok([FpVar::Var(x_cube_plus_x_plus_5)])
+        Ok(([FpVar::Var(x_cube_plus_x_plus_5)], ()))
     }
 }
 

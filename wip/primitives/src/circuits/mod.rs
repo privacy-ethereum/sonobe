@@ -28,6 +28,7 @@ pub trait FCircuit {
         + AllocVar<Self::State, Self::Field>
         + AbsorbableGadget<Self::Field>;
     type ExternalInputs;
+    type ExternalOutputs;
 
     fn dummy_state(&self) -> Self::State;
 
@@ -42,7 +43,7 @@ pub trait FCircuit {
         i: FpVar<Self::Field>,
         z_i: Self::StateVar,
         external_inputs: Self::ExternalInputs, // inputs that are not part of the state
-    ) -> Result<Self::StateVar, SynthesisError>;
+    ) -> Result<(Self::StateVar, Self::ExternalOutputs), SynthesisError>;
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -43,7 +43,7 @@ pub trait IVC {
         external_inputs: FC::ExternalInputs,
         current_proof: &Self::Proof<FC>,
         rng: impl RngCore,
-    ) -> Result<(FC::State, Self::Proof<FC>), Error>;
+    ) -> Result<(FC::State, FC::ExternalOutputs, Self::Proof<FC>), Error>;
 
     fn verify<FC: FCircuit<Field = Self::Field>>(
         vk: &Self::VerifierKey<FC>,
@@ -83,8 +83,8 @@ impl<FC: FCircuit<Field = I::Field>, I: IVC> IVCStatefulProver<FC, I> {
         &mut self,
         external_inputs: FC::ExternalInputs,
         rng: impl RngCore,
-    ) -> Result<(), Error> {
-        let (next_state, next_proof) = I::prove(
+    ) -> Result<FC::ExternalOutputs, Error> {
+        let (next_state, external_outputs, next_proof) = I::prove(
             &self.pk,
             &self.step_circuit,
             self.i,
@@ -97,7 +97,7 @@ impl<FC: FCircuit<Field = I::Field>, I: IVC> IVCStatefulProver<FC, I> {
         self.i += 1;
         self.current_state = next_state;
         self.current_proof = next_proof;
-        Ok(())
+        Ok(external_outputs)
     }
 }
 

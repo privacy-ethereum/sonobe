@@ -188,7 +188,7 @@ where
         external_inputs: FC::ExternalInputs,
         Proof(W, U, w, u, cf_W, cf_U): &Self::Proof<FC>,
         mut rng: impl RngCore,
-    ) -> Result<(FC::State, Self::Proof<FC>), Error> {
+    ) -> Result<(FC::State, FC::ExternalOutputs, Self::Proof<FC>), Error> {
         let mode = SynthesisMode::Prove {
             construct_matrices: false,
             generate_lc_assignments: false,
@@ -249,7 +249,7 @@ where
 
         let cs = ConstraintSystem::new_ref();
         cs.set_mode(mode);
-        let next_state = augmented_circuit.compute_next_state(
+        let (next_state, external_outputs) = augmented_circuit.compute_next_state(
             cs.clone(),
             *pp_hash,
             i,
@@ -266,7 +266,7 @@ where
 
         let (ww, uu) = dk1.sample(cs.assignments()?, &mut rng)?;
 
-        Ok((next_state, Proof(WW, UU, ww, uu, cf_WW, cf_UU)))
+        Ok((next_state, external_outputs, Proof(WW, UU, ww, uu, cf_WW, cf_UU)))
     }
 
     fn verify<FC: FCircuit<Field = Self::Field>>(
