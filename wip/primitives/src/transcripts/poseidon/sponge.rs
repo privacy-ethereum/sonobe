@@ -79,7 +79,7 @@ pub mod tests {
     use ark_bn254::{constraints::GVar, g1::Config, Fq, Fr, G1Projective as G1};
     use ark_crypto_primitives::sponge::poseidon::{constraints::PoseidonSpongeVar, PoseidonSponge};
     use ark_ec::PrimeGroup;
-    use ark_ff::{BigInteger, PrimeField, UniformRand};
+    use ark_ff::UniformRand;
     use ark_r1cs_std::{
         alloc::AllocVar,
         fields::fp::FpVar,
@@ -90,8 +90,8 @@ pub mod tests {
     use ark_std::{error::Error, str::FromStr, test_rng};
 
     use crate::{
-        algebra::group::emulated::EmulatedAffineVar,
-        transcripts::{poseidon::poseidon_canonical_config, Transcript, TranscriptVar},
+        algebra::{group::emulated::EmulatedAffineVar, ops::bits::FromBits},
+        transcripts::{Transcript, TranscriptVar, poseidon::poseidon_canonical_config},
     };
 
     // Test with value taken from https://github.com/iden3/circomlibjs/blob/43cc582b100fc3459cf78d903a6f538e5d7f38ee/test/poseidon.js#L32
@@ -207,7 +207,7 @@ pub mod tests {
 
         // multiply point P by the challenge in different formats, to ensure that we get the same
         // result natively and in-circuit
-        let c = Fr::from(<Fr as PrimeField>::BigInt::from_bits_le(&c_bits));
+        let c = Fr::from_bits_le(&c_bits);
 
         // check that native c*P and in-circuit c*P using scalar_mul_le are equal
         assert_eq!(p * c, p_var.scalar_mul_le(c_var.iter())?.value()?);

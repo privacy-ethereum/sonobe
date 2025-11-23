@@ -363,7 +363,7 @@ pub mod tests {
     use ark_std::{error::Error, test_rng};
 
     use super::*;
-    use crate::algebra::group::emulated::EmulatedAffineVar;
+    use crate::algebra::{group::emulated::EmulatedAffineVar, ops::bits::FromBits};
 
     #[test]
     fn test_transcript_and_transcriptvar_absorb_native_point() -> Result<(), Box<dyn Error>> {
@@ -457,7 +457,7 @@ pub mod tests {
 
         // multiply point P by the challenge in different formats, to ensure that we get the same
         // result natively and in-circuit
-        let c = Fr::from(<Fr as PrimeField>::BigInt::from_bits_le(&c_bits));
+        let c = Fr::from_bits_le(&c_bits);
 
         // check that native c*P and in-circuit c*P using scalar_mul_le are equal
         assert_eq!(p * c, p_var.scalar_mul_le(c_var.iter())?.value()?);

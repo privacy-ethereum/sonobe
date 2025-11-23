@@ -1,4 +1,4 @@
-use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
+use ark_ff::{Field, One, Zero};
 use ark_poly::{
     univariate::DensePolynomial, DenseMultilinearExtension as MLE, DenseUVPolynomial, Polynomial,
 };
@@ -20,7 +20,7 @@ use rayon::prelude::*;
 use sonobe_primitives::{
     algebra::{
         field::emulated::Bound,
-        ops::{bits::FromBitsGadget, poly::MLEHelper},
+        ops::{bits::{FromBits, FromBitsGadget}, poly::MLEHelper},
     },
     arithmetizations::{
         r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
@@ -28,8 +28,8 @@ use sonobe_primitives::{
     },
     circuits::AssignmentsOwned,
     commitments::{
-        CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentOps,
-        VectorCommitmentGadgetDef,
+        CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentGadgetDef,
+        VectorCommitmentOps,
     },
     relations::{Relation, WitnessInstanceSampler},
     traits::{Dummy, SonobeCurve, CF1},
@@ -38,13 +38,12 @@ use sonobe_primitives::{
 
 use self::{
     instance::{circuits::RunningInstanceVar as RUVar, RunningInstance as RU},
-    witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW},
+    witness::RunningWitness as RW,
 };
 use crate::{
-    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeOps, FoldingSchemeGadgetDef,
-    FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary,
-    GroupBasedFoldingSchemeSecondary, PlainInstance as IU, PlainInstanceVar as IUVar,
-    PlainWitness as IW, PlainWitnessVar as IWVar,
+    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial,
+    FoldingSchemeOps, GroupBasedFoldingSchemePrimary, PlainInstance as IU,
+    PlainInstanceVar as IUVar, PlainWitness as IW,
 };
 
 pub mod instance;
@@ -308,7 +307,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeO
 
         // Step 7.2: Get challenge rho
         let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
-        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        let rho = VC::Scalar::from_bits_le(&rho_bits);
 
         // Step 7.3: Compute new W and U
         Ok((
@@ -360,7 +359,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeO
         transcript.add(&proof.t);
 
         let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
-        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        let rho = VC::Scalar::from_bits_le(&rho_bits);
 
         Ok(RU {
             r_e: U

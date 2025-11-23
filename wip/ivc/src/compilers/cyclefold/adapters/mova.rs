@@ -1,17 +1,14 @@
-use ark_ff::{BigInteger, PrimeField, Zero};
+use ark_ff::{PrimeField, Zero};
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, groups::CurveVar, prelude::Boolean};
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::{borrow::Borrow, iter::once};
-use sonobe_fs::{
-    mova::Mova, nova::CycleFoldNova, ova::CycleFoldOva, FoldingSchemeGadgetDef,
-    FoldingSchemeGadgetOpsPartial,
-};
+use sonobe_fs::{mova::Mova, nova::CycleFoldNova, ova::CycleFoldOva, FoldingSchemeGadgetDef};
 use sonobe_primitives::{
     algebra::{
         field::emulated::{Bound, EmulatedFieldVar},
-        ops::bits::{FromBitsGadget, ToBitsGadgetExt},
+        ops::bits::{FromBits, FromBitsGadget, ToBitsGadgetExt},
     },
-    commitments::{GroupBasedVectorCommitment, VectorCommitmentGadgetDef},
+    commitments::GroupBasedVectorCommitment,
     traits::{SonobeCurve, CF2},
 };
 
@@ -45,11 +42,7 @@ impl<C: SonobeCurve, const CHALLENGE_BITS: usize> CycleFoldConfig
         &self,
         cs: ConstraintSystemRef<CF2<Self::C>>,
     ) -> Result<(), SynthesisError> {
-        let rho = FpVar::new_input(cs.clone(), || {
-            Ok(CF2::<C>::from(
-                <CF2<C> as PrimeField>::BigInt::from_bits_le(&self.r[..]),
-            ))
-        })?;
+        let rho = FpVar::new_input(cs.clone(), || Ok(CF2::<C>::from_bits_le(&self.r[..])))?;
         let rho_bits = rho.to_n_bits_le(CHALLENGE_BITS)?;
 
         let points = Vec::<C::Var>::new_witness(cs.clone(), || Ok(&self.points[..]))?;

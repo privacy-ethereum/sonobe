@@ -1,16 +1,14 @@
-use ark_ff::{BigInteger, PrimeField, Zero};
+use ark_ff::{PrimeField, Zero};
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, groups::CurveVar, prelude::Boolean};
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::{borrow::Borrow, iter::once};
 use sonobe_fs::{
     hypernova::HyperNova, nova::CycleFoldNova, ova::CycleFoldOva, FoldingSchemeGadgetDef,
-    FoldingSchemeGadgetOpsPartial,
 };
 use sonobe_primitives::{
     algebra::{
         field::emulated::{Bound, EmulatedFieldVar},
-        group::CI2,
-        ops::bits::{FromBitsGadget, ToBitsGadgetExt},
+        ops::bits::{FromBits, FromBitsGadget, ToBitsGadgetExt},
     },
     arithmetizations::{ccs::CCSVariant, r1cs::R1CSConfig},
     commitments::GroupBasedVectorCommitment,
@@ -49,7 +47,7 @@ impl<C: SonobeCurve, const M: usize, const N: usize, const CHALLENGE_BITS: usize
         cs: ConstraintSystemRef<CF2<Self::C>>,
     ) -> Result<(), SynthesisError> {
         let rho = FpVar::new_input(cs.clone(), || {
-            Ok(CF2::<C>::from(CI2::<C>::from_bits_le(&self.r)))
+            Ok(CF2::<C>::from_bits_le(&self.r))
         })?;
         let rho_bits = rho.to_n_bits_le(CHALLENGE_BITS)?;
 

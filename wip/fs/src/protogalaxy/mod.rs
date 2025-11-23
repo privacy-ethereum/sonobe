@@ -37,15 +37,11 @@ use self::{
         circuits::{IncomingInstanceVar as IUVar, RunningInstanceVar as RUVar},
         IncomingInstance as IU, RunningInstance as RU,
     },
-    witness::{
-        circuits::{IncomingWitnessVar as IWVar, RunningWitnessVar as RWVar},
-        IncomingWitness as IW, RunningWitness as RW,
-    },
+    witness::{IncomingWitness as IW, RunningWitness as RW},
 };
 use crate::{
-    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeOps, FoldingSchemeGadgetOpsFull,
-    FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary,
-    GroupBasedFoldingSchemeSecondary, PlainInstance as PU, PlainWitness as PW,
+    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial,
+    FoldingSchemeOps, GroupBasedFoldingSchemePrimary, PlainInstance as PU, PlainWitness as PW,
 };
 
 pub mod instance;
@@ -238,9 +234,7 @@ impl<VC: GroupBasedVectorCommitment> FoldingSchemeDef for ProtoGalaxy<VC> {
     type Proof<const M: usize, const N: usize> = ProtoGalaxyProof<VC::Scalar, N>;
 }
 
-impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeOps<1, N>
-    for ProtoGalaxy<VC>
-{
+impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeOps<1, N> for ProtoGalaxy<VC> {
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         if !(N + 1).is_power_of_two() {
             return Err(Error::Unsupported("N + 1 must be a power of two".into()));
@@ -497,12 +491,11 @@ impl<VC: GroupBasedVectorCommitment> FoldingSchemeDef for ProtoGalaxy2<VC> {
     type PublicParam = VC::Key;
     type DeciderKey = ProtoGalaxyKey<Self::Arith, VC>;
     type Challenge = Vec<VC::Scalar>;
-    type Proof<const M: usize, const N: usize> = ([VC::Commitment; N], ProtoGalaxyProof<VC::Scalar, N>);
+    type Proof<const M: usize, const N: usize> =
+        ([VC::Commitment; N], ProtoGalaxyProof<VC::Scalar, N>);
 }
 
-impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeOps<1, N>
-    for ProtoGalaxy2<VC>
-{
+impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeOps<1, N> for ProtoGalaxy2<VC> {
     fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
         if !(N + 1).is_power_of_two() {
             return Err(Error::Unsupported("N + 1 must be a power of two".into()));

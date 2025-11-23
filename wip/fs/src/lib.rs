@@ -472,9 +472,9 @@ mod tests {
             let ws = ws.try_into().unwrap();
             let us = us.try_into().unwrap();
 
-            let (WW, UU, pi, _) = FS::prove(&pk, &mut transcript_p, &Ws, &Us, &ws, &us, &mut rng)?;
+            let (WW, UU, pi, _) = FS::prove(pk, &mut transcript_p, &Ws, &Us, &ws, &us, &mut rng)?;
             FS::decide_running(&dk, &WW, &UU)?;
-            assert_eq!(FS::verify(&vk, &mut transcript_v, &Us, &us, &pi)?, UU);
+            assert_eq!(FS::verify(vk, &mut transcript_v, &Us, &us, &pi)?, UU);
 
             for i in 0..M {
                 let (W, U) = WitnessInstanceSampler::<FS::RW, FS::RU>::sample(&dk, (), &mut rng)?;

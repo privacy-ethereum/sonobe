@@ -116,9 +116,6 @@ impl<F: Field, V: CCSVariant> CCS<F, V> {
             ));
         }
 
-        let S = &V::multisets_vec();
-        let c = &V::coefficients_vec::<F>();
-
         // Recall that the evaluation of CCS at z is defined as:
         // $\sum_{j=0}^{q - 1} (c_j * \prod_{i \in S_j} (M_i * z))$,
         // where $\prod$ denotes the Hadamard product.
@@ -134,9 +131,10 @@ impl<F: Field, V: CCSVariant> CCS<F, V> {
             .map(|row| {
                 // The row-th entry of the resulting vector is:
                 // $\sum_{j=0}^{q - 1} (c_j * \prod_{i \in S_j} (M_i[row] * z))$
-                S.iter()
-                    .zip(c)
-                    .map(|(s, &c)| {
+                V::multisets_vec()
+                    .into_iter()
+                    .zip(V::coefficients_vec::<F>())
+                    .map(|(s, c)| {
                         // Each term in the sum is:
                         // $c_j * \prod_{i \in S_j} (M_i[row] * z)$
                         c * s

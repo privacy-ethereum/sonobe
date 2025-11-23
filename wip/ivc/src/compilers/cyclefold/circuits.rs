@@ -1,4 +1,3 @@
-use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::AllocVar,
     convert::ToConstraintFieldGadget,
@@ -9,7 +8,8 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_std::marker::PhantomData;
 use sonobe_fs::{
-    FoldingInstanceVar, FoldingSchemeGadgetOpsFull, FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary
+    FoldingInstanceVar, FoldingSchemeGadgetOpsFull, FoldingSchemeGadgetOpsPartial,
+    GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary,
 };
 use sonobe_primitives::{
     algebra::Val,

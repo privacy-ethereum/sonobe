@@ -1,4 +1,4 @@
-use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
+use ark_ff::{One, Zero};
 use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, groups::CurveVar, GR1CSVar};
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::{
@@ -8,15 +8,18 @@ use num_bigint::BigInt;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use sonobe_primitives::{
-    algebra::{field::emulated::Bound, ops::bits::FromBitsGadget},
+    algebra::{
+        field::emulated::Bound,
+        ops::bits::{FromBits, FromBitsGadget},
+    },
     arithmetizations::{
         r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
         Arith, ArithRelation,
     },
     circuits::{Assignments, AssignmentsOwned},
     commitments::{
-        CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentOps,
-        VectorCommitmentGadgetDef,
+        CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentGadgetDef,
+        VectorCommitmentOps,
     },
     relations::{Relation, WitnessInstanceSampler},
     traits::{SonobeField, CF2},
@@ -25,13 +28,13 @@ use sonobe_primitives::{
 
 use self::{
     instance::{circuits::RunningInstanceVar as RUVar, RunningInstance as RU},
-    witness::{circuits::RunningWitnessVar as RWVar, RunningWitness as RW},
+    witness::RunningWitness as RW,
 };
 use crate::{
-    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeOps, FoldingSchemeGadgetOpsFull,
-    FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary,
+    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsFull,
+    FoldingSchemeGadgetOpsPartial, FoldingSchemeOps, GroupBasedFoldingSchemePrimary,
     GroupBasedFoldingSchemeSecondary, PlainInstance as IU, PlainInstanceVar as IUVar,
-    PlainWitness as IW, PlainWitnessVar as IWVar,
+    PlainWitness as IW,
 };
 
 pub mod instance;
@@ -230,7 +233,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
             transcript.add(&cm);
             transcript.challenge_bits(CHALLENGE_BITS)
         };
-        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        let rho = VC::Scalar::from_bits_le(&rho_bits);
 
         Ok((
             RW {
@@ -269,7 +272,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
             transcript.add(cm);
             transcript.challenge_bits(CHALLENGE_BITS)
         };
-        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        let rho = VC::Scalar::from_bits_le(&rho_bits);
 
         Ok(RU {
             u: U.u + rho,
@@ -286,7 +289,8 @@ pub struct AbstractOvaGadget<VC, const CHALLENGE_BITS: usize = 128> {
     _vc: PhantomData<VC>,
 }
 
-impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeGadgetDef for AbstractOvaGadget<VC, CHALLENGE_BITS>
+impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeGadgetDef
+    for AbstractOvaGadget<VC, CHALLENGE_BITS>
 where
     VC: VectorCommitmentGadgetDef<Native: GroupBasedVectorCommitment>,
 {
@@ -352,7 +356,8 @@ impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeGadgetOpsFull<1, 1>
     for AbstractOvaGadget<VC, CHALLENGE_BITS>
 where
     VC: VectorCommitmentGadgetDef<Native: GroupBasedVectorCommitment>,
-    VC::CommitmentVar: CurveVar<<VC::Native as VectorCommitmentDef>::Commitment, VC::ConstraintField>,
+    VC::CommitmentVar:
+        CurveVar<<VC::Native as VectorCommitmentDef>::Commitment, VC::ConstraintField>,
 {
     #[allow(non_snake_case)]
     fn verify(

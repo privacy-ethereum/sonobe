@@ -4,6 +4,16 @@ use ark_relations::gr1cs::SynthesisError;
 
 use crate::algebra::field::emulated::Bound;
 
+pub trait FromBits {
+    fn from_bits_le(bits: &[bool]) -> Self;
+}
+
+impl<F: PrimeField> FromBits for F {
+    fn from_bits_le(bits: &[bool]) -> Self {
+        F::from(F::BigInt::from_bits_le(bits))
+    }
+}
+
 pub trait FromBitsGadget<F: PrimeField>: Sized {
     fn from_bits_le(bits: &[Boolean<F>], bound: Bound) -> Result<Self, SynthesisError>;
 }

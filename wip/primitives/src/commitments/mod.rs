@@ -134,27 +134,17 @@ pub trait GroupBasedVectorCommitment:
 {
     type Gadget1: VectorCommitmentGadgetOps
         + VectorCommitmentGadgetDef<
-            ConstraintField = CF2<<Self as VectorCommitmentDef>::Commitment>,
-            ScalarVar = EmulatedFieldVar<
-                CF2<<Self as VectorCommitmentDef>::Commitment>,
-                <Self as VectorCommitmentDef>::Scalar,
-            >,
-            IntermediateScalarVar = IntVarInner<
-                CF2<<Self as VectorCommitmentDef>::Commitment>,
-                <Self as VectorCommitmentDef>::Scalar,
-                false,
-            >,
-            CommitmentVar = Var<<Self as VectorCommitmentDef>::Commitment>,
+            ConstraintField = CF2<Self::Commitment>,
+            ScalarVar = EmulatedFieldVar<CF2<Self::Commitment>, Self::Scalar>,
+            IntermediateScalarVar = IntVarInner<CF2<Self::Commitment>, Self::Scalar, false>,
+            CommitmentVar = Var<Self::Commitment>,
             Native = Self,
         >;
     type Gadget2: VectorCommitmentGadgetDef<
-        ConstraintField = <Self as VectorCommitmentDef>::Scalar,
-        ScalarVar = FpVar<<Self as VectorCommitmentDef>::Scalar>,
-        IntermediateScalarVar = FpVar<<Self as VectorCommitmentDef>::Scalar>,
-        CommitmentVar = EmulatedAffineVar<
-            <Self as VectorCommitmentDef>::Scalar,
-            <Self as VectorCommitmentDef>::Commitment,
-        >,
+        ConstraintField = Self::Scalar,
+        ScalarVar = FpVar<Self::Scalar>,
+        IntermediateScalarVar = FpVar<Self::Scalar>,
+        CommitmentVar = EmulatedAffineVar<Self::Scalar, Self::Commitment>,
         Native = Self,
     >;
 }

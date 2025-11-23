@@ -23,8 +23,6 @@ pub mod emulated;
 
 pub type CF1<C> = <C as PrimeGroup>::ScalarField;
 pub type CF2<C> = <<C as CurveGroup>::BaseField as Field>::BasePrimeField;
-pub type CI1<C> = <<C as PrimeGroup>::ScalarField as PrimeField>::BigInt;
-pub type CI2<C> = <<<C as CurveGroup>::BaseField as Field>::BasePrimeField as PrimeField>::BigInt;
 
 /// `Curve` trait is a wrapper around `CurveGroup` that also includes the
 /// necessary bounds for the curve to be used conveniently in folding schemes.

@@ -1,4 +1,4 @@
-use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
+use ark_ff::{Field, One, PrimeField};
 use ark_poly::{DenseMultilinearExtension as MLE, MultilinearExtension};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
@@ -15,11 +15,12 @@ use ark_std::{
 use rayon::prelude::*;
 use sonobe_primitives::{
     algebra::ops::{
+        bits::FromBits,
         pow::{Pow, PowGadget},
         rlc::{ScalarRLC, SliceRLC},
     },
     arithmetizations::{
-        ccs::{self, CCSConfig, CCSVariant, CCS},
+        ccs::{CCSConfig, CCSVariant, CCS},
         r1cs::R1CSConfig,
         Arith, ArithConfig, ArithRelation, Error as ArithError,
     },
@@ -45,9 +46,8 @@ use self::{
     witness::{CCCSWitness as IW, LCCCSWitness as RW},
 };
 use crate::{
-    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeOps, FoldingSchemeGadgetDef,
-    FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary, PlainInstance as PU,
-    PlainWitness as PW,
+    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial,
+    FoldingSchemeOps, GroupBasedFoldingSchemePrimary, PlainInstance as PU, PlainWitness as PW,
 };
 
 pub mod instance;
@@ -363,8 +363,8 @@ impl<
             .collect::<Vec<_>>();
 
         // Step 6: Get the folding challenge
-        let rho_bits: Vec<bool> = transcript.challenge_bits(CHALLENGE_BITS);
-        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
+        let rho = VC::Scalar::from_bits_le(&rho_bits);
 
         let rho_powers = rho.powers(M + N);
 
@@ -484,7 +484,7 @@ impl<
 
         // Step 6: Get the folding challenge
         let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
-        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        let rho = VC::Scalar::from_bits_le(&rho_bits);
 
         let rho_powers = rho.powers(M + N);
 
@@ -660,8 +660,8 @@ impl<
             .collect::<Vec<_>>();
 
         // Step 6: Get the folding challenge
-        let rho_bits: Vec<bool> = transcript.challenge_bits(CHALLENGE_BITS);
-        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
+        let rho = VC::Scalar::from_bits_le(&rho_bits);
 
         let rho_powers = rho.powers(M + N);
 
@@ -781,7 +781,7 @@ impl<
 
         // Step 6: Get the folding challenge
         let rho_bits = transcript.challenge_bits(CHALLENGE_BITS);
-        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        let rho = VC::Scalar::from_bits_le(&rho_bits);
 
         let rho_powers = rho.powers(M + N);
 
@@ -871,8 +871,8 @@ pub struct HyperNovaGadget<VC, V: CCSVariant = R1CSConfig, const CHALLENGE_BITS:
     _v: PhantomData<(VC, V)>,
 }
 
-impl<VC: GroupBasedVectorCommitment, V: CCSVariant, const CHALLENGE_BITS: usize> FoldingSchemeGadgetDef
-    for HyperNovaGadget<VC, V, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, V: CCSVariant, const CHALLENGE_BITS: usize>
+    FoldingSchemeGadgetDef for HyperNovaGadget<VC, V, CHALLENGE_BITS>
 {
     type Native = HyperNova<VC, V, CHALLENGE_BITS>;
 

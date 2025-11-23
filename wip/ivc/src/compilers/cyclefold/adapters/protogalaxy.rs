@@ -3,13 +3,12 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, groups::CurveVar, prelude
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::{borrow::Borrow, iter::once};
 use sonobe_fs::{
-    FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial, nova::CycleFoldNova, ova::CycleFoldOva, protogalaxy::ProtoGalaxy
+    nova::CycleFoldNova, ova::CycleFoldOva, protogalaxy::ProtoGalaxy, FoldingSchemeGadgetDef,
 };
 use sonobe_primitives::{
     algebra::{
         field::emulated::{Bound, EmulatedFieldVar},
-        group::CI2,
-        ops::bits::{FromBitsGadget, ToBitsGadgetExt},
+        ops::bits::{FromBits, FromBitsGadget, ToBitsGadgetExt},
     },
     commitments::GroupBasedVectorCommitment,
     traits::{SonobeCurve, CF1, CF2},
@@ -46,7 +45,7 @@ impl<C: SonobeCurve, const N: usize> CycleFoldConfig for ProtoGalaxyCycleFoldCon
             .chunks(CF2::<C>::MODULUS_BIT_SIZE as usize - 1)
             .map(|bits| {
                 FpVar::new_input(cs.clone(), || {
-                    Ok(CF2::<C>::from(CI2::<C>::from_bits_le(bits)))
+                    Ok(CF2::<C>::from_bits_le(bits))
                 })?
                 .to_n_bits_le(bits.len())
             })

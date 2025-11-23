@@ -1,4 +1,4 @@
-use ark_ff::{BigInteger, PrimeField, Zero};
+use ark_ff::{PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::AllocVar, fields::fp::FpVar, groups::CurveVar, prelude::Boolean, GR1CSVar,
 };
@@ -8,13 +8,12 @@ use sonobe_fs::{
     nova::{CycleFoldNova, Nova},
     ova::CycleFoldOva,
     FoldingSchemeGadgetDef,
-    FoldingSchemeGadgetOpsPartial,
 };
 use sonobe_primitives::{
     algebra::{
         field::emulated::{Bound, EmulatedFieldVar},
         group::emulated::EmulatedAffineVar,
-        ops::bits::{FromBitsGadget, ToBitsGadgetExt},
+        ops::bits::{FromBits, FromBitsGadget, ToBitsGadgetExt},
     },
     commitments::GroupBasedVectorCommitment,
     traits::{SonobeCurve, CF2},
@@ -50,11 +49,7 @@ impl<C: SonobeCurve, const CHALLENGE_BITS: usize> CycleFoldConfig
         &self,
         cs: ConstraintSystemRef<CF2<Self::C>>,
     ) -> Result<(), SynthesisError> {
-        let rho = FpVar::new_input(cs.clone(), || {
-            Ok(CF2::<C>::from(
-                <CF2<C> as PrimeField>::BigInt::from_bits_le(&self.r[..]),
-            ))
-        })?;
+        let rho = FpVar::new_input(cs.clone(), || Ok(CF2::<C>::from_bits_le(&self.r[..])))?;
         let rho_bits = rho.to_n_bits_le(CHALLENGE_BITS)?;
 
         let points = Vec::<C::Var>::new_witness(cs.clone(), || Ok(&self.points[..]))?;
@@ -138,7 +133,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
         proof: &Self::Proof<2, 0>,
         rho_bits: Self::Challenge,
     ) -> Vec<Self::CFConfig> {
-        let rho = VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+        let rho = VC::Scalar::from_bits_le(&rho_bits);
         vec![
             NovaCycleFoldConfig {
                 r: rho_bits.clone(),
@@ -173,8 +168,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
         let x =
             EmulatedAffineVar::new_witness(U2.cm_e.cs().or(proof.cs()).or(rho_bits.cs()), || {
                 let rho_bits = rho_bits.value().unwrap_or_default();
-                let rho =
-                    VC::Scalar::from(<VC::Scalar as PrimeField>::BigInt::from_bits_le(&rho_bits));
+                let rho = VC::Scalar::from_bits_le(&rho_bits);
                 Ok(proof.value().unwrap_or_default() + U2.cm_e.value().unwrap_or_default() * rho)
             })?;
         Ok(vec![

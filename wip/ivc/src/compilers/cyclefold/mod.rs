@@ -1,14 +1,14 @@
-use ark_ff::{PrimeField, Zero};
+use ark_ff::Zero;
 use ark_relations::gr1cs::{ConstraintSystem, SynthesisError, SynthesisMode};
-use ark_std::{borrow::Borrow, marker::PhantomData, rand::RngCore, sync::Arc};
+use ark_std::{borrow::Borrow, marker::PhantomData, rand::RngCore};
 use sonobe_fs::{
-    DeciderKey, FoldingInstance, FoldingSchemeDef, FoldingSchemeGadgetOpsFull,
-    FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary,
+    DeciderKey, FoldingInstance, FoldingSchemeDef, FoldingSchemeGadgetDef,
+    FoldingSchemeGadgetOpsFull, FoldingSchemeGadgetOpsPartial, GroupBasedFoldingSchemePrimary,
     GroupBasedFoldingSchemeSecondary,
 };
 use sonobe_primitives::{
     algebra::field::emulated::EmulatedFieldVar,
-    arithmetizations::{Arith, ArithConfig},
+    arithmetizations::Arith,
     circuits::{ConstraintSystemBuilder, ConstraintSystemExt, FCircuit},
     commitments::VectorCommitmentDef,
     relations::WitnessInstanceSampler,

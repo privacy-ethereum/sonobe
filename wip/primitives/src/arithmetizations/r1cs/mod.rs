@@ -1,6 +1,5 @@
 use ark_ff::Field;
 use ark_relations::gr1cs::{ConstraintSystem, Matrix, R1CS_PREDICATE_LABEL};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{cfg_into_iter, cfg_iter, iterable::Iterable};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -73,18 +72,22 @@ impl<F: Field> From<&ConstraintSystem<F>> for R1CSConfig {
 }
 
 impl CCSVariant for R1CSConfig {
+    #[inline]
     fn n_matrices() -> usize {
         3
     }
 
+    #[inline]
     fn degree() -> usize {
         2
     }
 
+    #[inline]
     fn multisets_vec() -> Vec<Vec<usize>> {
         vec![vec![0, 1], vec![2]]
     }
 
+    #[inline]
     fn coefficients_vec<F: Field>() -> Vec<F> {
         vec![F::one(), -F::one()]
     }

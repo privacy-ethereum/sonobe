@@ -9,10 +9,7 @@ use ark_std::{
     ops::{Index, IndexMut},
 };
 
-use crate::{
-    traits::Dummy,
-    transcripts::{Absorbable, AbsorbableGadget},
-};
+use crate::transcripts::{Absorbable, AbsorbableGadget};
 
 pub mod utils;
 
