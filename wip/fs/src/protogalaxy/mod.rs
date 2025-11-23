@@ -41,7 +41,7 @@ use self::{
 };
 use crate::{
     DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial,
-    FoldingSchemeOps, GroupBasedFoldingSchemePrimary, PlainInstance as PU, PlainWitness as PW,
+    FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef, PlainInstance as PU, PlainWitness as PW,
 };
 
 pub mod instance;
@@ -887,9 +887,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeGadgetOpsParti
     }
 }
 
-impl<VC: GroupBasedVectorCommitment, const N: usize> GroupBasedFoldingSchemePrimary<1, N>
-    for ProtoGalaxy<VC>
-{
+impl<VC: GroupBasedVectorCommitment> GroupBasedFoldingSchemePrimaryDef for ProtoGalaxy<VC> {
     type Gadget = ProtoGalaxyGadget<VC>;
 }
 

@@ -20,7 +20,10 @@ use rayon::prelude::*;
 use sonobe_primitives::{
     algebra::{
         field::emulated::Bound,
-        ops::{bits::{FromBits, FromBitsGadget}, poly::MLEHelper},
+        ops::{
+            bits::{FromBits, FromBitsGadget},
+            poly::MLEHelper,
+        },
     },
     arithmetizations::{
         r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
@@ -42,7 +45,7 @@ use self::{
 };
 use crate::{
     DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial,
-    FoldingSchemeOps, GroupBasedFoldingSchemePrimary, PlainInstance as IU,
+    FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef, PlainInstance as IU,
     PlainInstanceVar as IUVar, PlainWitness as IW,
 };
 
@@ -495,8 +498,8 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
     }
 }
 
-impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
-    GroupBasedFoldingSchemePrimary<1, 1> for Mova<VC, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemePrimaryDef
+    for Mova<VC, CHALLENGE_BITS>
 {
     type Gadget = MovaGadget<VC, CHALLENGE_BITS>;
 }

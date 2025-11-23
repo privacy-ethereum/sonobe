@@ -47,7 +47,7 @@ use self::{
 };
 use crate::{
     DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial,
-    FoldingSchemeOps, GroupBasedFoldingSchemePrimary, PlainInstance as PU, PlainWitness as PW,
+    FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef, PlainInstance as PU, PlainWitness as PW,
 };
 
 pub mod instance;
@@ -1012,13 +1012,8 @@ impl<
     }
 }
 
-impl<
-        VC: GroupBasedVectorCommitment,
-        V: CCSVariant,
-        const M: usize,
-        const N: usize,
-        const CHALLENGE_BITS: usize,
-    > GroupBasedFoldingSchemePrimary<M, N> for HyperNova<VC, V, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, V: CCSVariant, const CHALLENGE_BITS: usize>
+    GroupBasedFoldingSchemePrimaryDef for HyperNova<VC, V, CHALLENGE_BITS>
 {
     type Gadget = HyperNovaGadget<VC, V, CHALLENGE_BITS>;
 }

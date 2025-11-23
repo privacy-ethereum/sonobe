@@ -36,8 +36,8 @@ use self::{
 };
 use crate::{
     DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsFull,
-    FoldingSchemeGadgetOpsPartial, FoldingSchemeOps, GroupBasedFoldingSchemePrimary,
-    GroupBasedFoldingSchemeSecondary, PlainInstance as PU, PlainWitness as PW,
+    FoldingSchemeGadgetOpsPartial, FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef,
+    GroupBasedFoldingSchemeSecondaryDef, PlainInstance as PU, PlainWitness as PW,
 };
 
 pub mod instance;
@@ -749,21 +749,14 @@ where
     }
 }
 
-impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
-    GroupBasedFoldingSchemePrimary<1, 1> for AbstractNova<VC, VC::Scalar, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemePrimaryDef
+    for AbstractNova<VC, VC::Scalar, CHALLENGE_BITS>
 {
     type Gadget = AbstractNovaGadget<VC::Gadget2, CHALLENGE_BITS>;
 }
 
 impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
-    GroupBasedFoldingSchemePrimary<2, 0> for AbstractNova<VC, VC::Scalar, CHALLENGE_BITS>
-{
-    type Gadget = AbstractNovaGadget<VC::Gadget2, CHALLENGE_BITS>;
-}
-
-impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
-    GroupBasedFoldingSchemeSecondary<1, 1>
-    for AbstractNova<VC, CF2<VC::Commitment>, CHALLENGE_BITS>
+    GroupBasedFoldingSchemeSecondaryDef for AbstractNova<VC, CF2<VC::Commitment>, CHALLENGE_BITS>
 {
     type Gadget = AbstractNovaGadget<VC::Gadget1, CHALLENGE_BITS>;
 }

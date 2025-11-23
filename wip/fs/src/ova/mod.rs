@@ -32,8 +32,8 @@ use self::{
 };
 use crate::{
     DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsFull,
-    FoldingSchemeGadgetOpsPartial, FoldingSchemeOps, GroupBasedFoldingSchemePrimary,
-    GroupBasedFoldingSchemeSecondary, PlainInstance as IU, PlainInstanceVar as IUVar,
+    FoldingSchemeGadgetOpsPartial, FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef,
+    GroupBasedFoldingSchemeSecondaryDef, PlainInstance as IU, PlainInstanceVar as IUVar,
     PlainWitness as IW,
 };
 
@@ -396,15 +396,14 @@ where
     }
 }
 
-impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
-    GroupBasedFoldingSchemePrimary<1, 1> for AbstractOva<VC, VC::Scalar, CHALLENGE_BITS>
+impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemePrimaryDef
+    for AbstractOva<VC, VC::Scalar, CHALLENGE_BITS>
 {
     type Gadget = AbstractOvaGadget<VC::Gadget2, CHALLENGE_BITS>;
 }
 
 impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
-    GroupBasedFoldingSchemeSecondary<1, 1>
-    for AbstractOva<VC, CF2<VC::Commitment>, CHALLENGE_BITS>
+    GroupBasedFoldingSchemeSecondaryDef for AbstractOva<VC, CF2<VC::Commitment>, CHALLENGE_BITS>
 {
     type Gadget = AbstractOvaGadget<VC::Gadget1, CHALLENGE_BITS>;
 }
