@@ -41,7 +41,7 @@ use self::{
 };
 use crate::{
     DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial,
-    FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef, PlainInstance as PU, PlainWitness as PW,
+    FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef, PlainInstance as PU, PlainWitness as PW, TaggedVec,
 };
 
 pub mod instance;
@@ -230,7 +230,7 @@ impl<VC: GroupBasedVectorCommitment> FoldingSchemeDef for ProtoGalaxy<VC> {
     type Config = usize;
     type PublicParam = VC::Key;
     type DeciderKey = ProtoGalaxyKey<Self::Arith, VC>;
-    type Challenge = Vec<VC::Scalar>;
+    type Challenge = TaggedVec<VC::Scalar, 'c'>;
     type Proof<const M: usize, const N: usize> = ProtoGalaxyProof<VC::Scalar, N>;
 }
 
@@ -414,7 +414,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeOps<1, N> for 
                 f_coeffs,
                 k_coeffs: k_poly.coeffs,
             },
-            lagrange_evals,
+            lagrange_evals.into(),
         ))
     }
 
@@ -812,7 +812,7 @@ impl<VC: GroupBasedVectorCommitment> FoldingSchemeGadgetDef for ProtoGalaxyGadge
     type RU = RUVar<VC::Gadget2>;
     type IU = IUVar<VC::Gadget2>;
     type VerifierKey = ();
-    type Challenge = Vec<FpVar<VC::Scalar>>;
+    type Challenge = TaggedVec<FpVar<VC::Scalar>, 'c'>;
     type Proof<const M: usize, const N: usize> = ProtoGalaxyProofVar<VC::Scalar, N>;
 }
 
@@ -882,7 +882,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeGadgetOpsParti
                     })?
                 },
             },
-            lagrange_evals,
+            lagrange_evals.into(),
         ))
     }
 }

@@ -7,7 +7,7 @@ use ark_std::{borrow::Borrow, iter::once};
 use sonobe_fs::{
     nova::{CycleFoldNova, Nova},
     ova::CycleFoldOva,
-    FoldingSchemeGadgetDef,
+    FoldingSchemeGadgetDef, TaggedVec,
 };
 use sonobe_primitives::{
     algebra::{
@@ -76,11 +76,11 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
     ) -> Vec<Self::CFConfig> {
         vec![
             NovaCycleFoldConfig {
-                r: rho.clone(),
+                r: rho.clone().into(),
                 points: vec![U.borrow().cm_e, *proof],
             },
             NovaCycleFoldConfig {
-                r: rho,
+                r: rho.into(),
                 points: vec![U.borrow().cm_w, u.borrow().cm_w],
             },
         ]
@@ -136,15 +136,15 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
         let rho = VC::Scalar::from_bits_le(&rho_bits);
         vec![
             NovaCycleFoldConfig {
-                r: rho_bits.clone(),
+                r: rho_bits.clone().into(),
                 points: vec![*proof, U2.borrow().cm_e],
             },
             NovaCycleFoldConfig {
-                r: rho_bits.clone(),
+                r: rho_bits.clone().into(),
                 points: vec![U1.borrow().cm_e, U2.borrow().cm_e * rho + proof],
             },
             NovaCycleFoldConfig {
-                r: rho_bits,
+                r: rho_bits.into(),
                 points: vec![U1.borrow().cm_w, U2.borrow().cm_w],
             },
         ]

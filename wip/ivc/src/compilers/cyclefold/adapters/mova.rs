@@ -68,7 +68,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
         rho: Self::Challenge,
     ) -> Vec<Self::CFConfig> {
         vec![MovaCycleFoldConfig {
-            r: rho,
+            r: rho.into(),
             points: vec![U.borrow().cm_w, proof.cm_w],
         }]
     }

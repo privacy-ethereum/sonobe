@@ -73,7 +73,7 @@ pub trait FoldingInstance<VC: VectorCommitmentDef>:
     fn public_inputs_mut(&mut self) -> &mut [VC::Scalar];
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TaggedVec<V, const TAG: char>(pub Vec<V>);
 
 impl<V, const TAG: char> Deref for TaggedVec<V, TAG> {
@@ -93,6 +93,12 @@ impl<V, const TAG: char> DerefMut for TaggedVec<V, TAG> {
 impl<V, const TAG: char> From<Vec<V>> for TaggedVec<V, TAG> {
     fn from(v: Vec<V>) -> Self {
         Self(v)
+    }
+}
+
+impl<V, const TAG: char> From<TaggedVec<V, TAG>> for Vec<V> {
+    fn from(val: TaggedVec<V, TAG>) -> Self {
+        val.0
     }
 }
 
@@ -346,7 +352,13 @@ pub trait FoldingSchemeGadgetDef {
 
     type VerifierKey;
 
-    type Challenge;
+    type Challenge: AllocVar<
+            <Self::Native as FoldingSchemeDef>::Challenge,
+            <Self::VC as VectorCommitmentGadgetDef>::ConstraintField,
+        > + GR1CSVar<
+            <Self::VC as VectorCommitmentGadgetDef>::ConstraintField,
+            Value = <Self::Native as FoldingSchemeDef>::Challenge,
+        >;
     type Proof<const M: usize, const N: usize>: AllocVar<
             <Self::Native as FoldingSchemeDef>::Proof<M, N>,
             <Self::VC as VectorCommitmentGadgetDef>::ConstraintField,

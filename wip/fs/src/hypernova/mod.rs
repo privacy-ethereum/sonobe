@@ -47,7 +47,7 @@ use self::{
 };
 use crate::{
     DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial,
-    FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef, PlainInstance as PU, PlainWitness as PW,
+    FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef, PlainInstance as PU, PlainWitness as PW, TaggedVec,
 };
 
 pub mod instance;
@@ -247,7 +247,7 @@ impl<VC: GroupBasedVectorCommitment, V: CCSVariant, const CHALLENGE_BITS: usize>
     type Config = usize;
     type PublicParam = VC::Key;
     type DeciderKey = HyperNovaKey<Self::Arith, VC>;
-    type Challenge = Vec<bool>;
+    type Challenge = TaggedVec<bool, 'c'>;
     type Proof<const M: usize, const N: usize> = NIMFSProof<VC::Scalar, M, N>;
 }
 
@@ -408,7 +408,7 @@ impl<
                 sigmas,
                 thetas,
             },
-            rho_bits,
+            rho_bits.into(),
         ))
     }
 
@@ -534,7 +534,7 @@ impl<VC: GroupBasedVectorCommitment, V: CCSVariant, const CHALLENGE_BITS: usize>
     type Config = usize;
     type PublicParam = VC::Key;
     type DeciderKey = HyperNovaKey<Self::Arith, VC>;
-    type Challenge = Vec<bool>;
+    type Challenge = TaggedVec<bool, 'c'>;
     type Proof<const M: usize, const N: usize> =
         ([VC::Commitment; N], NIMFSProof<VC::Scalar, M, N>);
 }
@@ -704,7 +704,7 @@ impl<
                     thetas,
                 },
             ),
-            rho_bits,
+            rho_bits.into(),
         ))
     }
 
@@ -880,7 +880,7 @@ impl<VC: GroupBasedVectorCommitment, V: CCSVariant, const CHALLENGE_BITS: usize>
     type RU = RUVar<VC::Gadget2>;
     type IU = IUVar<VC::Gadget2>;
     type VerifierKey = ();
-    type Challenge = Vec<Boolean<VC::Scalar>>;
+    type Challenge = TaggedVec<Boolean<VC::Scalar>, 'c'>;
     type Proof<const M: usize, const N: usize> = NIMFSProofVar<VC::Scalar, M, N>;
 }
 
@@ -1007,7 +1007,7 @@ impl<
                     .chain(proof.thetas.chunks(t))
                     .slice_rlc(&rho_powers),
             },
-            rho_bits,
+            rho_bits.into(),
         ))
     }
 }

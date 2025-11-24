@@ -34,7 +34,7 @@ use crate::{
     DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsFull,
     FoldingSchemeGadgetOpsPartial, FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef,
     GroupBasedFoldingSchemeSecondaryDef, PlainInstance as IU, PlainInstanceVar as IUVar,
-    PlainWitness as IW,
+    PlainWitness as IW, TaggedVec,
 };
 
 pub mod instance;
@@ -168,7 +168,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
     type Config = (usize, usize);
     type PublicParam = VC::Key;
     type DeciderKey = OvaKey<Self::Arith, VC>;
-    type Challenge = Vec<bool>;
+    type Challenge = TaggedVec<bool, 'c'>;
     type Proof<const M: usize, const N: usize> = VC::Commitment;
 }
 
@@ -252,7 +252,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
                     .collect(),
             },
             cm,
-            rho_bits,
+            rho_bits.into(),
         ))
     }
 
@@ -300,7 +300,7 @@ where
     type RU = RUVar<VC>;
     type IU = IUVar<VC::ScalarVar>;
     type VerifierKey = ();
-    type Challenge = Vec<Boolean<VC::ConstraintField>>;
+    type Challenge = TaggedVec<Boolean<VC::ConstraintField>, 'c'>;
     type Proof<const M: usize, const N: usize> = VC::CommitmentVar;
 }
 
@@ -347,7 +347,7 @@ where
                     .collect::<Result<_, _>>()
                     .map_err(|_| SynthesisError::Unsatisfiable)?,
             },
-            rho_bits,
+            rho_bits.into(),
         ))
     }
 }

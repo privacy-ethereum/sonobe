@@ -44,10 +44,8 @@ impl<C: SonobeCurve, const N: usize> CycleFoldConfig for ProtoGalaxyCycleFoldCon
             .r
             .chunks(CF2::<C>::MODULUS_BIT_SIZE as usize - 1)
             .map(|bits| {
-                FpVar::new_input(cs.clone(), || {
-                    Ok(CF2::<C>::from_bits_le(bits))
-                })?
-                .to_n_bits_le(bits.len())
+                FpVar::new_input(cs.clone(), || Ok(CF2::<C>::from_bits_le(bits)))?
+                    .to_n_bits_le(bits.len())
             })
             .collect::<Result<Vec<_>, _>>()?
             .concat();
@@ -102,10 +100,10 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeCycleFoldExt<1
         us: [<Self::Gadget as FoldingSchemeGadgetDef>::IU; N],
         UU: <Self::Gadget as FoldingSchemeGadgetDef>::RU,
         _proof: <Self::Gadget as FoldingSchemeGadgetDef>::Proof<1, N>,
-        lagrange_evals: Vec<FpVar<VC::Scalar>>,
+        lagrange_evals: <Self::Gadget as FoldingSchemeGadgetDef>::Challenge,
     ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>>>>, SynthesisError> {
         let lagrange_evals_bits = lagrange_evals
-            .into_iter()
+            .iter()
             .map(|eval| eval.to_n_bits_le(VC::Scalar::MODULUS_BIT_SIZE as usize))
             .collect::<Result<Vec<_>, _>>()?
             .concat();

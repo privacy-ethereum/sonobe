@@ -46,7 +46,7 @@ use self::{
 use crate::{
     DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial,
     FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef, PlainInstance as IU,
-    PlainInstanceVar as IUVar, PlainWitness as IW,
+    PlainInstanceVar as IUVar, PlainWitness as IW, TaggedVec,
 };
 
 pub mod instance;
@@ -202,7 +202,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeD
     type Config = usize;
     type PublicParam = VC::Key;
     type DeciderKey = MovaKey<Self::Arith, VC>;
-    type Challenge = Vec<bool>;
+    type Challenge = TaggedVec<bool, 'c'>;
     type Proof<const M: usize, const N: usize> = MovaProof<VC::Commitment>;
 }
 
@@ -333,7 +333,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeO
                     .collect(),
             },
             MovaProof { h1_coeffs, t, cm_w },
-            rho_bits,
+            rho_bits.into(),
         ))
     }
 
@@ -437,7 +437,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeG
     type RU = RUVar<VC::Gadget2>;
     type IU = IUVar<<VC::Gadget2 as VectorCommitmentGadgetDef>::ScalarVar>;
     type VerifierKey = ();
-    type Challenge = Vec<Boolean<VC::Scalar>>;
+    type Challenge = TaggedVec<Boolean<VC::Scalar>, 'c'>;
     type Proof<const M: usize, const N: usize> = MovaProofVar<VC::Commitment>;
 }
 
@@ -493,7 +493,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize>
                 })?,
                 x: U.x.iter().zip(&u[..]).map(|(a, b)| &rho * b + a).collect(),
             },
-            rho_bits,
+            rho_bits.into(),
         ))
     }
 }

@@ -86,7 +86,7 @@ impl<
         rho: Self::Challenge,
     ) -> Vec<Self::CFConfig> {
         vec![HyperNovaCycleFoldConfig {
-            r: rho,
+            r: rho.into(),
             points: Us
                 .iter()
                 .map(|U| U.borrow().cm)
