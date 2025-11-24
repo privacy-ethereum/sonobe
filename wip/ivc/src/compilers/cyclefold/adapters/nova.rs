@@ -7,7 +7,7 @@ use ark_std::{borrow::Borrow, iter::once};
 use sonobe_fs::{
     nova::{CycleFoldNova, Nova},
     ova::CycleFoldOva,
-    FoldingSchemeGadgetDef, TaggedVec,
+    FoldingSchemeGadgetDef,
 };
 use sonobe_primitives::{
     algebra::{
@@ -76,7 +76,7 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
     ) -> Vec<Self::CFConfig> {
         vec![
             NovaCycleFoldConfig {
-                r: rho.clone().into(),
+                r: rho.into(),
                 points: vec![U.borrow().cm_e, *proof],
             },
             NovaCycleFoldConfig {
@@ -91,8 +91,9 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
         [u]: [<Self::Gadget as FoldingSchemeGadgetDef>::IU; 1],
         UU: <Self::Gadget as FoldingSchemeGadgetDef>::RU,
         proof: <Self::Gadget as FoldingSchemeGadgetDef>::Proof<1, 1>,
-        mut rho: <Self::Gadget as FoldingSchemeGadgetDef>::Challenge,
+        rho: <Self::Gadget as FoldingSchemeGadgetDef>::Challenge,
     ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>>>>, SynthesisError> {
+        let mut rho = rho.to_vec();
         rho.resize(
             CF2::<VC::Commitment>::MODULUS_BIT_SIZE as usize,
             Boolean::FALSE,
@@ -136,11 +137,11 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
         let rho = VC::Scalar::from_bits_le(&rho_bits);
         vec![
             NovaCycleFoldConfig {
-                r: rho_bits.clone().into(),
+                r: rho_bits.into(),
                 points: vec![*proof, U2.borrow().cm_e],
             },
             NovaCycleFoldConfig {
-                r: rho_bits.clone().into(),
+                r: rho_bits.into(),
                 points: vec![U1.borrow().cm_e, U2.borrow().cm_e * rho + proof],
             },
             NovaCycleFoldConfig {
@@ -155,8 +156,9 @@ impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> FoldingSchemeC
         _: [<Self::Gadget as FoldingSchemeGadgetDef>::IU; 0],
         UU: <Self::Gadget as FoldingSchemeGadgetDef>::RU,
         proof: <Self::Gadget as FoldingSchemeGadgetDef>::Proof<2, 0>,
-        mut rho_bits: <Self::Gadget as FoldingSchemeGadgetDef>::Challenge,
+        rho_bits: <Self::Gadget as FoldingSchemeGadgetDef>::Challenge,
     ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>>>>, SynthesisError> {
+        let mut rho_bits = rho_bits.to_vec();
         rho_bits.resize(
             CF2::<VC::Commitment>::MODULUS_BIT_SIZE as usize,
             Boolean::FALSE,

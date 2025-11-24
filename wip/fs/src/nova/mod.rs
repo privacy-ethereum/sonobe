@@ -1,47 +1,35 @@
-use ark_ff::{One, Zero};
-use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, groups::CurveVar, GR1CSVar};
-use ark_relations::gr1cs::SynthesisError;
-use ark_std::{
-    borrow::Borrow, cfg_into_iter, cfg_iter, marker::PhantomData, ops::Mul, rand::RngCore,
-    sync::Arc, UniformRand,
-};
-use num_bigint::BigInt;
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
+use ark_r1cs_std::boolean::Boolean;
+use ark_std::{marker::PhantomData, rand::RngCore, sync::Arc, UniformRand};
 use sonobe_primitives::{
-    algebra::{
-        field::emulated::Bound,
-        ops::bits::{FromBits, FromBitsGadget},
-    },
     arithmetizations::{
         r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
         Arith, ArithRelation,
     },
     circuits::AssignmentsOwned,
     commitments::{
-        CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentGadgetDef,
+        GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentGadgetDef,
         VectorCommitmentOps,
     },
     relations::{Relation, WitnessInstanceSampler},
     traits::{SonobeField, CF2},
-    transcripts::{Transcript, TranscriptVar},
 };
 
 use self::{
-    instance::{
+    instances::{
         circuits::{IncomingInstanceVar as IUVar, RunningInstanceVar as RUVar},
         IncomingInstance as IU, RunningInstance as RU,
     },
-    witness::{IncomingWitness as IW, RunningWitness as RW},
+    witnesses::{IncomingWitness as IW, RunningWitness as RW},
 };
 use crate::{
-    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsFull,
-    FoldingSchemeGadgetOpsPartial, FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef,
-    GroupBasedFoldingSchemeSecondaryDef, PlainInstance as PU, PlainWitness as PW, TaggedVec,
+    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, GroupBasedFoldingSchemePrimaryDef,
+    GroupBasedFoldingSchemeSecondaryDef, PlainInstance as PU, PlainWitness as PW,
 };
 
-pub mod instance;
-pub mod witness;
+pub mod algorithms;
+pub mod circuits;
+pub mod instances;
+pub mod witnesses;
 
 #[derive(Clone)]
 pub struct NovaKey<A, VC: VectorCommitmentDef> {
@@ -199,222 +187,8 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
     type Config = usize;
     type PublicParam = VC::Key;
     type DeciderKey = NovaKey<Self::Arith, VC>;
-    type Challenge = TaggedVec<bool, 'c'>;
+    type Challenge = [bool; CHALLENGE_BITS];
     type Proof<const M: usize, const N: usize> = VC::Commitment;
-}
-
-impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
-    FoldingSchemeOps<1, 1> for AbstractNova<VC, TF, CHALLENGE_BITS>
-{
-    fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
-        let ck = VC::generate_key(ck_len, &mut rng)?;
-        Ok(ck)
-    }
-
-    fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
-        let ck = Arc::new(ck);
-        let r1cs = Arc::new(r1cs);
-        if ck.max_scalars_len() < r1cs.n_constraints().max(r1cs.n_witnesses()) {
-            return Err(Error::InvalidPublicParameters(
-                "The commitment key is too short for the R1CS instance".into(),
-            ));
-        }
-        Ok(NovaKey { arith: r1cs, ck })
-    }
-
-    #[allow(non_snake_case)]
-    fn prove(
-        pk: &NovaKey<Self::Arith, VC>,
-        transcript: &mut impl Transcript<TF>,
-        Ws: &[impl Borrow<Self::RW>; 1],
-        Us: &[impl Borrow<Self::RU>; 1],
-        ws: &[impl Borrow<Self::IW>; 1],
-        us: &[impl Borrow<Self::IU>; 1],
-        rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, 1>, Self::Challenge), Error> {
-        let (W, U) = (Ws[0].borrow(), Us[0].borrow());
-        let (w, u) = (ws[0].borrow(), us[0].borrow());
-
-        // Compute the cross term `T` by following the optimized approach in
-        // [Mova](https://eprint.iacr.org/2024/1220.pdf)'s section 5.2.
-        let v = pk.arith.eval_assignments(AssignmentsOwned::from((
-            U.u + VC::Scalar::one(),
-            cfg_iter!(U.x).zip(&u.x).map(|(a, b)| *a + b).collect(),
-            cfg_iter!(W.w).zip(&w.w).map(|(a, b)| *a + b).collect(),
-        )))?;
-        let t = cfg_into_iter!(v)
-            .zip(&W.e)
-            .map(|(a, b)| a - b)
-            .collect::<Vec<_>>();
-
-        let (cm_t, r_t) = VC::commit(&pk.ck, &t, rng)?;
-
-        let rho_bits = {
-            transcript.add(&U);
-            transcript.add(&u);
-            transcript.add(&cm_t);
-            transcript.challenge_bits(CHALLENGE_BITS)
-        };
-        let rho = VC::Scalar::from_bits_le(&rho_bits);
-
-        Ok((
-            RW {
-                e: cfg_iter!(W.e).zip(&t).map(|(a, b)| rho * b + a).collect(),
-                r_e: W.r_e + r_t * rho,
-                w: cfg_iter!(W.w).zip(&w.w).map(|(a, b)| rho * b + a).collect(),
-                r_w: W.r_w + w.r_w * rho,
-            },
-            RU {
-                cm_e: U.cm_e + cm_t.mul(rho),
-                u: U.u + rho,
-                cm_w: U.cm_w + u.cm_w.mul(rho),
-                x: cfg_iter!(U.x).zip(&u.x).map(|(a, b)| rho * b + a).collect(),
-            },
-            cm_t,
-            rho_bits.into(),
-        ))
-    }
-
-    #[allow(non_snake_case)]
-    fn verify(
-        _vk: &(),
-        transcript: &mut impl Transcript<TF>,
-        Us: &[impl Borrow<Self::RU>; 1],
-        us: &[impl Borrow<Self::IU>; 1],
-        cm_t: &Self::Proof<1, 1>,
-    ) -> Result<Self::RU, Error> {
-        let (U, u) = (Us[0].borrow(), us[0].borrow());
-
-        let rho_bits = {
-            transcript.add(&U);
-            transcript.add(&u);
-            transcript.add(cm_t);
-            transcript.challenge_bits(CHALLENGE_BITS)
-        };
-        let rho = VC::Scalar::from_bits_le(&rho_bits);
-
-        Ok(RU {
-            cm_e: U.cm_e + cm_t.mul(rho),
-            u: U.u + rho,
-            cm_w: U.cm_w + u.cm_w.mul(rho),
-            x: cfg_iter!(U.x).zip(&u.x).map(|(a, b)| rho * b + a).collect(),
-        })
-    }
-}
-
-impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
-    FoldingSchemeOps<2, 0> for AbstractNova<VC, TF, CHALLENGE_BITS>
-{
-    fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
-        let ck = VC::generate_key(ck_len, &mut rng)?;
-        Ok(ck)
-    }
-
-    fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
-        let ck = Arc::new(ck);
-        let r1cs = Arc::new(r1cs);
-        if ck.max_scalars_len() < r1cs.n_constraints().max(r1cs.n_witnesses()) {
-            return Err(Error::InvalidPublicParameters(
-                "The commitment key is too short for the R1CS instance".into(),
-            ));
-        }
-        Ok(NovaKey { arith: r1cs, ck })
-    }
-
-    #[allow(non_snake_case)]
-    fn prove(
-        pk: &NovaKey<Self::Arith, VC>,
-        transcript: &mut impl Transcript<TF>,
-        [W1, W2]: &[impl Borrow<Self::RW>; 2],
-        [U1, U2]: &[impl Borrow<Self::RU>; 2],
-        _: &[impl Borrow<Self::IW>; 0],
-        _: &[impl Borrow<Self::IU>; 0],
-        rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<2, 0>, Self::Challenge), Error> {
-        let (W1, U1) = (W1.borrow(), U1.borrow());
-        let (W2, U2) = (W2.borrow(), U2.borrow());
-
-        // Compute the cross term `T` by following the optimized approach in
-        // [Mova](https://eprint.iacr.org/2024/1220.pdf)'s section 5.2.
-        let v = pk.arith.eval_assignments(AssignmentsOwned::from((
-            U1.u + U2.u,
-            cfg_iter!(U1.x).zip(&U2.x).map(|(a, b)| *a + b).collect(),
-            cfg_iter!(W1.w).zip(&W2.w).map(|(a, b)| *a + b).collect(),
-        )))?;
-        let t = cfg_into_iter!(v)
-            .zip(&W1.e)
-            .zip(&W2.e)
-            .map(|((a, b), c)| a - b - c)
-            .collect::<Vec<_>>();
-
-        let (cm_t, r_t) = VC::commit(&pk.ck, &t, rng)?;
-
-        let rho_bits = {
-            transcript.add(&U1);
-            transcript.add(&U2);
-            transcript.add(&cm_t);
-            transcript.challenge_bits(CHALLENGE_BITS)
-        };
-        let rho = VC::Scalar::from_bits_le(&rho_bits);
-        let rho_squared = rho * rho;
-
-        Ok((
-            RW {
-                e: cfg_iter!(W1.e)
-                    .zip(&t)
-                    .zip(&W2.e)
-                    .map(|((a, b), c)| rho_squared * c + rho * b + a)
-                    .collect(),
-                r_e: W1.r_e + r_t * rho + W2.r_e * rho_squared,
-                w: cfg_iter!(W1.w)
-                    .zip(&W2.w)
-                    .map(|(a, b)| rho * b + a)
-                    .collect(),
-                r_w: W1.r_w + W2.r_w * rho,
-            },
-            RU {
-                cm_e: U1.cm_e + cm_t.mul(rho) + U2.cm_e.mul(rho_squared),
-                u: U1.u + rho * U2.u,
-                cm_w: U1.cm_w + U2.cm_w.mul(rho),
-                x: cfg_iter!(U1.x)
-                    .zip(&U2.x)
-                    .map(|(a, b)| rho * b + a)
-                    .collect(),
-            },
-            cm_t,
-            rho_bits.into(),
-        ))
-    }
-
-    #[allow(non_snake_case)]
-    fn verify(
-        _vk: &(),
-        transcript: &mut impl Transcript<TF>,
-        [U1, U2]: &[impl Borrow<Self::RU>; 2],
-        _: &[impl Borrow<Self::IU>; 0],
-        cm_t: &Self::Proof<2, 0>,
-    ) -> Result<Self::RU, Error> {
-        let (U1, U2) = (U1.borrow(), U2.borrow());
-
-        let rho_bits = {
-            transcript.add(&U1);
-            transcript.add(&U2);
-            transcript.add(cm_t);
-            transcript.challenge_bits(CHALLENGE_BITS)
-        };
-        let rho = VC::Scalar::from_bits_le(&rho_bits);
-        let rho_squared = rho * rho;
-
-        Ok(RU {
-            cm_e: U1.cm_e + cm_t.mul(rho) + U2.cm_e.mul(rho_squared),
-            u: U1.u + rho * U2.u,
-            cm_w: U1.cm_w + U2.cm_w.mul(rho),
-            x: cfg_iter!(U1.x)
-                .zip(&U2.x)
-                .map(|(a, b)| rho * b + a)
-                .collect(),
-        })
-    }
 }
 
 // used for the RO challenges.
@@ -448,122 +222,8 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
     type Config = usize;
     type PublicParam = VC::Key;
     type DeciderKey = NovaKey<Self::Arith, VC>;
-    type Challenge = Vec<bool>;
+    type Challenge = [bool; CHALLENGE_BITS];
     type Proof<const M: usize, const N: usize> = (VC::Commitment, VC::Commitment);
-}
-
-impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
-    FoldingSchemeOps<1, 1> for AbstractNova2<VC, TF, CHALLENGE_BITS>
-{
-    fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
-        let ck = VC::generate_key(ck_len, &mut rng)?;
-        Ok(ck)
-    }
-
-    fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
-        let ck = Arc::new(ck);
-        let r1cs = Arc::new(r1cs);
-        if ck.max_scalars_len() < r1cs.n_constraints().max(r1cs.n_witnesses()) {
-            return Err(Error::InvalidPublicParameters(
-                "The commitment key is too short for the R1CS instance".into(),
-            ));
-        }
-        Ok(NovaKey { arith: r1cs, ck })
-    }
-
-    #[allow(non_snake_case)]
-    fn prove(
-        pk: &NovaKey<Self::Arith, VC>,
-        transcript: &mut impl Transcript<TF>,
-        Ws: &[impl Borrow<Self::RW>; 1],
-        Us: &[impl Borrow<Self::RU>; 1],
-        ws: &[impl Borrow<Self::IW>; 1],
-        us: &[impl Borrow<Self::IU>; 1],
-        mut rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, 1>, Self::Challenge), Error> {
-        let (W, U) = (Ws[0].borrow(), Us[0].borrow());
-        let (w, u) = (ws[0].borrow(), us[0].borrow());
-
-        // Compute the cross term `T` by following the optimized approach in
-        // [Mova](https://eprint.iacr.org/2024/1220.pdf)'s section 5.2.
-        let v = pk.arith.eval_assignments(AssignmentsOwned::from((
-            U.u + VC::Scalar::one(),
-            cfg_iter!(U.x).zip(&u[..]).map(|(a, b)| *a + b).collect(),
-            cfg_iter!(W.w).zip(&w[..]).map(|(a, b)| *a + b).collect(),
-        )))?;
-        let t = cfg_into_iter!(v)
-            .zip(&W.e)
-            .map(|(a, b)| a - b)
-            .collect::<Vec<_>>();
-
-        let (cm_w, r_w) = VC::commit(&pk.ck, w, &mut rng)?;
-
-        let (cm_t, r_t) = VC::commit(&pk.ck, &t, &mut rng)?;
-
-        let pi = (cm_w, cm_t);
-
-        let rho_bits = {
-            transcript.add(&U);
-            transcript.add(&u);
-            transcript.add(&pi);
-            transcript.challenge_bits(CHALLENGE_BITS)
-        };
-        let rho = VC::Scalar::from_bits_le(&rho_bits);
-
-        Ok((
-            RW {
-                e: cfg_iter!(W.e).zip(&t).map(|(a, b)| rho * b + a).collect(),
-                r_e: W.r_e + r_t * rho,
-                w: cfg_iter!(W.w)
-                    .zip(&w[..])
-                    .map(|(a, b)| rho * b + a)
-                    .collect(),
-                r_w: W.r_w + r_w * rho,
-            },
-            RU {
-                cm_e: U.cm_e + cm_t.mul(rho),
-                u: U.u + rho,
-                cm_w: U.cm_w + cm_w.mul(rho),
-                x: cfg_iter!(U.x)
-                    .zip(&u[..])
-                    .map(|(a, b)| rho * b + a)
-                    .collect(),
-            },
-            pi,
-            rho_bits,
-        ))
-    }
-
-    #[allow(non_snake_case)]
-    fn verify(
-        _vk: &(),
-        transcript: &mut impl Transcript<TF>,
-        Us: &[impl Borrow<Self::RU>; 1],
-        us: &[impl Borrow<Self::IU>; 1],
-        pi: &Self::Proof<1, 1>,
-    ) -> Result<Self::RU, Error> {
-        let (U, u) = (Us[0].borrow(), us[0].borrow());
-
-        let rho_bits = {
-            transcript.add(&U);
-            transcript.add(&u);
-            transcript.add(pi);
-            transcript.challenge_bits(CHALLENGE_BITS)
-        };
-        let rho = VC::Scalar::from_bits_le(&rho_bits);
-
-        let (cm_w, cm_t) = pi;
-
-        Ok(RU {
-            cm_e: U.cm_e + cm_t.mul(rho),
-            u: U.u + rho,
-            cm_w: U.cm_w + cm_w.mul(rho),
-            x: cfg_iter!(U.x)
-                .zip(&u[..])
-                .map(|(a, b)| rho * b + a)
-                .collect(),
-        })
-    }
 }
 
 pub struct AbstractNovaGadget<VC, const CHALLENGE_BITS: usize = 128> {
@@ -581,172 +241,8 @@ where
     type RU = RUVar<VC>;
     type IU = IUVar<VC>;
     type VerifierKey = ();
-    type Challenge = TaggedVec<Boolean<VC::ConstraintField>, 'c'>;
+    type Challenge = [Boolean<VC::ConstraintField>; CHALLENGE_BITS];
     type Proof<const M: usize, const N: usize> = VC::CommitmentVar;
-}
-
-impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeGadgetOpsPartial<1, 1>
-    for AbstractNovaGadget<VC, CHALLENGE_BITS>
-where
-    VC: VectorCommitmentGadgetDef<Native: GroupBasedVectorCommitment>,
-{
-    #[allow(non_snake_case)]
-    fn verify_hinted(
-        _vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptVar<VC::ConstraintField>,
-        [U]: [&Self::RU; 1],
-        [u]: [&Self::IU; 1],
-        proof: &Self::Proof<1, 1>,
-    ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
-        let rho_bits = {
-            transcript.add(&U)?;
-            transcript.add(&u)?;
-            transcript.add(proof)?;
-            transcript.challenge_bits(CHALLENGE_BITS)?
-        };
-        let rho = VC::ScalarVar::from_bits_le(
-            &rho_bits,
-            Bound(
-                BigInt::zero(),
-                (BigInt::one() << CHALLENGE_BITS) - BigInt::one(),
-            ),
-        )?;
-
-        Ok((
-            RUVar {
-                u: (U.u.clone() + &rho)
-                    .try_into()
-                    .map_err(|_| SynthesisError::Unsatisfiable)?,
-                cm_e: VC::CommitmentVar::new_witness(
-                    U.cm_e.cs().or(proof.cs()).or(rho.cs()),
-                    || {
-                        Ok(U.cm_e.value().unwrap_or_default()
-                            + proof.value().unwrap_or_default() * rho.value().unwrap_or_default())
-                    },
-                )?,
-                cm_w: VC::CommitmentVar::new_witness(
-                    U.cm_w.cs().or(u.cm_w.cs()).or(rho.cs()),
-                    || {
-                        Ok(U.cm_w.value().unwrap_or_default()
-                            + u.cm_w.value().unwrap_or_default() * rho.value().unwrap_or_default())
-                    },
-                )?,
-                x: U.x
-                    .iter()
-                    .zip(&u.x)
-                    .map(|(a, b)| (b.clone() * &rho + a).try_into())
-                    .collect::<Result<_, _>>()
-                    .map_err(|_| SynthesisError::Unsatisfiable)?,
-            },
-            rho_bits.into(),
-        ))
-    }
-}
-
-impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeGadgetOpsPartial<2, 0>
-    for AbstractNovaGadget<VC, CHALLENGE_BITS>
-where
-    VC: VectorCommitmentGadgetDef<Native: GroupBasedVectorCommitment>,
-{
-    #[allow(non_snake_case)]
-    fn verify_hinted(
-        _vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptVar<VC::ConstraintField>,
-        [U1, U2]: [&Self::RU; 2],
-        _: [&Self::IU; 0],
-        proof: &Self::Proof<2, 0>,
-    ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
-        let rho_bits = {
-            transcript.add(&U1)?;
-            transcript.add(&U2)?;
-            transcript.add(proof)?;
-            transcript.challenge_bits(CHALLENGE_BITS)?
-        };
-        let rho = VC::ScalarVar::from_bits_le(
-            &rho_bits,
-            Bound(
-                BigInt::zero(),
-                (BigInt::one() << CHALLENGE_BITS) - BigInt::one(),
-            ),
-        )?;
-
-        Ok((
-            RUVar {
-                u: (U2.u.clone() * &rho + &U1.u)
-                    .try_into()
-                    .map_err(|_| SynthesisError::Unsatisfiable)?,
-                cm_e: VC::CommitmentVar::new_witness(
-                    U1.cm_e.cs().or(U2.cm_e.cs()).or(proof.cs()).or(rho.cs()),
-                    || {
-                        let rho = rho.value().unwrap_or_default();
-                        Ok(U1.cm_e.value().unwrap_or_default()
-                            + proof.value().unwrap_or_default() * rho
-                            + U2.cm_e.value().unwrap_or_default() * rho * rho)
-                    },
-                )?,
-                cm_w: VC::CommitmentVar::new_witness(
-                    U1.cm_w.cs().or(U2.cm_w.cs()).or(rho.cs()),
-                    || {
-                        Ok(U1.cm_w.value().unwrap_or_default()
-                            + U2.cm_w.value().unwrap_or_default() * rho.value().unwrap_or_default())
-                    },
-                )?,
-                x: U1
-                    .x
-                    .iter()
-                    .zip(&U2.x)
-                    .map(|(a, b)| (b.clone() * &rho + a).try_into())
-                    .collect::<Result<_, _>>()
-                    .map_err(|_| SynthesisError::Unsatisfiable)?,
-            },
-            rho_bits.into(),
-        ))
-    }
-}
-
-impl<VC, const CHALLENGE_BITS: usize> FoldingSchemeGadgetOpsFull<1, 1>
-    for AbstractNovaGadget<VC, CHALLENGE_BITS>
-where
-    VC: VectorCommitmentGadgetDef<Native: GroupBasedVectorCommitment>,
-    VC::CommitmentVar:
-        CurveVar<<VC::Native as VectorCommitmentDef>::Commitment, VC::ConstraintField>,
-{
-    #[allow(non_snake_case)]
-    fn verify(
-        _vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptVar<VC::ConstraintField>,
-        [U]: [&Self::RU; 1],
-        [u]: [&Self::IU; 1],
-        proof: &Self::Proof<1, 1>,
-    ) -> Result<Self::RU, SynthesisError> {
-        let rho_bits = {
-            transcript.add(&U)?;
-            transcript.add(&u)?;
-            transcript.add(proof)?;
-            transcript.challenge_bits(CHALLENGE_BITS)?
-        };
-        let rho = VC::ScalarVar::from_bits_le(
-            &rho_bits,
-            Bound(
-                BigInt::zero(),
-                (BigInt::one() << CHALLENGE_BITS) - BigInt::one(),
-            ),
-        )?;
-
-        Ok(RUVar {
-            u: (U.u.clone() + &rho)
-                .try_into()
-                .map_err(|_| SynthesisError::Unsatisfiable)?,
-            cm_e: proof.scalar_mul_le(rho_bits.iter())? + &U.cm_e,
-            cm_w: u.cm_w.scalar_mul_le(rho_bits.iter())? + &U.cm_w,
-            x: U.x
-                .iter()
-                .zip(&u.x)
-                .map(|(a, b)| (b.clone() * &rho + a).try_into())
-                .collect::<Result<_, _>>()
-                .map_err(|_| SynthesisError::Unsatisfiable)?,
-        })
-    }
 }
 
 impl<VC: GroupBasedVectorCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemePrimaryDef

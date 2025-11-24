@@ -352,7 +352,7 @@ impl<F: PrimeField> TranscriptVar<F> for GriffinSpongeVar<F> {
 pub mod tests {
     use ark_bn254::{constraints::GVar, g1::Config, Fq, Fr, G1Projective as G1};
     use ark_ec::PrimeGroup;
-    use ark_ff::{BigInteger, PrimeField, UniformRand};
+    use ark_ff::UniformRand;
     use ark_r1cs_std::{
         alloc::AllocVar,
         fields::fp::FpVar,

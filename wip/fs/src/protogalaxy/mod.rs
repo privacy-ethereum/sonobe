@@ -1,51 +1,46 @@
-use ark_ff::{batch_inversion, Field, One, PrimeField, Zero};
-use ark_poly::{
-    univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations,
-    GeneralEvaluationDomain, Polynomial,
-};
+use ark_ff::{Field, PrimeField};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
-    fields::{fp::FpVar, FieldVar},
-    poly::polynomial::univariate::dense::DensePolynomialVar,
+    fields::fp::FpVar,
     GR1CSVar,
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{
-    borrow::Borrow, cfg_into_iter, iter::once, log2, marker::PhantomData, rand::RngCore, sync::Arc,
+    borrow::Borrow, cfg_into_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc,
     UniformRand,
 };
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use sonobe_primitives::{
-    algebra::ops::{
-        poly::EvaluationDomainGadget,
-        pow::{Pow, PowGadget},
-        rlc::{ScalarRLC, SliceRLC},
-    },
+    algebra::ops::
+        pow::Pow
+    ,
     arithmetizations::{r1cs::R1CS, Arith, ArithConfig, ArithRelation, Error as ArithError},
-    circuits::{Assignments, AssignmentsOwned},
+    circuits::AssignmentsOwned,
     commitments::{
-        CommitmentKey, GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentOps,
+        GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentOps,
     },
     relations::{Relation, WitnessInstanceSampler},
     traits::Dummy,
-    transcripts::{Transcript, TranscriptVar},
 };
 
 use self::{
-    instance::{
+    instances::{
         circuits::{IncomingInstanceVar as IUVar, RunningInstanceVar as RUVar},
         IncomingInstance as IU, RunningInstance as RU,
     },
-    witness::{IncomingWitness as IW, RunningWitness as RW},
+    witnesses::{IncomingWitness as IW, RunningWitness as RW},
 };
 use crate::{
-    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, FoldingSchemeGadgetOpsPartial,
-    FoldingSchemeOps, GroupBasedFoldingSchemePrimaryDef, PlainInstance as PU, PlainWitness as PW, TaggedVec,
+    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef,
+    GroupBasedFoldingSchemePrimaryDef, PlainInstance as PU,
+    PlainWitness as PW, TaggedVec,
 };
 
-pub mod instance;
-pub mod witness;
+pub mod algorithms;
+pub mod circuits;
+pub mod instances;
+pub mod witnesses;
 
 #[derive(Clone)]
 pub struct ProtoGalaxyKey<A, VC: VectorCommitmentDef> {
@@ -234,244 +229,6 @@ impl<VC: GroupBasedVectorCommitment> FoldingSchemeDef for ProtoGalaxy<VC> {
     type Proof<const M: usize, const N: usize> = ProtoGalaxyProof<VC::Scalar, N>;
 }
 
-impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeOps<1, N> for ProtoGalaxy<VC> {
-    fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
-        if !(N + 1).is_power_of_two() {
-            return Err(Error::Unsupported("N + 1 must be a power of two".into()));
-        }
-        let ck = VC::generate_key(ck_len, &mut rng)?;
-        Ok(ck)
-    }
-
-    fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
-        let ck = Arc::new(ck);
-        let r1cs = Arc::new(r1cs);
-        if ck.max_scalars_len() < r1cs.n_witnesses() {
-            return Err(Error::InvalidPublicParameters(
-                "The commitment key is too short for the R1CS instance".into(),
-            ));
-        }
-        Ok(ProtoGalaxyKey { arith: r1cs, ck })
-    }
-
-    #[allow(non_snake_case)]
-    fn prove(
-        pk: &ProtoGalaxyKey<Self::Arith, VC>,
-        transcript: &mut impl Transcript<VC::Scalar>,
-        Ws: &[impl Borrow<Self::RW>; 1],
-        Us: &[impl Borrow<Self::RU>; 1],
-        ws: &[impl Borrow<Self::IW>; N],
-        us: &[impl Borrow<Self::IU>; N],
-        _rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, N>, Self::Challenge), Error> {
-        let (W, U) = (Ws[0].borrow(), Us[0].borrow());
-        let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
-        let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
-
-        let r1cs = &pk.arith;
-        let d = r1cs.config().degree();
-        let t = r1cs.log_constraints();
-
-        transcript.add(&t);
-        transcript.add(&(d * N + 1));
-
-        // absorb the committed instances
-        transcript.add(U);
-        transcript.add(&us[..]);
-
-        let delta = transcript.challenge_field_element();
-        let deltas = delta.repeated_squares(t);
-
-        let mut eval = r1cs.eval_relation(&W.w, &U.x)?;
-        eval.resize(1 << t, VC::Scalar::default());
-
-        // F(X)
-        let f_poly = calc_f_from_btree(&eval, &U.betas, &deltas);
-        let mut f_coeffs = f_poly.coeffs[1..].to_vec();
-        f_coeffs.resize(t, VC::Scalar::default());
-        transcript.add(&f_coeffs);
-
-        let alpha = transcript.challenge_field_element();
-
-        // eval F(alpha)
-        let f_alpha = f_poly.evaluate(&alpha);
-
-        // betas*
-        let betas_star = [&U.betas[..], &deltas[..]]
-            .into_iter()
-            .slice_rlc(&[One::one(), alpha]);
-
-        let zs = once(Assignments::from((One::one(), &U.x, &W.w)))
-            .chain(
-                ws.iter()
-                    .zip(us)
-                    .map(|(w, u)| Assignments::from((One::one(), &u.x, &w.w))),
-            )
-            .collect::<Vec<_>>();
-
-        let G = GeneralEvaluationDomain::<VC::Scalar>::new(d * N + 1)
-            .ok_or(Error::DomainCreationFailure)?;
-        let H = GeneralEvaluationDomain::<VC::Scalar>::new(N + 1)
-            .ok_or(Error::DomainCreationFailure)?;
-
-        let omegas = H.group_gen_inv().powers(H.size());
-        let mut lagrange_bases = vec![vec![H.size_inv(); H.size()]];
-        for i in 1..H.size() {
-            lagrange_bases.push(
-                lagrange_bases[i - 1]
-                    .iter()
-                    .zip(&omegas)
-                    .map(|(a, b)| *a * b)
-                    .collect(),
-            );
-        }
-        let lagrange_bases = lagrange_bases
-            .into_iter()
-            .map(DensePolynomial::from_coefficients_vec)
-            .collect::<Vec<_>>();
-
-        // Optimized G(X) computation as described in Claim 4.5 of the paper.
-        let s_evals = (0..r1cs.n_variables())
-            .map(|i| {
-                lagrange_bases
-                    .iter()
-                    .zip(&zs)
-                    .map(|(l, z)| l * z[i])
-                    .fold(DensePolynomial::zero(), |acc, x| acc + x)
-                    .evaluate_over_domain(G)
-                    .evals
-            })
-            .collect::<Vec<_>>();
-
-        let mut invs = G
-            .elements()
-            .map(|e| e - VC::Scalar::one())
-            .collect::<Vec<_>>();
-        batch_inversion(&mut invs);
-
-        // Compute evaluations of G(X) - F(alpha)*L_0(X)
-        let beta_star_pows = Pow::powers_from_repeated_squares(&betas_star);
-        let g_evals = G
-            .elements()
-            .zip(invs)
-            .enumerate()
-            .map(|(k, (e, inv))| {
-                if k.is_multiple_of(H.size()) {
-                    return Ok(VC::Scalar::zero());
-                }
-                let z = AssignmentsOwned::from((
-                    s_evals[0][k],
-                    (1..1 + r1cs.n_public_inputs())
-                        .map(|i| s_evals[i][k])
-                        .collect(),
-                    (1 + r1cs.n_public_inputs()..r1cs.n_variables())
-                        .map(|i| s_evals[i][k])
-                        .collect(),
-                ));
-                let v = r1cs.eval_assignments(z)?;
-                // L_0(e) = (e^H.size() - 1) / (e - 1) / H.size()
-                let l_0_eval = H.evaluate_vanishing_polynomial(e) * inv * H.size_inv();
-                Ok(v.into_iter().scalar_rlc(&beta_star_pows) - f_alpha * l_0_eval)
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-
-        // Interpolate G(X) - F(alpha)*L_0(X)
-        let g_poly = Evaluations::from_vec_and_domain(g_evals, G).interpolate();
-        // Compute K(X) = (G(X) - F(alpha)*L_0(X)) / Z(X)
-        let (mut k_poly, r) = g_poly.divide_by_vanishing_poly(H);
-        if !r.is_zero() {
-            return Err(Error::IndivisibleByVanishingPoly);
-        }
-
-        k_poly.coeffs.resize(d * N + 1, VC::Scalar::default());
-        transcript.add(&k_poly.coeffs);
-
-        let gamma = transcript.challenge_field_element();
-
-        let lagrange_evals = H.evaluate_all_lagrange_coefficients(gamma);
-
-        Ok((
-            RW {
-                w: once(&W.w[..])
-                    .chain(ws.iter().map(|w| &w.w[..]))
-                    .slice_rlc(&lagrange_evals),
-                r: once(W.r)
-                    .chain(ws.iter().map(|w| w.r))
-                    .scalar_rlc(&lagrange_evals),
-            },
-            RU {
-                e: f_alpha * lagrange_evals[0]
-                    + H.evaluate_vanishing_polynomial(gamma) * k_poly.evaluate(&gamma),
-                x: once(&U.x[..])
-                    .chain(us.iter().map(|u| &u.x[..]))
-                    .slice_rlc(&lagrange_evals),
-                betas: betas_star,
-                phi: once(U.phi)
-                    .chain(us.iter().map(|u| u.phi))
-                    .scalar_rlc(&lagrange_evals),
-            },
-            ProtoGalaxyProof {
-                f_coeffs,
-                k_coeffs: k_poly.coeffs,
-            },
-            lagrange_evals.into(),
-        ))
-    }
-
-    #[allow(non_snake_case)]
-    fn verify(
-        _vk: &(),
-        transcript: &mut impl Transcript<VC::Scalar>,
-        Us: &[impl Borrow<Self::RU>; 1],
-        us: &[impl Borrow<Self::IU>; N],
-        proof: &Self::Proof<1, N>,
-    ) -> Result<Self::RU, Error> {
-        let U = Us[0].borrow();
-        let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
-
-        transcript.add(&proof.f_coeffs.len());
-        transcript.add(&proof.k_coeffs.len());
-
-        // absorb the committed instances
-        transcript.add(U);
-        transcript.add(&us[..]);
-
-        let delta = transcript.challenge_field_element();
-        let deltas = delta.repeated_squares(U.betas.len());
-
-        transcript.add(&proof.f_coeffs);
-
-        let alpha = transcript.challenge_field_element();
-
-        let f_poly = DensePolynomial::from_coefficients_vec([&[U.e][..], &proof.f_coeffs].concat());
-
-        let f_alpha = f_poly.evaluate(&alpha);
-
-        transcript.add(&proof.k_coeffs);
-
-        let H = GeneralEvaluationDomain::new(N + 1).ok_or(Error::DomainCreationFailure)?;
-        let k_poly = DensePolynomial::from_coefficients_slice(&proof.k_coeffs);
-
-        let gamma = transcript.challenge_field_element();
-
-        let lagrange_evals = H.evaluate_all_lagrange_coefficients(gamma);
-
-        Ok(RU {
-            e: f_alpha * lagrange_evals[0]
-                + H.evaluate_vanishing_polynomial(gamma) * k_poly.evaluate(&gamma),
-            x: once(&U.x[..])
-                .chain(us.iter().map(|u| &u.x[..]))
-                .slice_rlc(&lagrange_evals),
-            betas: [&U.betas[..], &deltas[..]]
-                .into_iter()
-                .slice_rlc(&[One::one(), alpha]),
-            phi: once(U.phi)
-                .chain(us.iter().map(|u| u.phi))
-                .scalar_rlc(&lagrange_evals),
-        })
-    }
-}
-
 // TODO: experimental design
 struct ProtoGalaxy2<VC> {
     _vc: PhantomData<VC>,
@@ -493,271 +250,6 @@ impl<VC: GroupBasedVectorCommitment> FoldingSchemeDef for ProtoGalaxy2<VC> {
     type Challenge = Vec<VC::Scalar>;
     type Proof<const M: usize, const N: usize> =
         ([VC::Commitment; N], ProtoGalaxyProof<VC::Scalar, N>);
-}
-
-impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeOps<1, N> for ProtoGalaxy2<VC> {
-    fn preprocess(ck_len: usize, mut rng: impl RngCore) -> Result<Self::PublicParam, Error> {
-        if !(N + 1).is_power_of_two() {
-            return Err(Error::Unsupported("N + 1 must be a power of two".into()));
-        }
-        let ck = VC::generate_key(ck_len, &mut rng)?;
-        Ok(ck)
-    }
-
-    fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {
-        let ck = Arc::new(ck);
-        let r1cs = Arc::new(r1cs);
-        if ck.max_scalars_len() < r1cs.n_witnesses() {
-            return Err(Error::InvalidPublicParameters(
-                "The commitment key is too short for the R1CS instance".into(),
-            ));
-        }
-        Ok(ProtoGalaxyKey { arith: r1cs, ck })
-    }
-
-    #[allow(non_snake_case)]
-    fn prove(
-        pk: &ProtoGalaxyKey<Self::Arith, VC>,
-        transcript: &mut impl Transcript<VC::Scalar>,
-        Ws: &[impl Borrow<Self::RW>; 1],
-        Us: &[impl Borrow<Self::RU>; 1],
-        ws: &[impl Borrow<Self::IW>; N],
-        us: &[impl Borrow<Self::IU>; N],
-        mut rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, N>, Self::Challenge), Error> {
-        let (W, U) = (Ws[0].borrow(), Us[0].borrow());
-        let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
-        let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
-
-        let r1cs = &pk.arith;
-        let d = r1cs.config().degree();
-        let t = r1cs.log_constraints();
-
-        let mut phis = [VC::Commitment::default(); N];
-        let mut rs = [VC::Randomness::default(); N];
-        for i in 0..N {
-            let (cm, r) = VC::commit(&pk.ck, ws[i], &mut rng)?;
-            phis[i] = cm;
-            rs[i] = r;
-        }
-
-        transcript.add(&t);
-        transcript.add(&(d * N + 1));
-
-        // absorb the committed instances
-        transcript.add(U);
-        transcript.add(&us[..]);
-        transcript.add(&phis[..]);
-
-        let delta = transcript.challenge_field_element();
-        let deltas = delta.repeated_squares(t);
-
-        let mut eval = r1cs.eval_relation(&W.w, &U.x)?;
-        eval.resize(1 << t, VC::Scalar::default());
-
-        // F(X)
-        let f_poly = calc_f_from_btree(&eval, &U.betas, &deltas);
-        let mut f_coeffs = f_poly.coeffs[1..].to_vec();
-        f_coeffs.resize(t, VC::Scalar::default());
-        transcript.add(&f_coeffs);
-
-        let alpha = transcript.challenge_field_element();
-
-        // eval F(alpha)
-        let f_alpha = f_poly.evaluate(&alpha);
-
-        // betas*
-        let betas_star = [&U.betas[..], &deltas[..]]
-            .into_iter()
-            .slice_rlc(&[One::one(), alpha]);
-
-        let zs = once(Assignments::from((VC::Scalar::one(), &U.x, &W.w)))
-            .chain(
-                ws.iter()
-                    .zip(us)
-                    .map(|(w, u)| Assignments::from((VC::Scalar::one(), u.as_ref(), w.as_ref()))),
-            )
-            .collect::<Vec<_>>();
-
-        let G = GeneralEvaluationDomain::<VC::Scalar>::new(d * N + 1)
-            .ok_or(Error::DomainCreationFailure)?;
-        let H = GeneralEvaluationDomain::<VC::Scalar>::new(N + 1)
-            .ok_or(Error::DomainCreationFailure)?;
-
-        let omegas = H.group_gen_inv().powers(H.size());
-        let mut lagrange_bases = vec![vec![H.size_inv(); H.size()]];
-        for i in 1..H.size() {
-            lagrange_bases.push(
-                lagrange_bases[i - 1]
-                    .iter()
-                    .zip(&omegas)
-                    .map(|(a, b)| *a * b)
-                    .collect(),
-            );
-        }
-        let lagrange_bases = lagrange_bases
-            .into_iter()
-            .map(DensePolynomial::from_coefficients_vec)
-            .collect::<Vec<_>>();
-
-        // Optimized G(X) computation as described in Claim 4.5 of the paper.
-        let s_evals = (0..r1cs.n_variables())
-            .map(|i| {
-                lagrange_bases
-                    .iter()
-                    .zip(&zs)
-                    .map(|(l, z)| l * z[i])
-                    .fold(DensePolynomial::zero(), |acc, x| acc + x)
-                    .evaluate_over_domain(G)
-                    .evals
-            })
-            .collect::<Vec<_>>();
-
-        let mut invs = G
-            .elements()
-            .map(|e| e - VC::Scalar::one())
-            .collect::<Vec<_>>();
-        batch_inversion(&mut invs);
-
-        // Compute evaluations of G(X) - F(alpha)*L_0(X)
-        let beta_star_pows = Pow::powers_from_repeated_squares(&betas_star);
-        let g_evals = G
-            .elements()
-            .zip(invs)
-            .enumerate()
-            .map(|(k, (e, inv))| {
-                if k.is_multiple_of(H.size()) {
-                    return Ok(VC::Scalar::zero());
-                }
-                let z = AssignmentsOwned::from((
-                    s_evals[0][k],
-                    (1..1 + r1cs.n_public_inputs())
-                        .map(|i| s_evals[i][k])
-                        .collect(),
-                    (1 + r1cs.n_public_inputs()..r1cs.n_variables())
-                        .map(|i| s_evals[i][k])
-                        .collect(),
-                ));
-                let v = r1cs.eval_assignments(z)?;
-                // L_0(e) = (e^H.size() - 1) / (e - 1) / H.size()
-                let l_0_eval = H.evaluate_vanishing_polynomial(e) * inv * H.size_inv();
-                Ok(v.into_iter().scalar_rlc(&beta_star_pows) - f_alpha * l_0_eval)
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-
-        // Interpolate G(X) - F(alpha)*L_0(X)
-        let g_poly = Evaluations::from_vec_and_domain(g_evals, G).interpolate();
-        // Compute K(X) = (G(X) - F(alpha)*L_0(X)) / Z(X)
-        let (mut k_poly, r) = g_poly.divide_by_vanishing_poly(H);
-        if !r.is_zero() {
-            return Err(Error::IndivisibleByVanishingPoly);
-        }
-
-        k_poly.coeffs.resize(d * N + 1, VC::Scalar::default());
-        transcript.add(&k_poly.coeffs);
-
-        let gamma = transcript.challenge_field_element();
-
-        let lagrange_evals = H.evaluate_all_lagrange_coefficients(gamma);
-
-        Ok((
-            RW {
-                w: once(&W.w[..])
-                    .chain(ws.iter().map(|w| &w[..]))
-                    .slice_rlc(&lagrange_evals),
-                r: once(W.r).chain(rs).scalar_rlc(&lagrange_evals),
-            },
-            RU {
-                e: f_alpha * lagrange_evals[0]
-                    + H.evaluate_vanishing_polynomial(gamma) * k_poly.evaluate(&gamma),
-                x: once(&U.x[..])
-                    .chain(us.iter().map(|u| &u[..]))
-                    .slice_rlc(&lagrange_evals),
-                betas: betas_star,
-                phi: once(U.phi).chain(phis).scalar_rlc(&lagrange_evals),
-            },
-            (
-                phis,
-                ProtoGalaxyProof {
-                    f_coeffs,
-                    k_coeffs: k_poly.coeffs,
-                },
-            ),
-            lagrange_evals,
-        ))
-    }
-
-    #[allow(non_snake_case)]
-    fn verify(
-        _vk: &(),
-        transcript: &mut impl Transcript<VC::Scalar>,
-        Us: &[impl Borrow<Self::RU>; 1],
-        us: &[impl Borrow<Self::IU>; N],
-        (phis, proof): &Self::Proof<1, N>,
-    ) -> Result<Self::RU, Error> {
-        let U = Us[0].borrow();
-        let us = &us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
-
-        transcript.add(&proof.f_coeffs.len());
-        transcript.add(&proof.k_coeffs.len());
-
-        // absorb the committed instances
-        transcript.add(U);
-        transcript.add(&us[..]);
-        transcript.add(&phis[..]);
-
-        let delta = transcript.challenge_field_element();
-        let deltas = delta.repeated_squares(U.betas.len());
-
-        transcript.add(&proof.f_coeffs);
-
-        let alpha = transcript.challenge_field_element();
-
-        let f_poly = DensePolynomial::from_coefficients_vec([&[U.e][..], &proof.f_coeffs].concat());
-
-        let f_alpha = f_poly.evaluate(&alpha);
-
-        transcript.add(&proof.k_coeffs);
-
-        let H = GeneralEvaluationDomain::new(N + 1).ok_or(Error::DomainCreationFailure)?;
-        let k_poly = DensePolynomial::from_coefficients_slice(&proof.k_coeffs);
-
-        let gamma = transcript.challenge_field_element();
-
-        let lagrange_evals = H.evaluate_all_lagrange_coefficients(gamma);
-
-        Ok(RU {
-            e: f_alpha * lagrange_evals[0]
-                + H.evaluate_vanishing_polynomial(gamma) * k_poly.evaluate(&gamma),
-            x: once(&U.x[..])
-                .chain(us.iter().map(|u| &u[..]))
-                .slice_rlc(&lagrange_evals),
-            betas: [&U.betas[..], &deltas[..]]
-                .into_iter()
-                .slice_rlc(&[One::one(), alpha]),
-            phi: once(U.phi).chain(*phis).scalar_rlc(&lagrange_evals),
-        })
-    }
-}
-
-/// calculates F[x] using the optimized binary-tree technique
-/// described in Claim 4.4
-/// of [ProtoGalaxy](https://eprint.iacr.org/2023/1106.pdf)
-fn calc_f_from_btree<F: Field>(fw: &[F], betas: &[F], deltas: &[F]) -> DensePolynomial<F> {
-    let mut layer = fw
-        .iter()
-        .map(|&e| DensePolynomial::from_coefficients_vec(vec![e]))
-        .collect::<Vec<_>>();
-    for l in 0..betas.len() {
-        layer = layer
-            .chunks(2)
-            .map(|chunk| {
-                let e = DensePolynomial::from_coefficients_vec(vec![betas[l], deltas[l]]);
-                chunk[1].naive_mul(&e) + &chunk[0]
-            })
-            .collect();
-    }
-    layer.swap_remove(0)
 }
 
 #[derive(Clone)]
@@ -814,77 +306,6 @@ impl<VC: GroupBasedVectorCommitment> FoldingSchemeGadgetDef for ProtoGalaxyGadge
     type VerifierKey = ();
     type Challenge = TaggedVec<FpVar<VC::Scalar>, 'c'>;
     type Proof<const M: usize, const N: usize> = ProtoGalaxyProofVar<VC::Scalar, N>;
-}
-
-impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeGadgetOpsPartial<1, N>
-    for ProtoGalaxyGadget<VC>
-{
-    #[allow(non_snake_case)]
-    fn verify_hinted(
-        _vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptVar<VC::Scalar>,
-        [U]: [&Self::RU; 1],
-        us: [&Self::IU; N],
-        proof: &Self::Proof<1, N>,
-    ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
-        transcript.add(&FpVar::constant((proof.f_coeffs.len() as u64).into()))?;
-        transcript.add(&FpVar::constant((proof.k_coeffs.len() as u64).into()))?;
-
-        // absorb the committed instances
-        transcript.add(U)?;
-        transcript.add(&us[..])?;
-
-        let delta = transcript.challenge_field_element()?;
-        let deltas = delta.repeated_squares(U.betas.len());
-
-        transcript.add(&proof.f_coeffs)?;
-
-        let alpha = transcript.challenge_field_element()?;
-
-        let f_poly = DensePolynomialVar::from_coefficients_vec(
-            [&[U.e.clone()][..], &proof.f_coeffs].concat(),
-        );
-
-        let f_alpha = f_poly.evaluate(&alpha)?;
-
-        transcript.add(&proof.k_coeffs)?;
-
-        let H =
-            GeneralEvaluationDomain::new(N + 1).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-        let k_poly = DensePolynomialVar::from_coefficients_slice(&proof.k_coeffs);
-
-        let gamma = transcript.challenge_field_element()?;
-
-        let lagrange_evals = H.evaluate_all_lagrange_coefficients_var(&gamma)?;
-
-        Ok((
-            RUVar {
-                e: f_alpha * &lagrange_evals[0]
-                    + H.evaluate_vanishing_polynomial_var(&gamma)? * k_poly.evaluate(&gamma)?,
-                x: once(&U.x[..])
-                    .chain(us.iter().map(|u| &u.x[..]))
-                    .slice_rlc(&lagrange_evals),
-                betas: [&U.betas[..], &deltas[..]]
-                    .into_iter()
-                    .slice_rlc(&[FpVar::one(), alpha]),
-                phi: {
-                    let phis = once(&U.phi)
-                        .chain(us.iter().map(|u| &u.phi))
-                        .collect::<Vec<_>>();
-
-                    AllocVar::new_witness(phis.cs().or(lagrange_evals.cs()), || {
-                        let phis = phis.value().unwrap_or(vec![Default::default(); 1 + N]);
-                        let lagrange_evals =
-                            lagrange_evals
-                                .value()
-                                .unwrap_or(vec![Default::default(); 1 + N]);
-                        Ok(phis.into_iter().scalar_rlc(&lagrange_evals))
-                    })?
-                },
-            },
-            lagrange_evals.into(),
-        ))
-    }
 }
 
 impl<VC: GroupBasedVectorCommitment> GroupBasedFoldingSchemePrimaryDef for ProtoGalaxy<VC> {

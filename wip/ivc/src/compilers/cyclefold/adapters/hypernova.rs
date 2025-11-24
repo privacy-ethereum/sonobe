@@ -100,8 +100,9 @@ impl<
         us: [<Self::Gadget as FoldingSchemeGadgetDef>::IU; N],
         UU: <Self::Gadget as FoldingSchemeGadgetDef>::RU,
         _proof: <Self::Gadget as FoldingSchemeGadgetDef>::Proof<M, N>,
-        mut rho: <Self::Gadget as FoldingSchemeGadgetDef>::Challenge,
+        rho: <Self::Gadget as FoldingSchemeGadgetDef>::Challenge,
     ) -> Result<Vec<Vec<EmulatedFieldVar<VC::Scalar, CF2<VC::Commitment>>>>, SynthesisError> {
+        let mut rho = rho.to_vec();
         rho.resize(
             CF2::<VC::Commitment>::MODULUS_BIT_SIZE as usize,
             Boolean::FALSE,

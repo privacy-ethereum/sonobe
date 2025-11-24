@@ -858,7 +858,7 @@ impl<F: SonobeField, Cfg> AllocVar<(BigInt, Bound), F> for IntVarInner<F, Cfg, t
             })
             .collect::<Result<_, _>>()?;
 
-        let bounds = compute_bounds(&lb, &ub, F::BITS_PER_LIMB);
+        let bounds = compute_bounds(lb, ub, F::BITS_PER_LIMB);
 
         let var = Self::new(limbs, bounds);
 

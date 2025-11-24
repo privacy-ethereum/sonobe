@@ -237,7 +237,7 @@ pub trait FoldingSchemeDef {
         + for<'a> Dummy<&'a <Self::Arith as Arith>::Config>;
 }
 
-pub trait FoldingSchemeOps<const M: usize, const N: usize>: FoldingSchemeDef {
+pub trait FoldingSchemePreprocessor: FoldingSchemeDef {
     /// The preprocessing method is a randomized algorithm that takes as input
     /// the size bounds of the folding scheme, which are contained in the
     /// `config` parameter, and outputs the public parameters.
@@ -247,12 +247,16 @@ pub trait FoldingSchemeOps<const M: usize, const N: usize>: FoldingSchemeDef {
     /// The security parameter is implicitly specified by the size of underlying
     /// fields and groups.
     fn preprocess(config: Self::Config, rng: impl RngCore) -> Result<Self::PublicParam, Error>;
+}
 
+pub trait FoldingSchemeKeyGenerator: FoldingSchemeDef {
     /// The key generation method is a deterministic algorithm that takes as
     /// input the public parameters `pp` and the constraint system `arith`, and
     /// outputs a prover key and a verifier key.
     fn generate_keys(pp: Self::PublicParam, arith: Self::Arith) -> Result<Self::DeciderKey, Error>;
+}
 
+pub trait FoldingSchemeProver<const M: usize, const N: usize>: FoldingSchemeDef {
     /// The proof generation method is a deterministic algorithm that takes as
     /// input the prover key `pk`, the transcript `transcript` between the
     /// prover and the verifier, the first witness-instance pair `W`, `U`, the
@@ -272,7 +276,9 @@ pub trait FoldingSchemeOps<const M: usize, const N: usize>: FoldingSchemeDef {
         us: &[impl Borrow<Self::IU>; N],
         rng: impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof<M, N>, Self::Challenge), Error>;
+}
 
+pub trait FoldingSchemeVerifier<const M: usize, const N: usize>: FoldingSchemeDef {
     #[allow(non_snake_case)]
     fn verify(
         vk: &<Self::DeciderKey as DeciderKey>::VerifierKey,
@@ -281,7 +287,9 @@ pub trait FoldingSchemeOps<const M: usize, const N: usize>: FoldingSchemeDef {
         us: &[impl Borrow<Self::IU>; N],
         proof: &Self::Proof<M, N>,
     ) -> Result<Self::RU, Error>;
+}
 
+pub trait FoldingSchemeDecider: FoldingSchemeDef {
     #[allow(non_snake_case)]
     fn decide_running(dk: &Self::DeciderKey, W: &Self::RW, U: &Self::RU) -> Result<(), Error> {
         Relation::<Self::RW, Self::RU>::check_relation(dk, W, U)
@@ -290,6 +298,26 @@ pub trait FoldingSchemeOps<const M: usize, const N: usize>: FoldingSchemeDef {
     fn decide_incoming(dk: &Self::DeciderKey, w: &Self::IW, u: &Self::IU) -> Result<(), Error> {
         Relation::<Self::IW, Self::IU>::check_relation(dk, w, u)
     }
+}
+
+impl<FS: FoldingSchemeDef> FoldingSchemeDecider for FS {}
+
+pub trait FoldingSchemeOps<const M: usize, const N: usize>:
+    FoldingSchemePreprocessor
+    + FoldingSchemeKeyGenerator
+    + FoldingSchemeProver<M, N>
+    + FoldingSchemeVerifier<M, N>
+    + FoldingSchemeDecider
+{
+}
+
+impl<FS, const M: usize, const N: usize> FoldingSchemeOps<M, N> for FS where
+    FS: FoldingSchemePreprocessor
+        + FoldingSchemeKeyGenerator
+        + FoldingSchemeProver<M, N>
+        + FoldingSchemeVerifier<M, N>
+        + FoldingSchemeDecider
+{
 }
 
 pub trait FoldingWitnessVar<VC: VectorCommitmentGadgetDef>:
