@@ -274,7 +274,7 @@ pub trait FoldingSchemeProver<const M: usize, const N: usize>: FoldingSchemeDef 
         Us: &[impl Borrow<Self::RU>; M],
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
-        rng: impl RngCore,
+        rng: &mut impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof<M, N>, Self::Challenge), Error>;
 }
 

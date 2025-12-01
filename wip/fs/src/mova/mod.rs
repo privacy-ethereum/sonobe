@@ -1,7 +1,5 @@
 use ark_ff::{Field, Zero};
-use ark_poly::{
-    DenseMultilinearExtension as MLE, Polynomial,
-};
+use ark_poly::{DenseMultilinearExtension as MLE, Polynomial};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     fields::fp::FpVar,
@@ -9,16 +7,9 @@ use ark_r1cs_std::{
     GR1CSVar,
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
-use ark_std::{
-    borrow::Borrow, marker::PhantomData, rand::RngCore, sync::Arc,
-    UniformRand,
-};
+use ark_std::{borrow::Borrow, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand};
 use sonobe_primitives::{
-    algebra::
-        ops::
-            poly::MLEHelper
-        
-    ,
+    algebra::ops::poly::MLEHelper,
     arithmetizations::{
         r1cs::{RelaxedInstance, RelaxedWitness, R1CS},
         Arith, ArithConfig, ArithRelation,
@@ -118,7 +109,7 @@ impl<A, VC: VectorCommitmentDef> WitnessInstanceSampler<IW<VC::Scalar>, IU<VC::S
     fn sample(
         &self,
         z: Self::Source,
-        _rng: impl RngCore,
+        _rng: &mut impl RngCore,
     ) -> Result<(IW<VC::Scalar>, IU<VC::Scalar>), Error> {
         Ok((z.private.into(), z.public.into()))
     }
@@ -136,23 +127,23 @@ where
     type Source = ();
     type Error = Error;
 
-    fn sample(&self, _: Self::Source, mut rng: impl RngCore) -> Result<(RW<VC>, RU<VC>), Error> {
-        let u = VC::Scalar::rand(&mut rng);
+    fn sample(&self, _: Self::Source, rng: &mut impl RngCore) -> Result<(RW<VC>, RU<VC>), Error> {
+        let u = VC::Scalar::rand(rng);
         let x = (0..self.arith.n_public_inputs())
-            .map(|_| VC::Scalar::rand(&mut rng))
+            .map(|_| VC::Scalar::rand(rng))
             .collect::<Vec<_>>();
         let w = (0..self.arith.n_witnesses())
-            .map(|_| VC::Scalar::rand(&mut rng))
+            .map(|_| VC::Scalar::rand(rng))
             .collect::<Vec<_>>();
         let e = self.arith.eval_relation(
             &RelaxedWitness { w: &w, e: &[] },
             &RelaxedInstance { x: &x, u: &u },
         )?;
 
-        let (cm_w, r_w) = VC::commit(&self.ck, &w, &mut rng)?;
+        let (cm_w, r_w) = VC::commit(&self.ck, &w, rng)?;
 
         let r_e = (0..self.arith.log_constraints())
-            .map(|_| VC::Scalar::rand(&mut rng))
+            .map(|_| VC::Scalar::rand(rng))
             .collect::<Vec<_>>();
         let v = MLE::from_evaluations(&e).evaluate(&r_e);
 

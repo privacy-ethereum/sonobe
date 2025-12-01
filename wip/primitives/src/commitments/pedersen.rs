@@ -176,7 +176,7 @@ impl<C: SonobeCurve> VectorCommitmentOps for Pedersen<C, false> {
     fn commit(
         ck: &PedersenKey<C, false>,
         v: &[CF1<C>],
-        _rng: impl RngCore,
+        _rng: &mut impl RngCore,
     ) -> Result<(C, Null), Error> {
         Ok((ck.commit(v)?, Null))
     }
@@ -196,9 +196,9 @@ impl<C: SonobeCurve> VectorCommitmentOps for Pedersen<C, true> {
     fn commit(
         ck: &PedersenKey<C, true>,
         v: &[CF1<C>],
-        mut rng: impl RngCore,
+        rng: &mut impl RngCore,
     ) -> Result<(C, CF1<C>), Error> {
-        let r = C::ScalarField::rand(&mut rng);
+        let r = C::ScalarField::rand(rng);
         Ok((ck.commit(v, &r)?, r))
     }
 

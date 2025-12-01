@@ -95,7 +95,7 @@ impl<A, VC: VectorCommitmentDef> WitnessInstanceSampler<IW<VC::Scalar>, IU<VC::S
     fn sample(
         &self,
         z: Self::Source,
-        _rng: impl RngCore,
+        _rng: &mut impl RngCore,
     ) -> Result<(IW<VC::Scalar>, IU<VC::Scalar>), Error> {
         Ok((z.private.into(), z.public.into()))
     }
@@ -113,20 +113,20 @@ where
     type Source = ();
     type Error = Error;
 
-    fn sample(&self, _: Self::Source, mut rng: impl RngCore) -> Result<(RW<VC>, RU<VC>), Error> {
-        let u = VC::Scalar::rand(&mut rng);
+    fn sample(&self, _: Self::Source, rng: &mut impl RngCore) -> Result<(RW<VC>, RU<VC>), Error> {
+        let u = VC::Scalar::rand(rng);
         let x = (0..self.arith.n_public_inputs())
-            .map(|_| VC::Scalar::rand(&mut rng))
+            .map(|_| VC::Scalar::rand(rng))
             .collect::<Vec<_>>();
         let w = (0..self.arith.n_witnesses())
-            .map(|_| VC::Scalar::rand(&mut rng))
+            .map(|_| VC::Scalar::rand(rng))
             .collect::<Vec<_>>();
         let e = self.arith.eval_relation(
             &RelaxedWitness { w: &w, e: &[] },
             &RelaxedInstance { x: &x, u: &u },
         )?;
 
-        let (cm, r) = VC::commit(&self.ck, &[&w[..], &e].concat(), &mut rng)?;
+        let (cm, r) = VC::commit(&self.ck, &[&w[..], &e].concat(), rng)?;
         Ok((RW { w, r }, RU { x, cm, u }))
     }
 }

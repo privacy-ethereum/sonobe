@@ -13,5 +13,5 @@ pub trait WitnessInstanceSampler<W, U> {
     type Source;
     type Error: Error + 'static;
 
-    fn sample(&self, source: Self::Source, rng: impl RngCore) -> Result<(W, U), Self::Error>;
+    fn sample(&self, source: Self::Source, rng: &mut impl RngCore) -> Result<(W, U), Self::Error>;
 }

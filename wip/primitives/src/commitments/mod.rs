@@ -70,7 +70,7 @@ pub trait VectorCommitmentOps: VectorCommitmentDef {
     fn commit(
         ck: &Self::Key,
         v: &[Self::Scalar],
-        rng: impl RngCore,
+        rng: &mut impl RngCore,
     ) -> Result<(Self::Commitment, Self::Randomness), Error>;
 
     fn open(

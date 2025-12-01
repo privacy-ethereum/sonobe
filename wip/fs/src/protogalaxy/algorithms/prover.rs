@@ -29,7 +29,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeProver<1, N> f
         Us: &[impl Borrow<Self::RU>; 1],
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
-        _rng: impl RngCore,
+        _rng: &mut impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof<1, N>, Self::Challenge), Error> {
         if !(N + 1).is_power_of_two() {
             return Err(Error::Unsupported("N + 1 must be a power of two".into()));
@@ -200,7 +200,7 @@ impl<VC: GroupBasedVectorCommitment, const N: usize> FoldingSchemeProver<1, N>
         Us: &[impl Borrow<Self::RU>; 1],
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
-        mut rng: impl RngCore,
+        mut rng: &mut impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof<1, N>, Self::Challenge), Error> {
         if !(N + 1).is_power_of_two() {
             return Err(Error::Unsupported("N + 1 must be a power of two".into()));

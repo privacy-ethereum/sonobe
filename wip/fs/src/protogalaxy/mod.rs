@@ -6,20 +6,15 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::{
-    borrow::Borrow, cfg_into_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc,
-    UniformRand,
+    borrow::Borrow, cfg_into_iter, log2, marker::PhantomData, rand::RngCore, sync::Arc, UniformRand,
 };
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use sonobe_primitives::{
-    algebra::ops::
-        pow::Pow
-    ,
+    algebra::ops::pow::Pow,
     arithmetizations::{r1cs::R1CS, Arith, ArithConfig, ArithRelation, Error as ArithError},
     circuits::AssignmentsOwned,
-    commitments::{
-        GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentOps,
-    },
+    commitments::{GroupBasedVectorCommitment, VectorCommitmentDef, VectorCommitmentOps},
     relations::{Relation, WitnessInstanceSampler},
     traits::Dummy,
 };
@@ -32,9 +27,8 @@ use self::{
     witnesses::{IncomingWitness as IW, RunningWitness as RW},
 };
 use crate::{
-    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef,
-    GroupBasedFoldingSchemePrimaryDef, PlainInstance as PU,
-    PlainWitness as PW, TaggedVec,
+    DeciderKey, Error, FoldingSchemeDef, FoldingSchemeGadgetDef, GroupBasedFoldingSchemePrimaryDef,
+    PlainInstance as PU, PlainWitness as PW, TaggedVec,
 };
 
 pub mod algorithms;
@@ -139,7 +133,7 @@ impl<A, VC: VectorCommitmentOps> WitnessInstanceSampler<IW<VC>, IU<VC>> for Prot
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
-    fn sample(&self, z: Self::Source, rng: impl RngCore) -> Result<(IW<VC>, IU<VC>), Error> {
+    fn sample(&self, z: Self::Source, rng: &mut impl RngCore) -> Result<(IW<VC>, IU<VC>), Error> {
         let (w, x) = (z.private, z.public);
         let (phi, r) = VC::commit(&self.ck, &w, rng)?;
         Ok((IW { w, r }, IU { phi, x }))
@@ -155,7 +149,7 @@ impl<A, VC: VectorCommitmentDef> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::S
     fn sample(
         &self,
         z: Self::Source,
-        _rng: impl RngCore,
+        _rng: &mut impl RngCore,
     ) -> Result<(PW<VC::Scalar>, PU<VC::Scalar>), Error> {
         Ok((z.private.into(), z.public.into()))
     }
@@ -169,7 +163,11 @@ where
     type Source = ();
     type Error = Error;
 
-    fn sample(&self, _: Self::Source, mut rng: impl RngCore) -> Result<(RW<VC>, RU<VC>), Error> {
+    fn sample(
+        &self,
+        _: Self::Source,
+        mut rng: &mut impl RngCore,
+    ) -> Result<(RW<VC>, RU<VC>), Error> {
         let x = (0..self.arith.n_public_inputs())
             .map(|_| VC::Scalar::rand(&mut rng))
             .collect::<Vec<_>>();

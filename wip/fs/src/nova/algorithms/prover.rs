@@ -3,11 +3,8 @@ use ark_std::{borrow::Borrow, cfg_into_iter, cfg_iter, ops::Mul, rand::RngCore};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use sonobe_primitives::{
-    algebra::ops::bits::FromBits,
-    circuits::AssignmentsOwned,
-    commitments::GroupBasedVectorCommitment,
-    traits::SonobeField,
-    transcripts::Transcript,
+    algebra::ops::bits::FromBits, circuits::AssignmentsOwned,
+    commitments::GroupBasedVectorCommitment, traits::SonobeField, transcripts::Transcript,
 };
 
 use crate::{
@@ -26,7 +23,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         Us: &[impl Borrow<Self::RU>; 1],
         ws: &[impl Borrow<Self::IW>; 1],
         us: &[impl Borrow<Self::IU>; 1],
-        rng: impl RngCore,
+        rng: &mut impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof<1, 1>, Self::Challenge), Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let (w, u) = (ws[0].borrow(), us[0].borrow());
@@ -83,7 +80,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         [U1, U2]: &[impl Borrow<Self::RU>; 2],
         _: &[impl Borrow<Self::IW>; 0],
         _: &[impl Borrow<Self::IU>; 0],
-        rng: impl RngCore,
+        rng: &mut impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof<2, 0>, Self::Challenge), Error> {
         let (W1, U1) = (W1.borrow(), U1.borrow());
         let (W2, U2) = (W2.borrow(), U2.borrow());
@@ -152,7 +149,7 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
         Us: &[impl Borrow<Self::RU>; 1],
         ws: &[impl Borrow<Self::IW>; 1],
         us: &[impl Borrow<Self::IU>; 1],
-        mut rng: impl RngCore,
+        rng: &mut impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof<1, 1>, Self::Challenge), Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let (w, u) = (ws[0].borrow(), us[0].borrow());
@@ -169,9 +166,9 @@ impl<VC: GroupBasedVectorCommitment, TF: SonobeField, const CHALLENGE_BITS: usiz
             .map(|(a, b)| a - b)
             .collect::<Vec<_>>();
 
-        let (cm_w, r_w) = VC::commit(&pk.ck, w, &mut rng)?;
+        let (cm_w, r_w) = VC::commit(&pk.ck, w, rng)?;
 
-        let (cm_t, r_t) = VC::commit(&pk.ck, &t, &mut rng)?;
+        let (cm_t, r_t) = VC::commit(&pk.ck, &t, rng)?;
 
         let pi = (cm_w, cm_t);
 

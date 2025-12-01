@@ -104,7 +104,7 @@ impl<A, VC: VectorCommitmentOps> WitnessInstanceSampler<IW<VC>, IU<VC>> for Nova
     type Source = AssignmentsOwned<VC::Scalar>;
     type Error = Error;
 
-    fn sample(&self, z: Self::Source, rng: impl RngCore) -> Result<(IW<VC>, IU<VC>), Error> {
+    fn sample(&self, z: Self::Source, rng: &mut impl RngCore) -> Result<(IW<VC>, IU<VC>), Error> {
         let (w, x) = (z.private, z.public);
         let (cm_w, r_w) = VC::commit(&self.ck, &w, rng)?;
         Ok((IW { w, r_w }, IU { cm_w, x }))
@@ -120,7 +120,7 @@ impl<A, VC: VectorCommitmentDef> WitnessInstanceSampler<PW<VC::Scalar>, PU<VC::S
     fn sample(
         &self,
         z: Self::Source,
-        _rng: impl RngCore,
+        _rng: &mut impl RngCore,
     ) -> Result<(PW<VC::Scalar>, PU<VC::Scalar>), Error> {
         Ok((z.private.into(), z.public.into()))
     }
@@ -138,7 +138,11 @@ where
     type Source = ();
     type Error = Error;
 
-    fn sample(&self, _: Self::Source, mut rng: impl RngCore) -> Result<(RW<VC>, RU<VC>), Error> {
+    fn sample(
+        &self,
+        _: Self::Source,
+        mut rng: &mut impl RngCore,
+    ) -> Result<(RW<VC>, RU<VC>), Error> {
         let u = VC::Scalar::rand(&mut rng);
         let x = (0..self.arith.n_public_inputs())
             .map(|_| VC::Scalar::rand(&mut rng))

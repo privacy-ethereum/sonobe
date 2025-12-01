@@ -37,7 +37,7 @@ impl<
         Us: &[impl Borrow<Self::RU>; M],
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
-        _rng: impl RngCore,
+        _rng: &mut impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof<M, N>, Self::Challenge), Error> {
         let Ws = &Ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -183,7 +183,7 @@ impl<
         Us: &[impl Borrow<Self::RU>; M],
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
-        mut rng: impl RngCore,
+        rng: &mut impl RngCore,
     ) -> Result<(Self::RW, Self::RU, Self::Proof<M, N>, Self::Challenge), Error> {
         let Ws = &Ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -200,7 +200,7 @@ impl<
         let mut cms = [VC::Commitment::default(); N];
         let mut rs = [VC::Randomness::default(); N];
         for i in 0..N {
-            let (cm, r) = VC::commit(&pk.ck, ws[i], &mut rng)?;
+            let (cm, r) = VC::commit(&pk.ck, ws[i], rng)?;
             cms[i] = cm;
             rs[i] = r;
         }
