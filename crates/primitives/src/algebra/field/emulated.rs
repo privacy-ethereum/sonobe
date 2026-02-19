@@ -110,11 +110,28 @@ impl Bounds {
         )
     }
 
-    /// [`Bounds::shl`] computes the bounds after left-shifting by `shift` bits.
+    /// [`Bounds::shl`] shifts the bounds left by `shift` bits, i.e., multiplies
+    /// the bounds by `2^shift`.
     pub fn shl(&self, shift: usize) -> Self {
         // Given `x`, the bounds of `x << shift` can simply be computed by
         // shifting the bounds of `x`.
         Self(&self.0 << shift, &self.1 << shift)
+    }
+
+    /// [`Bounds::shr_narrower`] shifts the bounds right by `shift` bits, i.e.,
+    /// divides the bounds by `2^shift` and rounds the lower bound up and the
+    /// upper bound down, which gives a narrower range.
+    pub fn shr_narrower(&self, shift: usize) -> Self {
+        let d = BigInt::from(1u64) << shift;
+        Self(self.0.div_ceil(&d), self.1.div_floor(&d))
+    }
+
+    /// [`Bounds::shr_wider`] shifts the bounds right by `shift` bits, i.e.,
+    /// divides the bounds by `2^shift` and rounds the lower bound down and the
+    /// upper bound up, which gives a wider range.
+    pub fn shr_wider(&self, shift: usize) -> Self {
+        let d = BigInt::from(1u64) << shift;
+        Self(self.0.div_floor(&d), self.1.div_ceil(&d))
     }
 
     /// [`Bounds::filter_safe`] checks if the bounds fit within the capacity of
@@ -200,14 +217,18 @@ impl<Base: SonobeField, Target: SonobeField, const ALIGNED: bool> GR1CSVar<Base>
 
     fn value(&self) -> Result<Self::Value, SynthesisError> {
         let v = compose(self.limbs.value()?);
-        let (sign, abs) = v.into_parts();
-        if abs >= Target::MODULUS.into() {
-            return Err(SynthesisError::Unsatisfiable);
-        }
-        match sign {
-            Sign::Plus | Sign::NoSign => Ok(Target::from(abs)),
-            Sign::Minus => Ok(Target::zero() - Target::from(abs)),
-        }
+        bigint_to_field_element(v).ok_or(SynthesisError::Unsatisfiable)
+    }
+}
+
+fn bigint_to_field_element<F: PrimeField>(v: BigInt) -> Option<F> {
+    let (sign, abs) = v.into_parts();
+    if abs >= F::MODULUS.into() {
+        return None;
+    }
+    match sign {
+        Sign::Plus | Sign::NoSign => Some(F::from(abs)),
+        Sign::Minus => Some(-F::from(abs)),
     }
 }
 
@@ -492,22 +513,23 @@ impl<F: SonobeField, Cfg, const LHS_ALIGNED: bool> LimbedVar<F, Cfg, LHS_ALIGNED
         &self,
         other: &LimbedVar<F, Cfg, RHS_ALIGNED>,
     ) -> Result<(), SynthesisError> {
-        let len = min(self.limbs.len(), other.limbs.len());
+        // Equality between `self` and `other` can be reduced to the equality
+        // between `diff = self - other` and 0.
+        let diff = self.sub_unaligned(other)?;
 
-        let mut i = 0;
         let mut carry = FpVar::zero();
-        let mut x_bound = Bounds::zero();
-        let mut y_bound = Bounds::zero();
-        let mut step = 0;
+        let mut carry_bounds = Bounds::zero();
+        let mut group_bounds = Bounds::zero();
+        let mut offset = 0;
         // `unwrap` is safe as long as `F` is a prime field with `|F| > 2`.
         let inv = F::from(BigUint::one() << F::BITS_PER_LIMB)
             .inverse()
             .unwrap();
 
-        // For each limb pair `(x_i, y_i)` in `self` and `other`, we first try
-        // to group their _bounds_ into `x_bound` and `y_bound`.
-        // If both new bounds do not overflow / underflow, we can safely group
-        // the _limbs_.
+        // For each limb in `diff`, we first try to group its _bounds_ into
+        // `group_bounds`.
+        // If the new bounds do not overflow / underflow, we can safely group
+        // the _limb_.
         //
         // By saying group, we mean the operation `Σ x_i 2^{i * W}`, where `W`
         // is `F::BITS_PER_LIMB`, the initial number of bits in a limb.
@@ -523,91 +545,52 @@ impl<F: SonobeField, Cfg, const LHS_ALIGNED: bool> LimbedVar<F, Cfg, LHS_ALIGNED
         // since the bit-length of each limb is not necessarily the initial size
         // `W`.
         //
-        // Assume a pair of grouped limb `(x', y')` consists of `k` original
-        // limbs.
-        // Then the lower `k * W` bits of `x'` and `y'` must be equal.
-        // To check that, we need to enforce that `2^{k * W}` divides `x' - y'`,
-        // which is done by computing the quotient `q = (x' - y') / 2^{k * W}`
-        // and enforcing `q` is small that doesn't cause the multiplication
-        // `q * 2^{k * W}` to overflow.
+        // Assume a grouped limb `v` consists of `k` original limbs.
+        // Then the lower `k * W` bits of `v` must be zero for equality to hold,
+        // which is checked by enforcing that `2^{k * W}` divides `v`.
+        // To this end, we compute the quotient `q = v / 2^{k * W}` and enforce
+        // `q` is small that doesn't cause the multiplication `q * 2^{k * W}` to
+        // overflow / underflow.
         //
         // Moreover, we need to take into account the carry from the previous
-        // grouped limb, i.e., we actually enforce `x' - y' + carry` is a
-        // multiple of `2^{k * W}`, and derive the next carry by computing the
-        // quotient `q`.
+        // grouped limb, i.e., we actually enforce `carry + v` is a multiple of
+        // `2^{k * W}`, and derive the next carry by computing the quotient `q`.
         //
-        // We can further avoid storing `x'` and `y'` by updating the carry on
-        // the fly for each limb, i.e., `carry = (carry + x_i - y_i) / 2^W`.
-        while i < len {
-            if let (Some(new_x_bound), Some(new_y_bound)) = (
-                self.bounds[i].shl(step).add(&x_bound).filter_safe::<F>(),
-                other.bounds[i].shl(step).add(&y_bound).filter_safe::<F>(),
-            ) {
-                carry = (carry + &self.limbs[i] - &other.limbs[i]) * inv;
-
-                // The current limb pair is successfully grouped, so we move on
-                // to the next limb pair.
-                i += 1;
-
-                // Update the bounds and step for the current group.
-                x_bound = new_x_bound;
-                y_bound = new_y_bound;
-                step += F::BITS_PER_LIMB;
+        // We can further avoid storing `v` by updating the carry on the fly for
+        // each limb, i.e., `carry = (carry + limb) / 2^W`, until the virtual
+        // grouped limb `v` is finalized.
+        for (limb, bounds) in diff.limbs.iter().zip(&diff.bounds) {
+            if let Some(new_group_bounds) = group_bounds.add(&bounds.shl(offset)).filter_safe::<F>()
+            {
+                carry = (carry + limb) * inv;
+                carry_bounds = carry_bounds.add(bounds).shr_narrower(F::BITS_PER_LIMB);
+                group_bounds = new_group_bounds;
+                offset += F::BITS_PER_LIMB;
             } else {
-                // New bounds overflow / underflow, meaning the current group is
+                // New bounds overflow / underflow, i.e., the current group is
                 // finalized.
 
-                // `bits` is the maximum possible bit-length of the carry's
-                // absolute value.
-                let bits = (max(
-                    min(&x_bound.0, &y_bound.0).bits(),
-                    max(&x_bound.1, &y_bound.1).bits(),
-                ) as usize)
-                    .saturating_sub(step);
+                debug_assert!(carry_bounds.shl(offset).0 >= group_bounds.0);
+                debug_assert!(carry_bounds.shl(offset).1 <= group_bounds.1);
 
-                // We ensure `carry` is small, i.e., `|carry| < 2^bits`, which
-                // guarantees that `carry * 2^{step}` does not overflow.
-                (&carry + F::from(BigUint::one() << bits)).enforce_bit_length(bits + 1)?;
+                // We ensure `carry` is small, i.e., `lb <= carry <= ub`, or
+                // equivalently, `0 <= carry - lb <= ub - lb`, which can be done
+                // by ensuring `carry - lb` is a `log2(ub - lb + 1)`-bit number.
+                (&carry
+                    - bigint_to_field_element::<F>(carry_bounds.0.clone())
+                        .ok_or(SynthesisError::Unsatisfiable)?)
+                .enforce_bit_length(
+                    (&carry_bounds.1 - &carry_bounds.0 + BigInt::one()).bits() as usize
+                )?;
 
-                // Reset the bounds and step for the next group.
-                x_bound = Bounds::zero();
-                y_bound = Bounds::zero();
-                step = 0;
+                carry = (carry + limb) * inv;
+                carry_bounds = carry_bounds.add(bounds).shr_narrower(F::BITS_PER_LIMB);
+                group_bounds = carry_bounds.clone();
+                offset = 0;
             }
         }
 
-        let remaining_limbs = if i < self.limbs.len() {
-            &self.limbs[i..]
-        } else {
-            &other.limbs[i..]
-        };
-        let remaining_bounds = if i < self.bounds.len() {
-            &self.bounds[i..]
-        } else {
-            &other.bounds[i..]
-        };
-        if remaining_limbs.is_empty() {
-            carry.enforce_equal(&FpVar::zero())?;
-        } else {
-            // If there is any remaining limb, the first one must be the final
-            // carry (which will be checked later), and the following ones must
-            // be zero.
-
-            // Ensure that the final carry equals the remaining limb.
-            carry.enforce_equal(&remaining_limbs[0])?;
-
-            // Enforce the remaining limbs to be zero.
-            // Instead of doing that one by one, we check if their sum is zero
-            // using a single constraint.
-            // This is sound, as we first check that the bounds of their sum
-            // fit within the field capacity, which guarantees that the sum does
-            // not overflow or underflow, meaning that the sum is zero if and
-            // only if each limb is zero.
-            Bounds::add_many(&remaining_bounds[1..])
-                .filter_safe::<F>()
-                .ok_or(SynthesisError::Unsatisfiable)?;
-            FpVar::zero().enforce_equal(&remaining_limbs[1..].iter().sum())?;
-        }
+        carry.enforce_equal(&FpVar::zero())?;
 
         Ok(())
     }
@@ -1264,12 +1247,110 @@ mod tests {
     use ark_ff::Field;
     use ark_pallas::{Fq, Fr};
     use ark_relations::gr1cs::ConstraintSystem;
-    use ark_std::{UniformRand, error::Error, rand::thread_rng};
+    use ark_std::{
+        UniformRand,
+        error::Error,
+        rand::{Rng, thread_rng},
+    };
     use num_bigint::RandBigInt;
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::*;
+
+    #[test]
+    fn test_eq() -> Result<(), Box<dyn Error>> {
+        let cs = ConstraintSystem::<Fr>::new_ref();
+
+        let zero = LimbedVar::<Fr, (), true>::new(vec![], vec![]);
+        let zero2 = LimbedVar::<Fr, (), true>::new(
+            vec![
+                FpVar::new_witness(cs.clone(), || {
+                    Ok(Fr::from(BigUint::one() << Fr::BITS_PER_LIMB))
+                })?,
+                FpVar::new_witness(cs.clone(), || Ok(-Fr::one()))?,
+            ],
+            vec![
+                Bounds(
+                    -(BigInt::one() << (Fr::BITS_PER_LIMB * 2)),
+                    BigInt::one() << (Fr::BITS_PER_LIMB * 2),
+                ),
+                Bounds(
+                    -(BigInt::one() << (Fr::BITS_PER_LIMB * 2)),
+                    BigInt::one() << (Fr::BITS_PER_LIMB * 2),
+                ),
+            ],
+        );
+        let zero3 = LimbedVar::<Fr, (), true>::new(
+            vec![
+                FpVar::new_witness(cs.clone(), || {
+                    Ok(Fr::from(BigUint::one() << Fr::BITS_PER_LIMB))
+                })?,
+                FpVar::new_witness(cs.clone(), || Ok(-Fr::one()))?,
+            ],
+            vec![
+                Bounds(
+                    -BigInt::from_biguint(Sign::Plus, Fr::MODULUS_MINUS_ONE_DIV_TWO.into()),
+                    BigInt::from_biguint(Sign::Plus, Fr::MODULUS_MINUS_ONE_DIV_TWO.into()),
+                ),
+                Bounds(
+                    -BigInt::from_biguint(Sign::Plus, Fr::MODULUS_MINUS_ONE_DIV_TWO.into()),
+                    BigInt::from_biguint(Sign::Plus, Fr::MODULUS_MINUS_ONE_DIV_TWO.into()),
+                ),
+            ],
+        );
+
+        zero.enforce_equal_unaligned(&zero2)?;
+        zero.enforce_equal_unaligned(&zero3)?;
+
+        let rng = &mut thread_rng();
+
+        let n_limbs = 100;
+
+        let coeffs = (0..n_limbs)
+            .map(|_| if rng.gen_bool(0.5) {
+                -Fr::one()
+            } else {
+                Fr::one()
+            } * Fr::from(rng.gen_biguint(Fr::BITS_PER_LIMB as u64 * 2 - 1)))
+            .collect::<Vec<_>>();
+        let unaligned = LimbedVar::<Fr, (), true>::new(
+            Vec::new_witness(cs.clone(), || Ok(&coeffs[..]))?,
+            vec![
+                Bounds(
+                    -(BigInt::one() << (Fr::BITS_PER_LIMB * 2)),
+                    BigInt::one() << (Fr::BITS_PER_LIMB * 2),
+                );
+                n_limbs
+            ],
+        );
+
+        let aligned = EmulatedIntVar::new_witness(cs.clone(), || {
+            let v = compose(&coeffs[..]);
+            Ok((
+                v,
+                Bounds(
+                    BigInt::one() - (BigInt::one() << (Fr::BITS_PER_LIMB * 2 * n_limbs)),
+                    (BigInt::one() << (Fr::BITS_PER_LIMB * 2 * n_limbs)) - BigInt::one(),
+                ),
+            ))
+        })?;
+        aligned.enforce_equal_unaligned(&unaligned)?;
+
+        assert!(cs.is_satisfied()?);
+
+        let mut unaligned_incorrect = unaligned.clone();
+        unaligned_incorrect.limbs[0] = if coeffs[0].is_zero() {
+            FpVar::new_witness(cs.clone(), || Ok(Fr::one()))?
+        } else {
+            FpVar::new_witness(cs.clone(), || Ok(-coeffs[0]))?
+        };
+        aligned.enforce_equal_unaligned(&unaligned_incorrect)?;
+
+        assert!(!cs.is_satisfied()?);
+
+        Ok(())
+    }
 
     #[test]
     fn test_alloc() -> Result<(), Box<dyn Error>> {

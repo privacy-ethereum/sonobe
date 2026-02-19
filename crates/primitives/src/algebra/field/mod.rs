@@ -28,30 +28,13 @@ pub trait SonobeField:
 {
     /// [`SonobeField::BITS_PER_LIMB`] defines the bit length of each limb when
     /// representing field elements as limbs in an emulated field variable.
+    // TODO: either make it configurable, or compute an optimal value based on
+    // the modulus size.
     const BITS_PER_LIMB: usize;
 }
 
 impl<P: FpConfig<N>, const N: usize> SonobeField for Fp<P, N> {
-    // For a `F` with order > 250 bits, 55 is chosen for optimizing the most
-    // expensive part `Az∘Bz` when checking the R1CS relation for CycleFold.
-    // Consider using `EmulatedFieldVar` to represent the base field `Fq`.
-    // Since 250 / 55 = 4.46, the `EmulatedFieldVar` has 5 limbs.
-    // Now, the multiplication of two `EmulatedFieldVar`s has 9 limbs, and
-    // each limb has at most 2^{55 * 2} * 5 = 112.3 bits.
-    // For a 1400x1400 matrix `A`, the multiplication of `A`'s row and `z`
-    // is the sum of 1400 `EmulatedFieldVar`s, each with 9 limbs.
-    // Thus, the maximum bit length of limbs of each element in `Az` is
-    // 2^{55 * 2} * 5 * 1400 = 122.7 bits.
-    // Finally, in the hadamard product of `Az` and `Bz`, every element has
-    // 17 limbs, whose maximum bit length is (2^{55 * 2} * 5 * 1400)^2 * 9
-    // = 248.7 bits and is less than the constraint field `Fr`.
-    // Thus, 55 allows us to compute `Az∘Bz` without the expensive alignment
-    // operation.
-    //
-    // TODO: either make it a global const, or compute an optimal value
-    // based on the modulus size.
-    // TODO: make this configurable
-    const BITS_PER_LIMB: usize = 55;
+    const BITS_PER_LIMB: usize = 32;
 }
 
 impl<P: FpConfig<N>, const N: usize> Val for Fp<P, N> {
