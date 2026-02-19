@@ -26,6 +26,8 @@
 
 pub mod definitions;
 pub mod nova;
+pub mod ova;
+pub mod protogalaxy;
 
 pub use self::definitions::{
     FoldingSchemeDef, FoldingSchemeDefGadget,
