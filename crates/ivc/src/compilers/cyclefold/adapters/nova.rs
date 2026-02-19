@@ -9,6 +9,7 @@ use ark_std::{borrow::Borrow, iter::once};
 use sonobe_fs::{
     FoldingSchemeDefGadget,
     nova::{CycleFoldNova, Nova},
+    ova::CycleFoldOva,
 };
 use sonobe_primitives::{
     algebra::{
@@ -195,6 +196,11 @@ impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> FoldingSchemeCycleFo
     }
 }
 
+/// [`NovaOvaIVC`] defines a CycleFold-based IVC using Nova as the primary
+/// folding scheme and Ova as the secondary folding scheme.
+pub type NovaOvaIVC<VC1, VC2, T, const CHALLENGE_BITS: usize = 128> =
+    CycleFoldBasedIVC<Nova<VC1, CHALLENGE_BITS>, CycleFoldOva<VC2, CHALLENGE_BITS>, T>;
+
 /// [`NovaNovaIVC`] defines a CycleFold-based IVC using Nova as the primary
 /// folding scheme and Nova as the secondary folding scheme.
 pub type NovaNovaIVC<VC1, VC2, T, const CHALLENGE_BITS: usize = 128> =
@@ -216,6 +222,22 @@ mod tests {
 
     use super::*;
     use crate::tests::test_ivc;
+
+    #[test]
+    fn test_nova_ova() -> Result<(), Box<dyn Error>> {
+        let mut rng = thread_rng();
+
+        test_ivc::<NovaOvaIVC<Pedersen<C1, true>, Pedersen<C2, true>, GriffinSponge<_>>, _>(
+            (65536, (2048, 2048), Arc::new(GriffinParams::new(16, 5, 9))),
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            vec![(); 20],
+            &mut rng,
+        )?;
+
+        Ok(())
+    }
 
     #[test]
     fn test_nova_nova() -> Result<(), Box<dyn Error>> {
