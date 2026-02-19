@@ -137,10 +137,10 @@ impl Bounds {
     /// [`Bounds::filter_safe`] checks if the bounds fit within the capacity of
     /// a prime field `F`, and returns `Some(self)` if so, or `None` otherwise.
     pub fn filter_safe<F: PrimeField>(self) -> Option<Self> {
-        // For a field `F`, we consider an integer `x` to be safe if and only if
-        // `-(|F| - 1) / 2 <= x <= (|F| - 1) / 2`.
+        // We restrict variables to be within a window of size `(|F| + 1) / 2`,
+        // and the window to be within `[-(|F| - 1) / 2, (|F| - 1) / 2]`.
         let limit = BigInt::from_biguint(Sign::Plus, F::MODULUS_MINUS_ONE_DIV_TWO.into());
-        (self.0 >= -&limit && self.1 <= limit).then_some(self)
+        (self.0 >= -&limit && self.1 <= limit && &self.1 - &self.0 <= limit).then_some(self)
     }
 }
 
@@ -278,21 +278,19 @@ impl<F: SonobeField, Cfg> LimbedVar<F, Cfg, true> {
     /// [paper]: https://www.cs.yale.edu/homes/cpap/published/xjsnark.pdf
     /// [implementation]: https://github.com/akosba/jsnark/blob/0955389d0aae986ceb25affc72edf37a59109250/JsnarkCircuitBuilder/src/circuit/auxiliary/LongElement.java#L801-L872
     pub fn enforce_lt(&self, other: &Self) -> Result<(), SynthesisError> {
-        let len = max(self.limbs.len(), other.limbs.len());
-        let zero = FpVar::zero();
-
         // Compute the difference between limbs of `other` and `self`.
         // Denote a positive limb by `+`, a negative limb by `-`, a zero limb by
         // `0`, and an unknown limb by `?`.
         // Then, for `self < other`, `delta` should look like:
         // ? ? ... ? ? + 0 0 ... 0 0
-        let delta = (0..len)
-            .map(|i| {
-                let x = self.limbs.get(i).unwrap_or(&zero);
-                let y = other.limbs.get(i).unwrap_or(&zero);
-                y - x
-            })
-            .collect::<Vec<_>>();
+        let delta = other.sub_unaligned(self)?;
+        let len = delta.limbs.len();
+
+        // If `delta` has no limb, the difference between `self` and `other` is
+        // zero, and thus `self < other` does not hold.
+        if len == 0 {
+            return Err(SynthesisError::Unsatisfiable);
+        }
 
         // `helper` is a vector of booleans that indicates if the corresponding
         // limb of `delta` is the first (searching from MSB) positive limb.
@@ -302,11 +300,11 @@ impl<F: SonobeField, Cfg> LimbedVar<F, Cfg, true> {
         // Then `helper` should be:
         // F F ... F F T F F ... F F
         let helper = {
-            let cs = self.limbs.cs().or(other.limbs.cs());
+            let cs = delta.limbs.cs();
             let mut helper = vec![false; len];
             for i in (0..len).rev() {
-                let delta = delta[i].value().unwrap_or_default().into_bigint();
-                if !delta.is_zero() && delta < F::MODULUS_MINUS_ONE_DIV_TWO {
+                let limb = delta.limbs[i].value().unwrap_or_default().into_bigint();
+                if !limb.is_zero() && limb <= F::MODULUS_MINUS_ONE_DIV_TWO {
                     helper[i] = true;
                     break;
                 }
@@ -320,7 +318,7 @@ impl<F: SonobeField, Cfg> LimbedVar<F, Cfg, true> {
         // is less than `other`, as there should be more than one positive limb
         // in `delta`, and thus exactly one true bit in `helper`.
         let mut r = FpVar::zero();
-        for (b, d) in helper.into_iter().zip(delta) {
+        for (b, d) in helper.into_iter().zip(delta.limbs) {
             // Choose the limb `d` only if `b` is true.
             p += b.select(&d, &FpVar::zero())?;
             // Either `r` or `d` should be zero.
@@ -341,11 +339,31 @@ impl<F: SonobeField, Cfg> LimbedVar<F, Cfg, true> {
         // Ensure that `r` is exactly 1. This guarantees that there is exactly
         // one true value in `helper`.
         r.enforce_equal(&FpVar::one())?;
-        // Ensure that `p` is positive, i.e.,
-        // `0 <= p - 1 < 2^bits_per_limb < F::MODULUS_MINUS_ONE_DIV_TWO`.
+
+        // Ensure that `p` is positive, i.e., `1 <= p <= (|F| - 1) / 2`.
         // This guarantees that the true value in `helper` corresponds to a
         // positive limb in `delta`.
-        (p - FpVar::one()).enforce_bit_length(F::BITS_PER_LIMB)?;
+        // To this end, we check `0 <= p - 1 <= 2^x - 1`, where `2^x` should
+        // satisfy `max_ub <= 2^x <= (|F| - 1) / 2`.
+        // Hence, we compute `x` as the ceiling of `log2(max_ub)`, so the left
+        // inequality holds, and the right inequality also holds because:
+        // - `max_ub` is the upper bound of a limb in `delta`
+        // - `delta` is the difference between two aligned `LimbedVar`s, whose
+        //   limbs have at most `F::BITS_PER_LIMB` bits, which is much smaller
+        //   than the field capacity
+        // Thus, `log2(max_ub)` is at most `F::BITS_PER_LIMB + 1`, from which we
+        // can conclude `2^x << (|F| - 1) / 2`.
+
+        // `unwrap` is safe here because `None` can only happen when `delta` has
+        // no limbs, which is already handled at the beginning of the function.
+        let max_ub = delta.bounds.iter().map(|b| &b.1).max().unwrap();
+        if !max_ub.is_positive() {
+            // If the maximum upper bound of `delta`'s limbs is non-positive,
+            // then all limbs in `delta` are non-positive, violating the
+            // requirement of `self < other`.
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        (p - FpVar::one()).enforce_bit_length(max_ub.bits() as usize)?;
 
         Ok(())
     }
@@ -1290,12 +1308,12 @@ mod tests {
             ],
             vec![
                 Bounds(
-                    -BigInt::from_biguint(Sign::Plus, Fr::MODULUS_MINUS_ONE_DIV_TWO.into()),
+                    BigInt::zero(),
                     BigInt::from_biguint(Sign::Plus, Fr::MODULUS_MINUS_ONE_DIV_TWO.into()),
                 ),
                 Bounds(
                     -BigInt::from_biguint(Sign::Plus, Fr::MODULUS_MINUS_ONE_DIV_TWO.into()),
-                    BigInt::from_biguint(Sign::Plus, Fr::MODULUS_MINUS_ONE_DIV_TWO.into()),
+                    BigInt::zero(),
                 ),
             ],
         );
