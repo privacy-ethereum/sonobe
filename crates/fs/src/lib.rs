@@ -25,7 +25,9 @@
 //! - `witnesses/`: Witness types.
 
 pub mod definitions;
+pub mod mova;
 pub mod nova;
+pub mod ova;
 
 pub use self::definitions::{
     FoldingSchemeDef, FoldingSchemeDefGadget,
