@@ -22,7 +22,7 @@ use sonobe_primitives::{
     transcripts::TranscriptGadget,
 };
 
-use crate::{FoldingSchemePartialVerifierGadget, hypernova::HyperNovaGadget};
+use crate::{FoldingSchemePartialVerifierGadget, PartialVerifierStep, hypernova::HyperNovaGadget};
 
 impl<
     CM: GroupBasedCommitment,
@@ -39,7 +39,7 @@ impl<
         Us: [&Self::RU; M],
         us: [&Self::IU; N],
         proof: &Self::Proof<M, N>,
-    ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
+    ) -> Result<PartialVerifierStep<Self::RU, Self::Challenge>, SynthesisError> {
         let d = V::degree();
         let s = proof.sc_proof.len();
         let t = V::n_matrices();
@@ -113,8 +113,8 @@ impl<
 
         let rho_powers = rho.powers(M + N);
 
-        Ok((
-            Self::RU {
+        Ok(PartialVerifierStep {
+            next_running_instance: Self::RU {
                 cm: {
                     let cms = Us
                         .iter()
@@ -147,7 +147,7 @@ impl<
                     .chain(proof.thetas.chunks(t))
                     .slice_rlc(&rho_powers),
             },
-            rho_bits.try_into().unwrap(),
-        ))
+            challenge: rho_bits.try_into().unwrap(),
+        })
     }
 }

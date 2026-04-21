@@ -19,7 +19,7 @@ use sonobe_primitives::{
 };
 
 use crate::{
-    Error, FoldingSchemeProver,
+    Error, FoldStep, FoldingSchemeProver,
     hypernova::{HyperNova, HyperNova2, HyperNovaKey, NIMFSProof},
 };
 
@@ -40,7 +40,7 @@ impl<
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
         _rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<M, N>, Self::Challenge), Error> {
+    ) -> Result<FoldStep<Self, M, N>, Error> {
         let Ws = &Ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -124,8 +124,8 @@ impl<
 
         let rho_powers = rho.powers(M + N);
 
-        Ok((
-            Self::RW {
+        Ok(FoldStep {
+            next_running_witness: Self::RW {
                 w: Ws
                     .iter()
                     .map(|w| &w.w[..])
@@ -137,7 +137,7 @@ impl<
                     .chain(ws.iter().map(|w| w.r))
                     .scalar_rlc(&rho_powers),
             },
-            Self::RU {
+            next_running_instance: Self::RU {
                 cm: Us
                     .iter()
                     .map(|u| u.cm)
@@ -159,13 +159,13 @@ impl<
                     .chain(thetas.chunks(t))
                     .slice_rlc(&rho_powers),
             },
-            NIMFSProof {
+            proof: NIMFSProof {
                 sc_proof: sumcheck_proof,
                 sigmas,
                 thetas,
             },
-            rho_bits.try_into().unwrap(),
-        ))
+            challenge: rho_bits.try_into().unwrap(),
+        })
     }
 }
 
@@ -186,7 +186,7 @@ impl<
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
         mut rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<M, N>, Self::Challenge), Error> {
+    ) -> Result<FoldStep<Self, M, N>, Error> {
         let Ws = &Ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let Us = &Us.iter().map(|i| i.borrow()).collect::<Vec<_>>();
         let ws = &ws.iter().map(|i| i.borrow()).collect::<Vec<_>>();
@@ -279,8 +279,8 @@ impl<
 
         let rho_powers = rho.powers(M + N);
 
-        Ok((
-            Self::RW {
+        Ok(FoldStep {
+            next_running_witness: Self::RW {
                 w: Ws
                     .iter()
                     .map(|w| &w.w[..])
@@ -288,7 +288,7 @@ impl<
                     .slice_rlc(&rho_powers),
                 r: Ws.iter().map(|w| w.r).chain(rs).scalar_rlc(&rho_powers),
             },
-            Self::RU {
+            next_running_instance: Self::RU {
                 cm: Us
                     .iter()
                     .map(|u| u.cm)
@@ -310,7 +310,7 @@ impl<
                     .chain(thetas.chunks(t))
                     .slice_rlc(&rho_powers),
             },
-            (
+            proof: (
                 cms,
                 NIMFSProof {
                     sc_proof: sumcheck_proof,
@@ -318,7 +318,7 @@ impl<
                     thetas,
                 },
             ),
-            rho_bits.try_into().unwrap(),
-        ))
+            challenge: rho_bits.try_into().unwrap(),
+        })
     }
 }

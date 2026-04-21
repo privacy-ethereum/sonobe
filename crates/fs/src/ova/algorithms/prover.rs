@@ -10,7 +10,7 @@ use sonobe_primitives::{
 };
 
 use crate::{
-    Error, FoldingSchemeProver,
+    Error, FoldStep, FoldingSchemeProver,
     ova::{AbstractOva, OvaKey},
 };
 
@@ -26,7 +26,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
         ws: &[impl Borrow<Self::IW>; 1],
         us: &[impl Borrow<Self::IU>; 1],
         rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, 1>, Self::Challenge), Error> {
+    ) -> Result<FoldStep<Self, 1, 1>, Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let (w, u) = (ws[0].borrow(), us[0].borrow());
 
@@ -53,15 +53,15 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
         };
         let rho = CM::Scalar::from_bits_le(&rho_bits);
 
-        Ok((
-            Self::RW {
+        Ok(FoldStep {
+            next_running_witness: Self::RW {
                 w: cfg_iter!(W.w)
                     .zip(&w[..])
                     .map(|(a, b)| rho * b + a)
                     .collect(),
                 r: W.r + r * rho,
             },
-            Self::RU {
+            next_running_instance: Self::RU {
                 u: U.u + rho,
                 cm: U.cm + cm * rho,
                 x: cfg_iter!(U.x)
@@ -69,8 +69,8 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
                     .map(|(a, b)| rho * b + a)
                     .collect(),
             },
-            cm,
-            rho_bits.try_into().unwrap(),
-        ))
+            proof: cm,
+            challenge: rho_bits.try_into().unwrap(),
+        })
     }
 }

@@ -16,7 +16,7 @@ use sonobe_primitives::{
 };
 
 use crate::{
-    Error, FoldingSchemeProver,
+    Error, FoldStep, FoldingSchemeProver,
     mova::{Mova, MovaKey, MovaProof},
 };
 
@@ -32,7 +32,7 @@ impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> FoldingSchemeProver<
         ws: &[impl Borrow<Self::IW>; 1],
         us: &[impl Borrow<Self::IU>; 1],
         rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, 1>, Self::Challenge), Error> {
+    ) -> Result<FoldStep<Self, 1, 1>, Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let (w, u) = (ws[0].borrow(), us[0].borrow());
 
@@ -111,8 +111,8 @@ impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> FoldingSchemeProver<
         let rho = CM::Scalar::from_bits_le(&rho_bits);
 
         // Step 7.3: Compute new W and U
-        Ok((
-            Self::RW {
+        Ok(FoldStep {
+            next_running_witness: Self::RW {
                 e: cfg_iter!(W.e).zip(&T).map(|(a, b)| rho * b + a).collect(),
                 w: cfg_iter!(W.w)
                     .zip(&w[..])
@@ -120,7 +120,7 @@ impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> FoldingSchemeProver<
                     .collect(),
                 r_w: W.r_w + r_w * rho,
             },
-            Self::RU {
+            next_running_instance: Self::RU {
                 r_e: r_e_prime,
                 v: h1.evaluate(&beta) + rho * t,
                 u: U.u + rho,
@@ -130,8 +130,8 @@ impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> FoldingSchemeProver<
                     .map(|(a, b)| rho * b + a)
                     .collect(),
             },
-            MovaProof { h1_coeffs, t, cm_w },
-            rho_bits.try_into().unwrap(),
-        ))
+            proof: MovaProof { h1_coeffs, t, cm_w },
+            challenge: rho_bits.try_into().unwrap(),
+        })
     }
 }

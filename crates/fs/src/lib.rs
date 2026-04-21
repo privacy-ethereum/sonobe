@@ -35,10 +35,12 @@ pub mod definitions;
 pub use self::definitions::{
     FoldingSchemeDef, FoldingSchemeDefGadget,
     algorithms::{
-        FoldingSchemeDecider, FoldingSchemeKeyGenerator, FoldingSchemeOps,
+        FoldStep, FoldingSchemeDecider, FoldingSchemeKeyGenerator, FoldingSchemeOps,
         FoldingSchemePreprocessor, FoldingSchemeProver, FoldingSchemeVerifier,
     },
-    circuits::{FoldingSchemeFullVerifierGadget, FoldingSchemePartialVerifierGadget},
+    circuits::{
+        FoldingSchemeFullVerifierGadget, FoldingSchemePartialVerifierGadget, PartialVerifierStep,
+    },
     errors::Error,
     instances::{FoldingInstance, FoldingInstanceVar, PlainInstance, PlainInstanceVar},
     keys::DeciderKey,
@@ -117,9 +119,12 @@ mod tests {
             let ws = ws.try_into().unwrap();
             let us = us.try_into().unwrap();
 
-            let (WW, UU, pi, _) = FS::prove(pk, &mut transcript_p, &Ws, &Us, &ws, &us, &mut rng)?;
-            FS::decide_running(&dk, &WW, &UU)?;
-            assert_eq!(FS::verify(vk, &mut transcript_v, &Us, &us, &pi)?, UU);
+            let step = FS::prove(pk, &mut transcript_p, &Ws, &Us, &ws, &us, &mut rng)?;
+            FS::decide_running(&dk, &step.next_running_witness, &step.next_running_instance)?;
+            assert_eq!(
+                FS::verify(vk, &mut transcript_v, &Us, &us, &step.proof)?,
+                step.next_running_instance
+            );
 
             for i in 0..M {
                 let (W, U) = WitnessInstanceSampler::<FS::RW, FS::RU>::sample(&dk, (), &mut rng)?;
@@ -129,8 +134,8 @@ mod tests {
             }
             if M != 0 {
                 let idx = rng.gen_range(0..M);
-                Ws[idx] = WW;
-                Us[idx] = UU;
+                Ws[idx] = step.next_running_witness;
+                Us[idx] = step.next_running_instance;
             }
         }
 

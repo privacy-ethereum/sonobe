@@ -119,7 +119,9 @@ where
         // 1.c. Fold the primary running instance `U` and incoming instance `u`
         //      using the provided proof to obtain the next running instance
         //      `UU`.
-        let (UU, rho) = FS1::Gadget::verify_hinted(&(), &mut transcript, [&U], [&u], &proof)?;
+        let step = FS1::Gadget::verify_hinted(&(), &mut transcript, [&U], [&u], &proof)?;
+        let UU = step.next_running_instance;
+        let rho = step.challenge;
         // 1.d. If this is the base case (`i = 0`), then we should instead use
         //      the dummy running instance as the next running instance.
         let actual_UU = is_basecase.select(&U_dummy, &UU)?;

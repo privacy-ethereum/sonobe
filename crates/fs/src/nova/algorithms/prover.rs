@@ -10,7 +10,7 @@ use sonobe_primitives::{
 };
 
 use crate::{
-    Error, FoldingSchemeProver,
+    Error, FoldStep, FoldingSchemeProver,
     nova::{AbstractNova, AbstractNova2, NovaKey},
 };
 
@@ -26,7 +26,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
         ws: &[impl Borrow<Self::IW>; 1],
         us: &[impl Borrow<Self::IU>; 1],
         rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, 1>, Self::Challenge), Error> {
+    ) -> Result<FoldStep<Self, 1, 1>, Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let (w, u) = (ws[0].borrow(), us[0].borrow());
 
@@ -52,22 +52,22 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
         };
         let rho = CM::Scalar::from_bits_le(&rho_bits);
 
-        Ok((
-            Self::RW {
+        Ok(FoldStep {
+            next_running_witness: Self::RW {
                 e: cfg_iter!(W.e).zip(&t).map(|(a, b)| rho * b + a).collect(),
                 r_e: W.r_e + r_t * rho,
                 w: cfg_iter!(W.w).zip(&w.w).map(|(a, b)| rho * b + a).collect(),
                 r_w: W.r_w + w.r_w * rho,
             },
-            Self::RU {
+            next_running_instance: Self::RU {
                 cm_e: U.cm_e + cm_t.mul(rho),
                 u: U.u + rho,
                 cm_w: U.cm_w + u.cm_w.mul(rho),
                 x: cfg_iter!(U.x).zip(&u.x).map(|(a, b)| rho * b + a).collect(),
             },
-            cm_t,
-            rho_bits.try_into().unwrap(),
-        ))
+            proof: cm_t,
+            challenge: rho_bits.try_into().unwrap(),
+        })
     }
 }
 
@@ -83,7 +83,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
         _: &[impl Borrow<Self::IW>; 0],
         _: &[impl Borrow<Self::IU>; 0],
         rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<2, 0>, Self::Challenge), Error> {
+    ) -> Result<FoldStep<Self, 2, 0>, Error> {
         let (W1, U1) = (W1.borrow(), U1.borrow());
         let (W2, U2) = (W2.borrow(), U2.borrow());
 
@@ -111,8 +111,8 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
         let rho = CM::Scalar::from_bits_le(&rho_bits);
         let rho_squared = rho * rho;
 
-        Ok((
-            Self::RW {
+        Ok(FoldStep {
+            next_running_witness: Self::RW {
                 e: cfg_iter!(W1.e)
                     .zip(&t)
                     .zip(&W2.e)
@@ -125,7 +125,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
                     .collect(),
                 r_w: W1.r_w + W2.r_w * rho,
             },
-            Self::RU {
+            next_running_instance: Self::RU {
                 cm_e: U1.cm_e + cm_t.mul(rho) + U2.cm_e.mul(rho_squared),
                 u: U1.u + rho * U2.u,
                 cm_w: U1.cm_w + U2.cm_w.mul(rho),
@@ -134,9 +134,9 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
                     .map(|(a, b)| rho * b + a)
                     .collect(),
             },
-            cm_t,
-            rho_bits.try_into().unwrap(),
-        ))
+            proof: cm_t,
+            challenge: rho_bits.try_into().unwrap(),
+        })
     }
 }
 
@@ -152,7 +152,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
         ws: &[impl Borrow<Self::IW>; 1],
         us: &[impl Borrow<Self::IU>; 1],
         mut rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, 1>, Self::Challenge), Error> {
+    ) -> Result<FoldStep<Self, 1, 1>, Error> {
         let (W, U) = (Ws[0].borrow(), Us[0].borrow());
         let (w, u) = (ws[0].borrow(), us[0].borrow());
 
@@ -182,8 +182,8 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
         };
         let rho = CM::Scalar::from_bits_le(&rho_bits);
 
-        Ok((
-            Self::RW {
+        Ok(FoldStep {
+            next_running_witness: Self::RW {
                 e: cfg_iter!(W.e).zip(&t).map(|(a, b)| rho * b + a).collect(),
                 r_e: W.r_e + r_t * rho,
                 w: cfg_iter!(W.w)
@@ -192,7 +192,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
                     .collect(),
                 r_w: W.r_w + r_w * rho,
             },
-            Self::RU {
+            next_running_instance: Self::RU {
                 cm_e: U.cm_e + cm_t.mul(rho),
                 u: U.u + rho,
                 cm_w: U.cm_w + cm_w.mul(rho),
@@ -201,8 +201,8 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize>
                     .map(|(a, b)| rho * b + a)
                     .collect(),
             },
-            pi,
-            rho_bits.try_into().unwrap(),
-        ))
+            proof: pi,
+            challenge: rho_bits.try_into().unwrap(),
+        })
     }
 }

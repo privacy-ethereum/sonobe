@@ -9,7 +9,8 @@ use sonobe_primitives::{
 };
 
 use crate::{
-    FoldingSchemeFullVerifierGadget, FoldingSchemePartialVerifierGadget, ova::AbstractOvaGadget,
+    FoldingSchemeFullVerifierGadget, FoldingSchemePartialVerifierGadget, PartialVerifierStep,
+    ova::AbstractOvaGadget,
 };
 
 impl<CM, const CHALLENGE_BITS: usize> FoldingSchemePartialVerifierGadget<1, 1>
@@ -24,7 +25,7 @@ where
         [U]: [&Self::RU; 1],
         [u]: [&Self::IU; 1],
         proof: &Self::Proof<1, 1>,
-    ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
+    ) -> Result<PartialVerifierStep<Self::RU, Self::Challenge>, SynthesisError> {
         let rho_bits = {
             transcript.add(&U)?;
             transcript.add(&u)?;
@@ -33,8 +34,8 @@ where
         };
         let rho = CM::ScalarVar::from_bits_le(&rho_bits)?;
 
-        Ok((
-            Self::RU {
+        Ok(PartialVerifierStep {
+            next_running_instance: Self::RU {
                 u: (U.u.clone() + &rho)
                     .try_into()
                     .map_err(|_| SynthesisError::Unsatisfiable)?,
@@ -49,8 +50,8 @@ where
                     .collect::<Result<_, _>>()
                     .map_err(|_| SynthesisError::Unsatisfiable)?,
             },
-            rho_bits.try_into().unwrap(),
-        ))
+            challenge: rho_bits.try_into().unwrap(),
+        })
     }
 }
 

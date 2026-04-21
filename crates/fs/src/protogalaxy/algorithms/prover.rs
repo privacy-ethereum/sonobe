@@ -18,7 +18,7 @@ use sonobe_primitives::{
 };
 
 use crate::{
-    Error, FoldingSchemeProver,
+    Error, FoldStep, FoldingSchemeProver,
     protogalaxy::{ProtoGalaxy, ProtoGalaxy2, ProtoGalaxyKey, ProtoGalaxyProof},
 };
 
@@ -32,7 +32,7 @@ impl<CM: GroupBasedCommitment, const N: usize> FoldingSchemeProver<1, N> for Pro
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
         _rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, N>, Self::Challenge), Error> {
+    ) -> Result<FoldStep<Self, 1, N>, Error> {
         if !(N + 1).is_power_of_two() {
             return Err(Error::Unsupported("N + 1 must be a power of two".into()));
         }
@@ -163,8 +163,8 @@ impl<CM: GroupBasedCommitment, const N: usize> FoldingSchemeProver<1, N> for Pro
 
         let lagrange_evals = H.evaluate_all_lagrange_coefficients(gamma);
 
-        Ok((
-            Self::RW {
+        Ok(FoldStep {
+            next_running_witness: Self::RW {
                 w: once(&W.w[..])
                     .chain(ws.iter().map(|w| &w.w[..]))
                     .slice_rlc(&lagrange_evals),
@@ -172,7 +172,7 @@ impl<CM: GroupBasedCommitment, const N: usize> FoldingSchemeProver<1, N> for Pro
                     .chain(ws.iter().map(|w| w.r))
                     .scalar_rlc(&lagrange_evals),
             },
-            Self::RU {
+            next_running_instance: Self::RU {
                 e: f_alpha * lagrange_evals[0]
                     + H.evaluate_vanishing_polynomial(gamma) * k_poly.evaluate(&gamma),
                 x: once(&U.x[..])
@@ -183,12 +183,12 @@ impl<CM: GroupBasedCommitment, const N: usize> FoldingSchemeProver<1, N> for Pro
                     .chain(us.iter().map(|u| u.phi))
                     .scalar_rlc(&lagrange_evals),
             },
-            ProtoGalaxyProof {
+            proof: ProtoGalaxyProof {
                 f_coeffs,
                 k_coeffs: k_poly.coeffs,
             },
-            lagrange_evals.into(),
-        ))
+            challenge: lagrange_evals.into(),
+        })
     }
 }
 
@@ -202,7 +202,7 @@ impl<CM: GroupBasedCommitment, const N: usize> FoldingSchemeProver<1, N> for Pro
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
         mut rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<1, N>, Self::Challenge), Error> {
+    ) -> Result<FoldStep<Self, 1, N>, Error> {
         if !(N + 1).is_power_of_two() {
             return Err(Error::Unsupported("N + 1 must be a power of two".into()));
         }
@@ -342,14 +342,14 @@ impl<CM: GroupBasedCommitment, const N: usize> FoldingSchemeProver<1, N> for Pro
 
         let lagrange_evals = H.evaluate_all_lagrange_coefficients(gamma);
 
-        Ok((
-            Self::RW {
+        Ok(FoldStep {
+            next_running_witness: Self::RW {
                 w: once(&W.w[..])
                     .chain(ws.iter().map(|w| &w[..]))
                     .slice_rlc(&lagrange_evals),
                 r: once(W.r).chain(rs).scalar_rlc(&lagrange_evals),
             },
-            Self::RU {
+            next_running_instance: Self::RU {
                 e: f_alpha * lagrange_evals[0]
                     + H.evaluate_vanishing_polynomial(gamma) * k_poly.evaluate(&gamma),
                 x: once(&U.x[..])
@@ -358,15 +358,15 @@ impl<CM: GroupBasedCommitment, const N: usize> FoldingSchemeProver<1, N> for Pro
                 betas: betas_star,
                 phi: once(U.phi).chain(phis).scalar_rlc(&lagrange_evals),
             },
-            (
+            proof: (
                 phis,
                 ProtoGalaxyProof {
                     f_coeffs,
                     k_coeffs: k_poly.coeffs,
                 },
             ),
-            lagrange_evals,
-        ))
+            challenge: lagrange_evals,
+        })
     }
 }
 

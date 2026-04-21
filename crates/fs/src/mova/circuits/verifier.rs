@@ -10,7 +10,7 @@ use sonobe_primitives::{
     transcripts::TranscriptGadget,
 };
 
-use crate::{FoldingSchemePartialVerifierGadget, mova::MovaGadget};
+use crate::{FoldingSchemePartialVerifierGadget, PartialVerifierStep, mova::MovaGadget};
 
 impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> FoldingSchemePartialVerifierGadget<1, 1>
     for MovaGadget<CM, CHALLENGE_BITS>
@@ -22,7 +22,7 @@ impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> FoldingSchemePartial
         [U]: [&Self::RU; 1],
         [u]: [&Self::IU; 1],
         proof: &Self::Proof<1, 1>,
-    ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
+    ) -> Result<PartialVerifierStep<Self::RU, Self::Challenge>, SynthesisError> {
         let h1 = DensePolynomialVar::from_coefficients_vec(
             [&[U.v.clone()][..], &proof.h1_coeffs].concat(),
         );
@@ -42,8 +42,8 @@ impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> FoldingSchemePartial
         let rho_bits = transcript.challenge_bits(CHALLENGE_BITS)?;
         let rho = FpVar::from_bits_le(&rho_bits)?;
 
-        Ok((
-            Self::RU {
+        Ok(PartialVerifierStep {
+            next_running_instance: Self::RU {
                 r_e: U
                     .r_e
                     .iter()
@@ -58,7 +58,7 @@ impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> FoldingSchemePartial
                 })?,
                 x: U.x.iter().zip(&u[..]).map(|(a, b)| &rho * b + a).collect(),
             },
-            rho_bits.try_into().unwrap(),
-        ))
+            challenge: rho_bits.try_into().unwrap(),
+        })
     }
 }

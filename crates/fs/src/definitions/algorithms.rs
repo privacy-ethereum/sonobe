@@ -7,6 +7,18 @@ use sonobe_primitives::{relations::Relation, transcripts::Transcript};
 
 use super::{FoldingSchemeDef, errors::Error, keys::DeciderKey};
 
+/// The artifacts produced by a single folding step.
+pub struct FoldStep<FS: FoldingSchemeDef + ?Sized, const M: usize, const N: usize> {
+    /// The next running witness after folding.
+    pub next_running_witness: FS::RW,
+    /// The next running instance after folding.
+    pub next_running_instance: FS::RU,
+    /// The proof artifact emitted by the folding step.
+    pub proof: FS::Proof<M, N>,
+    /// The challenge derived during the folding step.
+    pub challenge: FS::Challenge,
+}
+
 /// [`FoldingSchemePreprocessor`] is the trait for folding scheme preprocessor.
 pub trait FoldingSchemePreprocessor: FoldingSchemeDef {
     /// [`FoldingSchemePreprocessor::preprocess`] defines the preprocessing
@@ -56,7 +68,7 @@ pub trait FoldingSchemeProver<const M: usize, const N: usize>: FoldingSchemeDef 
         ws: &[impl Borrow<Self::IW>; N],
         us: &[impl Borrow<Self::IU>; N],
         rng: impl RngCore,
-    ) -> Result<(Self::RW, Self::RU, Self::Proof<M, N>, Self::Challenge), Error>;
+    ) -> Result<FoldStep<Self, M, N>, Error>;
 }
 
 /// [`FoldingSchemeVerifier`] is the trait for folding scheme verifier.

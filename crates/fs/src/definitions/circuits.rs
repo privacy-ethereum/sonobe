@@ -6,6 +6,14 @@ use sonobe_primitives::{commitments::CommitmentDefGadget, transcripts::Transcrip
 
 use super::{FoldingSchemeDefGadget, algorithms::FoldingSchemeOps};
 
+/// The artifacts produced by a partial in-circuit verification step.
+pub struct PartialVerifierStep<RU, Challenge> {
+    /// The next running instance after partial verification.
+    pub next_running_instance: RU,
+    /// The challenge derived during partial verification.
+    pub challenge: Challenge,
+}
+
 /// [`FoldingSchemePartialVerifierGadget`] is the partial in-circuit verifier.
 ///
 /// For schemes that have circuit-unfriendly parts in their verification, the
@@ -32,7 +40,7 @@ pub trait FoldingSchemePartialVerifierGadget<const M: usize, const N: usize>:
         Us: [&Self::RU; M],
         us: [&Self::IU; N],
         proof: &Self::Proof<M, N>,
-    ) -> Result<(Self::RU, Self::Challenge), SynthesisError>;
+    ) -> Result<PartialVerifierStep<Self::RU, Self::Challenge>, SynthesisError>;
 }
 
 /// [`FoldingSchemeFullVerifierGadget`] is the full in-circuit verifier.

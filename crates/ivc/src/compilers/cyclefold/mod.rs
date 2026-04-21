@@ -254,8 +254,7 @@ where
         let mut cf_WW = Dummy::dummy(arith2_config);
 
         if i != 0 {
-            let challenge;
-            (WW, UU, proof, challenge) = FS1::prove(
+            let step = FS1::prove(
                 dk1.to_pk(),
                 &mut transcript,
                 &[W],
@@ -265,14 +264,17 @@ where
                 &mut rng,
             )?;
 
-            let cf_circuits = FS1::to_cyclefold_circuits(&[U], &[u], &proof, challenge);
+            let cf_circuits = FS1::to_cyclefold_circuits(&[U], &[u], &step.proof, step.challenge);
+            WW = step.next_running_witness;
+            UU = step.next_running_instance;
+            proof = step.proof;
             for (i, cf_circuit) in cf_circuits.into_iter().enumerate() {
                 let cs = AssignmentsExtractor::new();
                 cs.execute_fn(|cs| cf_circuit.verify_point_rlc(cs))?;
 
                 let (cf_w, cf_u) = dk2.sample(cs.assignments()?, &mut rng)?;
 
-                (cf_WW, cf_UU, cf_proofs[i], _) = FS2::prove(
+                let cf_step = FS2::prove(
                     dk2.to_pk(),
                     &mut transcript,
                     &[if i == 0 { cf_W } else { &cf_WW }],
@@ -281,6 +283,9 @@ where
                     &[&cf_u],
                     &mut rng,
                 )?;
+                cf_WW = cf_step.next_running_witness;
+                cf_UU = cf_step.next_running_instance;
+                cf_proofs[i] = cf_step.proof;
                 cf_us[i] = cf_u;
             }
         }

@@ -19,7 +19,9 @@ use sonobe_primitives::{
     transcripts::TranscriptGadget,
 };
 
-use crate::{FoldingSchemePartialVerifierGadget, protogalaxy::ProtoGalaxyGadget};
+use crate::{
+    FoldingSchemePartialVerifierGadget, PartialVerifierStep, protogalaxy::ProtoGalaxyGadget,
+};
 
 impl<CM: GroupBasedCommitment, const N: usize> FoldingSchemePartialVerifierGadget<1, N>
     for ProtoGalaxyGadget<CM>
@@ -31,7 +33,7 @@ impl<CM: GroupBasedCommitment, const N: usize> FoldingSchemePartialVerifierGadge
         [U]: [&Self::RU; 1],
         us: [&Self::IU; N],
         proof: &Self::Proof<1, N>,
-    ) -> Result<(Self::RU, Self::Challenge), SynthesisError> {
+    ) -> Result<PartialVerifierStep<Self::RU, Self::Challenge>, SynthesisError> {
         transcript.add(&FpVar::constant((proof.f_coeffs.len() as u64).into()))?;
         transcript.add(&FpVar::constant((proof.k_coeffs.len() as u64).into()))?;
 
@@ -62,8 +64,8 @@ impl<CM: GroupBasedCommitment, const N: usize> FoldingSchemePartialVerifierGadge
 
         let lagrange_evals = H.evaluate_all_lagrange_coefficients_var(&gamma)?;
 
-        Ok((
-            Self::RU {
+        Ok(PartialVerifierStep {
+            next_running_instance: Self::RU {
                 e: f_alpha * &lagrange_evals[0]
                     + H.evaluate_vanishing_polynomial_var(&gamma)? * k_poly.evaluate(&gamma)?,
                 x: once(&U.x[..])
@@ -87,7 +89,7 @@ impl<CM: GroupBasedCommitment, const N: usize> FoldingSchemePartialVerifierGadge
                     })?
                 },
             },
-            lagrange_evals.into(),
-        ))
+            challenge: lagrange_evals.into(),
+        })
     }
 }
