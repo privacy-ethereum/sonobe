@@ -3,6 +3,7 @@ members = [
     "crates/primitives",
     "crates/fs",
     "crates/ivc",
+    "crates/snarks",
 ]
 resolver = "2"
 
@@ -13,6 +14,7 @@ repository = "https://github.com/privacy-scaling-explorations/sonobe/"
 rust-version = "1.85.1"
 
 [workspace.dependencies]
+hashbrown = { version = "0.17" }
 itertools = { version = "0.14.0" }
 num-bigint = { version = "0.4.3" }
 num-integer = { version = "0.1" }
@@ -44,3 +46,4 @@ ark-vesta = { version = "0.6.0", default-features = false }
 sonobe-primitives = { path = "crates/primitives", default-features = false }
 sonobe-fs = { path = "crates/fs", default-features = false }
 sonobe-ivc = { path = "crates/ivc", default-features = false }
+sonobe-snarks = { path = "crates/snarks", default-features = false }

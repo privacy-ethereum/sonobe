@@ -58,6 +58,12 @@ impl Absorbable for usize {
     }
 }
 
+impl Absorbable for i8 {
+    fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
+        dest.push(F::from(*self));
+    }
+}
+
 impl<T: Absorbable> Absorbable for &T {
     fn absorb_into<F: PrimeField>(&self, dest: &mut Vec<F>) {
         (*self).absorb_into(dest);

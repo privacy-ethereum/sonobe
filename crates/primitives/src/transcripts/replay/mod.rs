@@ -6,7 +6,7 @@ use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::SynthesisError;
 
 use super::{AbsorbableVar, Transcript, TranscriptGadget};
-use crate::transcripts::recording::{RecordingTranscript, RecordingTranscriptVar};
+use crate::transcripts::{Absorbable, recording::{RecordingTranscript, RecordingTranscriptVar}};
 
 /// [`ReplayTranscript`] is a convenience struct that generates specific values
 /// as challenges without running the actual hash function.
@@ -18,7 +18,7 @@ pub struct ReplayTranscript<F> {
     cached_challenges: Vec<F>,
 }
 
-impl<F: PrimeField, T: Transcript<F>> From<RecordingTranscript<F, T>> for ReplayTranscript<F> {
+impl<F: PrimeField + Absorbable, T: Transcript<F>> From<RecordingTranscript<F, T>> for ReplayTranscript<F> {
     fn from(value: RecordingTranscript<F, T>) -> Self {
         Self {
             cached_challenges: value.cached_challenges,
@@ -26,7 +26,7 @@ impl<F: PrimeField, T: Transcript<F>> From<RecordingTranscript<F, T>> for Replay
     }
 }
 
-impl<F: PrimeField> Transcript<F> for ReplayTranscript<F> {
+impl<F: PrimeField + Absorbable> Transcript<F> for ReplayTranscript<F> {
     type Config = Vec<F>;
     type Gadget = ReplayTranscriptVar<F>;
 
@@ -54,7 +54,7 @@ pub struct ReplayTranscriptVar<F: PrimeField> {
     cached_challenges: Vec<FpVar<F>>,
 }
 
-impl<F: PrimeField, T: TranscriptGadget<F>> From<RecordingTranscriptVar<F, T>>
+impl<F: PrimeField + Absorbable, T: TranscriptGadget<F>> From<RecordingTranscriptVar<F, T>>
     for ReplayTranscriptVar<F>
 {
     fn from(value: RecordingTranscriptVar<F, T>) -> Self {
@@ -64,7 +64,7 @@ impl<F: PrimeField, T: TranscriptGadget<F>> From<RecordingTranscriptVar<F, T>>
     }
 }
 
-impl<F: PrimeField> TranscriptGadget<F> for ReplayTranscriptVar<F> {
+impl<F: PrimeField + Absorbable> TranscriptGadget<F> for ReplayTranscriptVar<F> {
     type Config = Vec<FpVar<F>>;
     type Widget = ReplayTranscript<F>;
 

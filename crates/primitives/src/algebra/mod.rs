@@ -5,11 +5,12 @@
 use ark_ff::PrimeField;
 use ark_r1cs_std::{GR1CSVar, alloc::AllocVar};
 
-use crate::traits::SonobeField;
+use crate::traits::SonobePrimeField;
 
 pub mod field;
 pub mod group;
 pub mod ops;
+pub mod ring;
 
 /// [`Val`] associates a type with its in-circuit variables.
 pub trait Val {
@@ -29,5 +30,5 @@ pub trait Val {
     /// In this case, the circuit is defined over an arbitrary field `F` which
     /// may differ from the preferred constraint field, and `Self` is
     /// represented in-circuit via emulation.
-    type EmulatedVar<F: SonobeField>: AllocVar<Self, F> + GR1CSVar<F, Value = Self>;
+    type EmulatedVar<F: SonobePrimeField>: AllocVar<Self, F> + GR1CSVar<F, Value = Self>;
 }

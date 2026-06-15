@@ -6,13 +6,13 @@ use itertools::Itertools;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use sonobe_primitives::{
-    algebra::ops::bits::FromBits, commitments::GroupBasedCommitment, traits::SonobeField,
+    algebra::ops::bits::FromBits, commitments::GroupBasedCommitment, traits::SonobePrimeField,
     transcripts::Transcript,
 };
 
 use crate::{Error, FoldingSchemeVerifier, nova::AbstractNova};
 
-impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemeVerifier<1, 1>
+impl<CM: GroupBasedCommitment, TF: SonobePrimeField, const B: usize> FoldingSchemeVerifier<1, 1>
     for AbstractNova<CM, TF, B>
 {
     #[allow(non_snake_case)]
@@ -40,7 +40,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemeVer
     }
 }
 
-impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemeVerifier<2, 0>
+impl<CM: GroupBasedCommitment, TF: SonobePrimeField, const B: usize> FoldingSchemeVerifier<2, 0>
     for AbstractNova<CM, TF, B>
 {
     #[allow(non_snake_case)]

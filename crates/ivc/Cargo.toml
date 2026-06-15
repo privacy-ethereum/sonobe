@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 
 sonobe-primitives = { workspace = true }
 sonobe-fs = { workspace = true }
+sonobe-snarks = { workspace = true }
 
 [dev-dependencies]
 ark-bn254 = { workspace = true, features = ["curve", "r1cs"] }
@@ -31,7 +32,8 @@ getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen-test = { workspace = true }
 
 [features]
-default = []
+default = ["ark-std/print-trace"]
 parallel = [
     "sonobe-fs/parallel",
+    "sonobe-snarks/parallel",
 ]

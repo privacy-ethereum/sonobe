@@ -1,14 +1,15 @@
 //! This module defines in-circuit sparse matrix types and implements operations
 //! over them.
 
-use ark_ff::PrimeField;
+use ark_ff::{Field, PrimeField};
 use ark_r1cs_std::{
-    GR1CSVar,
     alloc::{AllocVar, AllocationMode},
-    fields::{FieldVar, fp::FpVar},
+    fields::fp::FpVar,
 };
 use ark_relations::gr1cs::{Matrix, Namespace, SynthesisError};
 use ark_std::{borrow::Borrow, ops::Index};
+
+use crate::algebra::ops::vector::VectorMulGadget;
 
 /// [`MatrixGadget`] defines operations on in-circuit matrix variables.
 pub trait MatrixGadget<FV> {
@@ -24,9 +25,7 @@ pub trait MatrixGadget<FV> {
 #[derive(Debug, Clone)]
 pub struct SparseMatrixVar<FV>(pub Vec<Vec<(FV, usize)>>);
 
-impl<F: PrimeField, CF: PrimeField, FV: AllocVar<F, CF>> AllocVar<Matrix<F>, CF>
-    for SparseMatrixVar<FV>
-{
+impl<F: Field, CF: Field, FV: AllocVar<F, CF>> AllocVar<Matrix<F>, CF> for SparseMatrixVar<FV> {
     fn new_variable<T: Borrow<Matrix<F>>>(
         cs: impl Into<Namespace<CF>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -56,29 +55,6 @@ impl<F: PrimeField> MatrixGadget<FpVar<F>> for SparseMatrixVar<FpVar<F>> {
         &self,
         v: &impl Index<usize, Output = FpVar<F>>,
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        Ok(self
-            .0
-            .iter()
-            .map(|row| {
-                // Theoretically we can use `Iterator::sum` directly:
-                // ```rs
-                // row
-                //     .iter()
-                //     .map(|(value, col_i)| value * &v[*col_i])
-                //     .sum()
-                // ```
-                // But it seems that arkworks will throw an error if we do so
-                // when the products are all constant values...
-                let products = row
-                    .iter()
-                    .map(|(value, col_i)| value * &v[*col_i])
-                    .collect::<Vec<_>>();
-                if products.is_constant() {
-                    FpVar::constant(products.value().unwrap_or_default().into_iter().sum())
-                } else {
-                    products.iter().sum()
-                }
-            })
-            .collect())
+        self.0.iter().map(|row| row.mul(v)).collect()
     }
 }

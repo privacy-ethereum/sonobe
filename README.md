@@ -1,22 +1,40 @@
-# sonobe
+# Sonobe
 
-Experimental folding schemes library implemented jointly by [0xPARC](https://0xparc.org/) and [PSE](https://pse.dev).
+Experimental folding/accumulation schemes library implemented jointly by [0xPARC](https://0xparc.org/) and [PSE](https://pse.dev).
 
 <img align="right" style="width:30%;min-width:250px;margin-bottom:20px;" src="https://raw.githubusercontent.com/privacy-ethereum/sonobe-docs/refs/heads/main/src/imgs/sonobe.png">
 
-<b>Sonobe</b> is a modular library to fold arithmetic circuit instances in an Incremental Verifiable computation (IVC) style. It features multiple folding schemes and decider setups, allowing users to pick the scheme which best fits their needs.
-<br><br>
-Sonobe is conceived as an exploratory effort with the aim to push forward the practical side of folding schemes and advancing towards onchain (EVM) verification.
-<br><br>
-<i>"The <a href="https://en.wikipedia.org/wiki/Sonobe">Sonobe module</a> is one of the many units used to build modular origami. The popularity of Sonobe modular origami models derives from the simplicity of folding the modules, the sturdy and easy assembly, and the flexibility of the system."</i>
+## What is folding?
 
-<br>
+Folding/accumulation schemes are a cryptographic primitive that empowers recursive zero-knowledge proofs by merging multiple instances of a computation into a single instance of the same computation.
 
-> **Warning**: experimental code, do not use in production.<br>
-> The code has not been audited. Several optimizations are also pending. Our focus so far has been on implementing the Nova, HyperNova and ProtoGalaxy schemes, all with the CycleFold approach; and achieving the onchain (in EVM) verification of the folding proofs.
+For more details about folding schemes, please refer to our [documentation](./docs/Folding.md).
+
+## Features
+
+In Sonobe, we aim to provide _modular_, _secure_, _performant_, and _easy to use_ implementations of folding schemes.
+
+- **Modularity**: As our main priority, Sonobe features multiple folding schemes, commitment schemes, deciders (a.k.a. proof compression SNARKs), and frontends/DSLs, allowing users to pick the combination which best fits their needs. It provides compilers that are able to build higher level primitives such as Incremental Verifiable Computation (IVC) and Proof-Carrying Data (PCD) from arbitrary folding schemes.
+- **Security**: 
+
+In addition, Sonobe is conceived as an exploratory effort with the aim to push forward the practical side of folding schemes and advancing towards onchain (EVM) verification.
+
+_"The [Sonobe module](https://en.wikipedia.org/wiki/Sonobe) is one of the many units used to build modular origami. The popularity of Sonobe modular origami models derives from the simplicity of folding the modules, the sturdy and easy assembly, and the flexibility of the system."_
+
+> **Warning**: experimental code, do not use in production.
+> 
+> The code has not been audited. Several optimizations are also pending. Expect breaking changes.
 
 
-## Schemes implemented
+## Supported schemes
+
+Below is the support matrix of different schemes implemented in Sonobe:
+
+| Folding Schemes | Folding-to-IVC compilers | Folding-to-PCD compilers | Deciders | Commitment Schemes | Frontends |
+|---|---|---|---|---|---|
+| Nova[^nova] |   |   |   |   |   |
+|   |   |   |   |   |   |
+|   |   |   |   |   |   |
 
 Folding schemes implemented:
 
@@ -24,8 +42,6 @@ Folding schemes implemented:
 - [CycleFold: Folding-scheme-based recursive arguments over a cycle of elliptic curves](https://eprint.iacr.org/2023/1192.pdf), Abhiram Kothapalli, Srinath Setty. 2023
 - [HyperNova: Recursive arguments for customizable constraint systems](https://eprint.iacr.org/2023/573.pdf), Abhiram Kothapalli, Srinath Setty. 2023
 - [ProtoGalaxy: Efficient ProtoStar-style folding of multiple instances](https://eprint.iacr.org/2023/1106.pdf), Liam Eagen, Ariel Gabizon. 2023
-
-
 ## Frontends
 
 Frontends allow to define the circuit to be folded (ie. `FCircuit`).
@@ -37,10 +53,12 @@ More details about the frontend interface and the experimental frontends can be 
 
 
 ## Usage
-Import the library:
+Declare the libraries as dependencies in your `Cargo.toml`:
 ```toml
 [dependencies]
-folding-schemes = { git = "https://github.com/privacy-scaling-explorations/sonobe", package = "folding-schemes"}
+sonobe-fs = { git = "https://github.com/privacy-scaling-explorations/sonobe", package = "sonobe-fs" }
+sonobe-ivc = { git = "https://github.com/privacy-scaling-explorations/sonobe", package = "sonobe-ivc" }
+sonobe-primitives = { git = "https://github.com/privacy-scaling-explorations/sonobe", package = "sonobe-primitives" }
 ```
 
 Available packages:
@@ -50,7 +68,6 @@ Available packages:
 
 Available features:
 - `parallel` enables some parallelization optimizations available in the crate. It is enabled by default.
-- `light-test` disables part of the DeciderEthCircuit various circuits (which accounts for ~9M constraints) so that the tests involving those circuits can run faster. Do not use it outside tests. This feature is disabled by default.
 
 Examples of usage can be found at the [examples](https://github.com/privacy-scaling-explorations/sonobe/tree/main/examples) directory.
 
@@ -107,3 +124,8 @@ This project builds on top of multiple [arkworks](https://github.com/arkworks-rs
 The Solidity templates used in `nova_cyclefold_verifier.sol`, use [iden3](https://github.com/iden3/snarkjs/blob/master/templates/verifier_groth16.sol.ejs)'s Groth16 implementation and a KZG10 Solidity template adapted from [weijiekoh/libkzg](https://github.com/weijiekoh/libkzg).
 
 In addition to the direct code contributors who make this repository possible, this project has been made possible by many conversations with [Srinath Setty](https://github.com/srinathsetty), [Lev Soukhanov](https://github.com/levs57), [Matej Penciak](https://github.com/mpenciak), [Adrian Hamelink](https://github.com/adr1anh), [François Garillot](https://github.com/huitseeker), [Daniel Marin](https://github.com/danielmarinq), [Han Jian](https://github.com/han0110), [Wyatt Benno](https://github.com/wyattbenno777), [Niсolas Gailly](https://github.com/nikkolasg) and [Nalin Bhardwaj](https://github.com/nalinbhardwaj), to whom we are grateful.
+
+
+## Citations
+
+[^nova]: 

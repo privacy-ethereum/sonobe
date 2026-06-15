@@ -184,7 +184,7 @@ where
         // 3. Update state by invoking the step circuit.
         let (next_state, external_outputs) =
             self.step_circuit
-                .generate_step_constraints(i, current_state, external_inputs)?;
+                .synthesize_step(i, current_state, external_inputs)?;
 
         // 4. Compute public input `uu.x = H(i+1, z_0, z_{i+1}, UU, cf_UU)`.
         let uu_x = sponge

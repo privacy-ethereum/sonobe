@@ -33,11 +33,12 @@ use num_traits::Signed;
 
 use crate::{
     algebra::{
-        field::{SonobeField, TwoStageFieldVar},
+        field::{SonobePrimeField, TwoStageFieldVar},
         ops::{
             bits::{FromBitsGadget, ToBitsGadgetExt},
             eq::EquivalenceGadget,
             matrix::{MatrixGadget, SparseMatrixVar},
+            vector::VectorMulGadget,
         },
     },
     transcripts::AbsorbableVar,
@@ -144,7 +145,7 @@ impl Bounds {
     }
 }
 
-fn compose<F: SonobeField>(limbs: impl Borrow<[F]>) -> BigInt {
+fn compose<F: SonobePrimeField>(limbs: impl Borrow<[F]>) -> BigInt {
     let mut r = BigInt::zero();
 
     for &limb in limbs.borrow().iter().rev() {
@@ -194,7 +195,7 @@ pub type EmulatedIntVar<F> = LimbedVar<F, (), true>;
 /// appear as intermediate results during computations.
 pub type EmulatedFieldVar<Base, Target> = LimbedVar<Base, Target, true>;
 
-impl<F: SonobeField, const ALIGNED: bool> GR1CSVar<F> for LimbedVar<F, (), ALIGNED> {
+impl<F: SonobePrimeField, const ALIGNED: bool> GR1CSVar<F> for LimbedVar<F, (), ALIGNED> {
     type Value = BigInt; // For integers, their values are `BigInt`.
 
     fn cs(&self) -> ConstraintSystemRef<F> {
@@ -206,7 +207,7 @@ impl<F: SonobeField, const ALIGNED: bool> GR1CSVar<F> for LimbedVar<F, (), ALIGN
     }
 }
 
-impl<Base: SonobeField, Target: SonobeField, const ALIGNED: bool> GR1CSVar<Base>
+impl<Base: SonobePrimeField, Target: SonobePrimeField, const ALIGNED: bool> GR1CSVar<Base>
     for LimbedVar<Base, Target, ALIGNED>
 {
     type Value = Target; // For field elements, their values are in `Target`.
@@ -232,7 +233,7 @@ fn bigint_to_field_element<F: PrimeField>(v: BigInt) -> Option<F> {
     }
 }
 
-impl<F: SonobeField, Cfg, const ALIGNED: bool> LimbedVar<F, Cfg, ALIGNED> {
+impl<F: SonobePrimeField, Cfg, const ALIGNED: bool> LimbedVar<F, Cfg, ALIGNED> {
     /// [`LimbedVar::new`] creates a new [`LimbedVar`] from the pre-allocated
     /// limbs and their bounds.
     pub fn new(limbs: Vec<FpVar<F>>, bounds: Vec<Bounds>) -> Self {
@@ -270,7 +271,98 @@ impl<F: SonobeField, Cfg, const ALIGNED: bool> LimbedVar<F, Cfg, ALIGNED> {
     }
 }
 
-impl<F: SonobeField, Cfg> LimbedVar<F, Cfg, true> {
+#[derive(PartialEq)]
+pub enum RangeCheckMode {
+    Loose,
+    Tight,
+}
+
+impl<F: SonobePrimeField, Cfg> LimbedVar<F, Cfg, true> {
+    pub fn alloc<T: Borrow<(BigInt, Bounds)>>(
+        cs: impl Into<Namespace<F>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        alloc_mode: AllocationMode,
+        range_check_mode: RangeCheckMode,
+    ) -> Result<Self, SynthesisError> {
+        let cs = cs.into().cs();
+        let v = f()?;
+        let (x, Bounds(lb, ub)) = v.borrow();
+
+        if x < lb || x > ub {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+
+        let len = max(lb.bits(), ub.bits()) as usize;
+        let zero = BigInt::zero();
+        let one = BigInt::one();
+        let min = &one - (&one << len);
+        let max = (&one << len) - &one;
+
+        let (lb, ub) = if range_check_mode == RangeCheckMode::Loose {
+            (
+                if lb.is_negative() { &min } else { &zero },
+                if ub.is_positive() { &max } else { &zero },
+            )
+        } else {
+            (lb, ub)
+        };
+
+        let x_is_neg = x.is_negative();
+        let mut x_abs = x.magnitude().clone();
+        let mask = (BigUint::one() << F::BITS_PER_LIMB) - BigUint::one();
+        let mut limbs_abs = vec![];
+        for _ in 0..len.div_ceil(F::BITS_PER_LIMB) {
+            limbs_abs.push(F::from(&x_abs & &mask));
+            x_abs >>= F::BITS_PER_LIMB;
+        }
+
+        let x_is_neg = if !lb.is_negative() {
+            Boolean::FALSE
+        } else if !ub.is_positive() {
+            Boolean::TRUE
+        } else {
+            Boolean::new_variable(cs.clone(), || Ok(x_is_neg), alloc_mode)?
+        };
+        let limbs_abs = Vec::<FpVar<_>>::new_variable(cs, || Ok(limbs_abs), alloc_mode)?;
+
+        let limbs = limbs_abs
+            .into_iter()
+            .map(|limb_abs| {
+                limb_abs.enforce_bit_length(F::BITS_PER_LIMB)?;
+                x_is_neg.select(&limb_abs.negate()?, &limb_abs)
+            })
+            .collect::<Result<_, _>>()?;
+
+        let bounds = compute_bounds(lb, ub, F::BITS_PER_LIMB);
+
+        let var = Self::new(limbs, bounds);
+
+        // At this point, we are confident that:
+        // * If `lb >= 0`, then `0 <= var <= 2^len - 1`.
+        // * If `ub <= 0`, then `-2^len + 1 <= var <= 0`.
+        // * Otherwise, `-2^len + 1 <= var <= 2^len - 1`.
+        //
+        // However, for soundness, we need to enforce `lb <= var <= ub`, which
+        // is already guaranteed only if:
+        // * `lb = 0` and `ub = 2^len - 1`
+        // * `lb = -2^len + 1` and `ub = 0`
+        // * `lb = -2^len + 1` and `ub = 2^len - 1`
+        //
+        // For other cases, we additionally check:
+        // * `var <= ub`
+        // * `var >= lb`
+        if !lb.is_zero() && lb != &min {
+            Self::constant(lb - &one).enforce_lt(&var)?;
+        }
+        if !ub.is_zero() && ub != &max {
+            var.enforce_lt(&Self::constant(ub + &one))?;
+        }
+
+        Ok(var)
+    }
+}
+
+impl<F: SonobePrimeField, Cfg> LimbedVar<F, Cfg, true> {
     /// [`LimbedVar::enforce_lt`] enforces `self` to be less than `other`, where
     /// both should be aligned (as indicated by the const generic).
     /// Adapted from the xJsnark [paper] and its [implementation].
@@ -369,13 +461,13 @@ impl<F: SonobeField, Cfg> LimbedVar<F, Cfg, true> {
     }
 }
 
-impl<F: SonobeField, Cfg> From<LimbedVar<F, Cfg, true>> for LimbedVar<F, Cfg, false> {
+impl<F: SonobePrimeField, Cfg> From<LimbedVar<F, Cfg, true>> for LimbedVar<F, Cfg, false> {
     fn from(v: LimbedVar<F, Cfg, true>) -> Self {
         Self::new(v.limbs, v.bounds)
     }
 }
 
-impl<F: SonobeField, Cfg, const LHS_ALIGNED: bool> LimbedVar<F, Cfg, LHS_ALIGNED> {
+impl<F: SonobePrimeField, Cfg, const LHS_ALIGNED: bool> LimbedVar<F, Cfg, LHS_ALIGNED> {
     /// [`LimbedVar::add_unaligned`] computes `self + other`, without aligning
     /// the limbs.
     pub fn add_unaligned<const RHS_ALIGNED: bool>(
@@ -614,7 +706,7 @@ impl<F: SonobeField, Cfg, const LHS_ALIGNED: bool> LimbedVar<F, Cfg, LHS_ALIGNED
     }
 }
 
-impl<Base: SonobeField, Target: SonobeField, const LHS_ALIGNED: bool>
+impl<Base: SonobePrimeField, Target: SonobePrimeField, const LHS_ALIGNED: bool>
     LimbedVar<Base, Target, LHS_ALIGNED>
 {
     /// [`LimbedVar::modulo`] computes `self % Target::MODULUS` and returns the
@@ -628,21 +720,33 @@ impl<Base: SonobeField, Target: SonobeField, const LHS_ALIGNED: bool>
         let cs = self.cs();
         let m = BigInt::from_biguint(Sign::Plus, Target::MODULUS.into());
         // Provide the quotient and remainder as hints
-        let (q, r) = {
+        let (q, mut r) = {
             let v = compose(self.limbs.value().unwrap_or_default());
             let q = v.div_floor(&m);
             let r = v - &q * &m;
+            let mode = if cs.is_none() {
+                AllocationMode::Constant
+            } else {
+                AllocationMode::Witness
+            };
 
             (
-                LimbedVar::new_variable_with_inferred_mode(cs.clone(), || {
-                    Ok((
-                        q,
-                        Bounds(self.lbound().div_floor(&m), self.ubound().div_floor(&m)),
-                    ))
-                })?,
-                LimbedVar::new_variable_with_inferred_mode(cs.clone(), || {
-                    Ok((r, Bounds(Zero::zero(), m.clone())))
-                })?,
+                LimbedVar::alloc(
+                    cs.clone(),
+                    || {
+                        let lb = self.lbound().div_floor(&m);
+                        let ub = self.ubound().div_floor(&m);
+                        Ok((q, Bounds(lb, ub)))
+                    },
+                    mode,
+                    RangeCheckMode::Loose,
+                )?,
+                LimbedVar::alloc(
+                    cs.clone(),
+                    || Ok((r, Bounds(Zero::zero(), m.clone()))),
+                    mode,
+                    RangeCheckMode::Loose,
+                )?,
             )
         };
 
@@ -654,6 +758,11 @@ impl<Base: SonobeField, Target: SonobeField, const LHS_ALIGNED: bool>
             .enforce_equal_unaligned(self)?;
         // Enforce `r < m` (and `r >= 0` already holds)
         r.enforce_lt(&m)?;
+        r.bounds = compute_bounds(
+            &BigInt::zero(),
+            &(-Target::one()).into_bigint().into().into(),
+            Base::BITS_PER_LIMB,
+        );
 
         Ok(r)
     }
@@ -664,20 +773,25 @@ impl<Base: SonobeField, Target: SonobeField, const LHS_ALIGNED: bool>
         &self,
         other: &LimbedVar<Base, Target, RHS_ALIGNED>,
     ) -> Result<(), SynthesisError> {
-        let cs = self.cs();
+        let cs = self.cs().or(other.cs());
         let m = BigInt::from_biguint(Sign::Plus, Target::MODULUS.into());
         // Provide the quotient as hint
-        let q = LimbedVar::new_variable_with_inferred_mode(cs.clone(), || {
-            let x = compose(self.limbs.value().unwrap_or_default());
-            let y = compose(other.limbs.value().unwrap_or_default());
-            Ok((
-                (x - y).div_floor(&m),
-                Bounds(
-                    (self.lbound() - other.ubound()).div_floor(&m),
-                    (self.ubound() - other.lbound()).div_floor(&m),
-                ),
-            ))
-        })?;
+        let q = LimbedVar::alloc(
+            cs.clone(),
+            || {
+                let x = compose(self.limbs.value().unwrap_or_default());
+                let y = compose(other.limbs.value().unwrap_or_default());
+                let lb = (self.lbound() - other.ubound()).div_floor(&m);
+                let ub = (self.ubound() - other.lbound()).div_floor(&m);
+                Ok(((x - y).div_floor(&m), Bounds(lb, ub)))
+            },
+            if cs.is_none() {
+                AllocationMode::Constant
+            } else {
+                AllocationMode::Witness
+            },
+            RangeCheckMode::Loose,
+        )?;
 
         let m = LimbedVar::constant(m);
 
@@ -689,7 +803,7 @@ impl<Base: SonobeField, Target: SonobeField, const LHS_ALIGNED: bool>
 
 // The following lines are quite repetitive, but we have to implement them all
 // to make the compiler happy.
-impl<Base: SonobeField, Target: SonobeField> EquivalenceGadget<LimbedVar<Base, Target, true>>
+impl<Base: SonobePrimeField, Target: SonobePrimeField> EquivalenceGadget<LimbedVar<Base, Target, true>>
     for LimbedVar<Base, Target, true>
 {
     fn enforce_equivalent(&self, other: &Self) -> Result<(), SynthesisError> {
@@ -697,7 +811,7 @@ impl<Base: SonobeField, Target: SonobeField> EquivalenceGadget<LimbedVar<Base, T
     }
 }
 
-impl<Base: SonobeField, Target: SonobeField> EquivalenceGadget<LimbedVar<Base, Target, true>>
+impl<Base: SonobePrimeField, Target: SonobePrimeField> EquivalenceGadget<LimbedVar<Base, Target, true>>
     for LimbedVar<Base, Target, false>
 {
     fn enforce_equivalent(
@@ -708,7 +822,7 @@ impl<Base: SonobeField, Target: SonobeField> EquivalenceGadget<LimbedVar<Base, T
     }
 }
 
-impl<Base: SonobeField, Target: SonobeField> EquivalenceGadget<LimbedVar<Base, Target, false>>
+impl<Base: SonobePrimeField, Target: SonobePrimeField> EquivalenceGadget<LimbedVar<Base, Target, false>>
     for LimbedVar<Base, Target, true>
 {
     fn enforce_equivalent(
@@ -719,7 +833,7 @@ impl<Base: SonobeField, Target: SonobeField> EquivalenceGadget<LimbedVar<Base, T
     }
 }
 
-impl<Base: SonobeField, Target: SonobeField> EquivalenceGadget<LimbedVar<Base, Target, false>>
+impl<Base: SonobePrimeField, Target: SonobePrimeField> EquivalenceGadget<LimbedVar<Base, Target, false>>
     for LimbedVar<Base, Target, false>
 {
     fn enforce_equivalent(
@@ -730,31 +844,31 @@ impl<Base: SonobeField, Target: SonobeField> EquivalenceGadget<LimbedVar<Base, T
     }
 }
 
-impl<F: SonobeField> EquivalenceGadget<LimbedVar<F, (), true>> for LimbedVar<F, (), true> {
+impl<F: SonobePrimeField> EquivalenceGadget<LimbedVar<F, (), true>> for LimbedVar<F, (), true> {
     fn enforce_equivalent(&self, other: &LimbedVar<F, (), true>) -> Result<(), SynthesisError> {
         self.enforce_equal(other)
     }
 }
 
-impl<F: SonobeField> EquivalenceGadget<LimbedVar<F, (), true>> for LimbedVar<F, (), false> {
+impl<F: SonobePrimeField> EquivalenceGadget<LimbedVar<F, (), true>> for LimbedVar<F, (), false> {
     fn enforce_equivalent(&self, other: &LimbedVar<F, (), true>) -> Result<(), SynthesisError> {
         self.enforce_equal_unaligned(other)
     }
 }
 
-impl<F: SonobeField> EquivalenceGadget<LimbedVar<F, (), false>> for LimbedVar<F, (), true> {
+impl<F: SonobePrimeField> EquivalenceGadget<LimbedVar<F, (), false>> for LimbedVar<F, (), true> {
     fn enforce_equivalent(&self, other: &LimbedVar<F, (), false>) -> Result<(), SynthesisError> {
         self.enforce_equal_unaligned(other)
     }
 }
 
-impl<F: SonobeField> EquivalenceGadget<LimbedVar<F, (), false>> for LimbedVar<F, (), false> {
+impl<F: SonobePrimeField> EquivalenceGadget<LimbedVar<F, (), false>> for LimbedVar<F, (), false> {
     fn enforce_equivalent(&self, other: &LimbedVar<F, (), false>) -> Result<(), SynthesisError> {
         self.enforce_equal_unaligned(other)
     }
 }
 
-impl<Base: SonobeField, Target: SonobeField> TryFrom<LimbedVar<Base, Target, false>>
+impl<Base: SonobePrimeField, Target: SonobePrimeField> TryFrom<LimbedVar<Base, Target, false>>
     for LimbedVar<Base, Target, true>
 {
     type Error = SynthesisError;
@@ -764,12 +878,22 @@ impl<Base: SonobeField, Target: SonobeField> TryFrom<LimbedVar<Base, Target, fal
     }
 }
 
-impl<Base: SonobeField, Target: SonobeField> TwoStageFieldVar for LimbedVar<Base, Target, true> {
+impl<Base: SonobePrimeField, Target: SonobePrimeField> TwoStageFieldVar for LimbedVar<Base, Target, true> {
+    type ValueField = Target;
+    type ConstraintField = Base;
     type Intermediate = LimbedVar<Base, Target, false>;
+
+    fn additive_identity() -> Self {
+        Self::constant(BigInt::zero())
+    }
+
+    fn multiplicative_identity() -> Self {
+        Self::constant(BigInt::one())
+    }
 }
 
 // Only implement `EqGadget` for aligned variables.
-impl<F: SonobeField, Cfg> EqGadget<F> for LimbedVar<F, Cfg, true> {
+impl<F: SonobePrimeField, Cfg> EqGadget<F> for LimbedVar<F, Cfg, true> {
     fn is_eq(&self, other: &Self) -> Result<Boolean<F>, SynthesisError> {
         if self.limbs.len() != other.limbs.len() {
             return Err(SynthesisError::Unsatisfiable);
@@ -824,7 +948,7 @@ impl<F: SonobeField, Cfg> EqGadget<F> for LimbedVar<F, Cfg, true> {
     }
 }
 
-impl<F: SonobeField, Cfg> FromBitsGadget<F> for LimbedVar<F, Cfg, true> {
+impl<F: SonobePrimeField, Cfg> FromBitsGadget<F> for LimbedVar<F, Cfg, true> {
     fn from_bits_le(bits: &[Boolean<F>]) -> Result<Self, SynthesisError> {
         Self::from_bounded_bits_le(
             bits,
@@ -901,57 +1025,67 @@ impl<F: PrimeField, Cfg> AbsorbableVar<F> for LimbedVar<F, Cfg, true> {
     }
 }
 
-impl<CF: SonobeField, Cfg> MatrixGadget<LimbedVar<CF, Cfg, false>>
+impl<
+    CF: SonobePrimeField,
+    Cfg,
+    Other: Index<usize, Output = LimbedVar<CF, Cfg, RHS_ALIGNED>>,
+    const LHS_ALIGNED: bool,
+    const RHS_ALIGNED: bool,
+> VectorMulGadget<Other> for [(LimbedVar<CF, Cfg, LHS_ALIGNED>, usize)]
+{
+    type Output = LimbedVar<CF, Cfg, false>;
+
+    fn mul(&self, other: &Other) -> Result<Self::Output, SynthesisError> {
+        let len = self
+            .iter()
+            .map(|(value, index)| value.limbs.len() + other[*index].limbs.len() - 1)
+            .max()
+            .unwrap_or(0);
+        // This is a combination of `mul_unaligned` and `add_unaligned`
+        // that results in more flattened `LinearCombination`s.
+        // Consequently, `ConstraintSystem::inline_all_lcs` costs less
+        // time, thus making trusted setup and proof generation faster.
+        let bounds = (0..len)
+            .map(|i| {
+                Bounds::add_many(
+                    &self
+                        .iter()
+                        .flat_map(|(value, index)| {
+                            let start =
+                                max(i + 1, other[*index].bounds.len()) - other[*index].bounds.len();
+                            let end = min(i + 1, value.bounds.len());
+                            (start..end).map(|j| value.bounds[j].mul(&other[*index].bounds[i - j]))
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .filter_safe::<CF>()
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or(SynthesisError::Unsatisfiable)?;
+        let limbs = (0..len)
+            .map(|i| {
+                self.iter()
+                    .flat_map(|(value, index)| {
+                        let start =
+                            max(i + 1, other[*index].limbs.len()) - other[*index].limbs.len();
+                        let end = min(i + 1, value.limbs.len());
+                        (start..end).map(|j| &value.limbs[j] * &other[*index].limbs[i - j])
+                    })
+                    .sum()
+            })
+            .collect();
+        Ok(LimbedVar::new(limbs, bounds))
+    }
+}
+
+impl<CF: SonobePrimeField, Cfg> MatrixGadget<LimbedVar<CF, Cfg, false>>
     for SparseMatrixVar<LimbedVar<CF, Cfg, false>>
 {
     fn mul_vector(
         &self,
         v: &impl Index<usize, Output = LimbedVar<CF, Cfg, false>>,
     ) -> Result<Vec<LimbedVar<CF, Cfg, false>>, SynthesisError> {
-        self.0
-            .iter()
-            .map(|row| {
-                let len = row
-                    .iter()
-                    .map(|(value, col_i)| value.limbs.len() + v[*col_i].limbs.len() - 1)
-                    .max()
-                    .unwrap_or(0);
-                // This is a combination of `mul_unaligned` and `add_unaligned`
-                // that results in more flattened `LinearCombination`s.
-                // Consequently, `ConstraintSystem::inline_all_lcs` costs less
-                // time, thus making trusted setup and proof generation faster.
-                let bounds = (0..len)
-                    .map(|i| {
-                        Bounds::add_many(
-                            &row.iter()
-                                .flat_map(|(value, col_i)| {
-                                    let start =
-                                        max(i + 1, v[*col_i].bounds.len()) - v[*col_i].bounds.len();
-                                    let end = min(i + 1, value.bounds.len());
-                                    (start..end)
-                                        .map(|j| value.bounds[j].mul(&v[*col_i].bounds[i - j]))
-                                })
-                                .collect::<Vec<_>>(),
-                        )
-                        .filter_safe::<CF>()
-                    })
-                    .collect::<Option<Vec<_>>>()
-                    .ok_or(SynthesisError::Unsatisfiable)?;
-                let limbs = (0..len)
-                    .map(|i| {
-                        row.iter()
-                            .flat_map(|(value, col_i)| {
-                                let start =
-                                    max(i + 1, v[*col_i].limbs.len()) - v[*col_i].limbs.len();
-                                let end = min(i + 1, value.limbs.len());
-                                (start..end).map(|j| &value.limbs[j] * &v[*col_i].limbs[i - j])
-                            })
-                            .sum()
-                    })
-                    .collect();
-                Ok(LimbedVar::new(limbs, bounds))
-            })
-            .collect()
+        self.0.iter().map(|row| row.mul(v)).collect()
     }
 }
 
@@ -983,78 +1117,13 @@ fn compute_bounds(lb: &BigInt, ub: &BigInt, bits_per_limb: usize) -> Vec<Bounds>
     bounds
 }
 
-impl<F: SonobeField, Cfg> AllocVar<(BigInt, Bounds), F> for LimbedVar<F, Cfg, true> {
+impl<F: SonobePrimeField, Cfg> AllocVar<(BigInt, Bounds), F> for LimbedVar<F, Cfg, true> {
     fn new_variable<T: Borrow<(BigInt, Bounds)>>(
         cs: impl Into<Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
-        let cs = cs.into().cs();
-        let v = f()?;
-        let (x, Bounds(lb, ub)) = v.borrow();
-
-        if x < lb || x > ub {
-            return Err(SynthesisError::Unsatisfiable);
-        }
-
-        let len = max(lb.bits(), ub.bits()) as usize;
-
-        let x_is_neg = x.is_negative();
-        let mut x_bits = x
-            .magnitude()
-            .to_radix_le(2)
-            .into_iter()
-            .map(|i| i == 1)
-            .collect::<Vec<_>>();
-        x_bits.resize(len, false);
-
-        let x_is_neg = if !lb.is_negative() {
-            Boolean::FALSE
-        } else if !ub.is_positive() {
-            Boolean::TRUE
-        } else {
-            Boolean::new_variable(cs.clone(), || Ok(x_is_neg), mode)?
-        };
-        let x_bits = Vec::new_variable(cs, || Ok(x_bits), mode)?;
-
-        let limbs = x_bits
-            .chunks(F::BITS_PER_LIMB)
-            .map(|chunk| {
-                let limb_abs = Boolean::le_bits_to_fp(chunk)?;
-                x_is_neg.select(&limb_abs.negate()?, &limb_abs)
-            })
-            .collect::<Result<_, _>>()?;
-
-        let bounds = compute_bounds(lb, ub, F::BITS_PER_LIMB);
-
-        let var = Self::new(limbs, bounds);
-
-        // At this point, we are confident that:
-        // * If `lb >= 0`, then `0 <= var <= 2^len - 1`.
-        // * If `ub <= 0`, then `-2^len + 1 <= var <= 0`.
-        // * Otherwise, `-2^len + 1 <= var <= 2^len - 1`.
-        //
-        // However, for soundness, we need to enforce `lb <= var <= ub`, which
-        // is already guaranteed only if:
-        // * `lb = 0` and `ub = 2^len - 1`
-        // * `lb = -2^len + 1` and `ub = 0`
-        // * `lb = -2^len + 1` and `ub = 2^len - 1`
-        //
-        // For other cases, we additionally check:
-        // * `var <= ub`
-        // * `var >= lb`
-        #[allow(clippy::if_same_then_else)]
-        if lb.is_zero() && ub + BigInt::one() == BigInt::one() << len {
-        } else if BigInt::one() - lb == BigInt::one() << len && ub.is_zero() {
-        } else if BigInt::one() - lb == BigInt::one() << len
-            && ub + BigInt::one() == BigInt::one() << len
-        {
-        } else {
-            var.enforce_lt(&Self::constant(ub + BigInt::one()))?;
-            Self::constant(lb - BigInt::one()).enforce_lt(&var)?;
-        }
-
-        Ok(var)
+        Self::alloc(cs, f, mode, RangeCheckMode::Tight)
     }
 
     fn new_constant(
@@ -1094,7 +1163,7 @@ impl<F: SonobeField, Cfg> AllocVar<(BigInt, Bounds), F> for LimbedVar<F, Cfg, tr
     }
 }
 
-impl<F: SonobeField, G: SonobeField, Cfg> AllocVar<G, F> for LimbedVar<F, Cfg, true> {
+impl<F: SonobePrimeField, G: SonobePrimeField, Cfg> AllocVar<G, F> for LimbedVar<F, Cfg, true> {
     fn new_variable<T: Borrow<G>>(
         cs: impl Into<Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -1115,7 +1184,7 @@ impl<F: SonobeField, G: SonobeField, Cfg> AllocVar<G, F> for LimbedVar<F, Cfg, t
     }
 }
 
-impl<F: SonobeField, Cfg> LimbedVar<F, Cfg, true> {
+impl<F: SonobePrimeField, Cfg> LimbedVar<F, Cfg, true> {
     /// [`LimbedVar::constant`] allocates a constant [`LimbedVar`] with value
     /// `x`.
     pub fn constant(x: BigInt) -> Self {
@@ -1203,7 +1272,7 @@ impl_binary_op!(
     |a: &LimbedVar<F, Cfg, LHS_ALIGNED>, b: &LimbedVar<F, Cfg, RHS_ALIGNED>| -> LimbedVar<F, Cfg, false> {
         a.add_unaligned(b).unwrap()
     },
-    (F: SonobeField, Cfg, const LHS_ALIGNED: bool, const RHS_ALIGNED: bool),
+    (F: SonobePrimeField, Cfg, const LHS_ALIGNED: bool, const RHS_ALIGNED: bool),
 );
 
 impl_assignment_op!(
@@ -1212,7 +1281,7 @@ impl_assignment_op!(
     |a: &mut LimbedVar<F, Cfg, false>, b: &LimbedVar<F, Cfg, ALIGNED>| {
         *a = a.add_unaligned(b).unwrap()
     },
-    (F: SonobeField, Cfg, const ALIGNED: bool),
+    (F: SonobePrimeField, Cfg, const ALIGNED: bool),
 );
 
 impl_binary_op!(
@@ -1221,7 +1290,7 @@ impl_binary_op!(
     |a: &LimbedVar<F, Cfg, SELF_ALIGNED>, b: &LimbedVar<F, Cfg, OTHER_ALIGNED>| -> LimbedVar<F, Cfg, false> {
         a.sub_unaligned(b).unwrap()
     },
-    (F: SonobeField, Cfg, const SELF_ALIGNED: bool, const OTHER_ALIGNED: bool),
+    (F: SonobePrimeField, Cfg, const SELF_ALIGNED: bool, const OTHER_ALIGNED: bool),
 );
 
 impl_assignment_op!(
@@ -1230,7 +1299,7 @@ impl_assignment_op!(
     |a: &mut LimbedVar<F, Cfg, false>, b: &LimbedVar<F, Cfg, OTHER_ALIGNED>| {
         *a = a.sub_unaligned(b).unwrap()
     },
-    (F: SonobeField, Cfg, const OTHER_ALIGNED: bool),
+    (F: SonobePrimeField, Cfg, const OTHER_ALIGNED: bool),
 );
 
 impl_binary_op!(
@@ -1239,7 +1308,7 @@ impl_binary_op!(
     |a: &LimbedVar<F, Cfg, SELF_ALIGNED>, b: &LimbedVar<F, Cfg, OTHER_ALIGNED>| -> LimbedVar<F, Cfg, false> {
         a.mul_unaligned(b).unwrap()
     },
-    (F: SonobeField, Cfg, const SELF_ALIGNED: bool, const OTHER_ALIGNED: bool),
+    (F: SonobePrimeField, Cfg, const SELF_ALIGNED: bool, const OTHER_ALIGNED: bool),
 );
 
 impl_assignment_op!(
@@ -1248,7 +1317,7 @@ impl_assignment_op!(
     |a: &mut LimbedVar<F, Cfg, false>, b: &LimbedVar<F, Cfg, OTHER_ALIGNED>| {
         *a = a.mul_unaligned(b).unwrap()
     },
-    (F: SonobeField, Cfg, const OTHER_ALIGNED: bool),
+    (F: SonobePrimeField, Cfg, const OTHER_ALIGNED: bool),
 );
 
 #[cfg(test)]

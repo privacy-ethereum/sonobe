@@ -24,6 +24,8 @@ pub struct R1CS<F: Field> {
 }
 
 impl<F: Field> Arith for R1CS<F> {
+    type Field = F;
+
     #[inline]
     fn config(&self) -> ArithConfig {
         ArithConfig {
@@ -32,15 +34,22 @@ impl<F: Field> Arith for R1CS<F> {
             n_variables: self.n,
             n_public_inputs: self.l,
             n_witnesses: self.n - self.l - 1,
+            n_matrices: 3,
         }
     }
 }
 
 impl<F: Field> CCS for R1CS<F> {
-    type Field = F;
-
     fn matrices(&self) -> &[Matrix<Self::Field>] {
         &self.matrices[..]
+    }
+
+    fn multisets() -> Vec<Vec<usize>> {
+        vec![vec![0, 1], vec![2]]
+    }
+
+    fn coefficients() -> Vec<Self::Field> {
+        vec![F::one(), -F::one()]
     }
 }
 

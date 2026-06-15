@@ -4,12 +4,12 @@ use ark_std::sync::Arc;
 use sonobe_primitives::{
     arithmetizations::Arith,
     commitments::{CommitmentKey, GroupBasedCommitment},
-    traits::SonobeField,
+    traits::SonobePrimeField,
 };
 
 use crate::{Error, FoldingSchemeKeyGenerator, nova::AbstractNova};
 
-impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemeKeyGenerator
+impl<CM: GroupBasedCommitment, TF: SonobePrimeField, const B: usize> FoldingSchemeKeyGenerator
     for AbstractNova<CM, TF, B>
 {
     fn generate_keys(ck: Self::PublicParam, r1cs: Self::Arith) -> Result<Self::DeciderKey, Error> {

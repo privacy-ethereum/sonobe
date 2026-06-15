@@ -7,7 +7,7 @@ use sonobe_primitives::{
     transcripts::Absorbable,
 };
 
-use crate::FoldingInstance;
+use crate::{FoldingInstance, definitions::instances::FoldingIncomingInstance};
 
 pub mod circuits;
 
@@ -25,18 +25,8 @@ pub struct RunningInstance<CM: CommitmentDef> {
 }
 
 impl<CM: CommitmentDef> FoldingInstance<CM> for RunningInstance<CM> {
-    const N_COMMITMENTS: usize = 2;
-
-    fn commitments(&self) -> Vec<&CM::Commitment> {
-        vec![&self.cm_e, &self.cm_w]
-    }
-
-    fn public_inputs(&self) -> &[CM::Scalar] {
-        &self.x
-    }
-
-    fn public_inputs_mut(&mut self) -> &mut [CM::Scalar] {
-        &mut self.x
+    fn commitments(&self) -> Vec<CM::Commitment> {
+        vec![self.cm_e.clone(), self.cm_w.clone()]
     }
 }
 
@@ -70,18 +60,16 @@ pub struct IncomingInstance<CM: CommitmentDef> {
 }
 
 impl<CM: CommitmentDef> FoldingInstance<CM> for IncomingInstance<CM> {
-    const N_COMMITMENTS: usize = 1;
-
-    fn commitments(&self) -> Vec<&CM::Commitment> {
-        vec![&self.cm_w]
+    fn commitments(&self) -> Vec<CM::Commitment> {
+        vec![self.cm_w.clone()]
     }
+}
+
+impl<CM: CommitmentDef> FoldingIncomingInstance<CM> for IncomingInstance<CM> {
+    type PublicInput = CM::Scalar;
 
     fn public_inputs(&self) -> &[CM::Scalar] {
         &self.x
-    }
-
-    fn public_inputs_mut(&mut self) -> &mut [CM::Scalar] {
-        &mut self.x
     }
 }
 

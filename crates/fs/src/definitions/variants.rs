@@ -2,13 +2,14 @@
 //! mathematical structures.
 
 use sonobe_primitives::{
+    arithmetizations::Arith,
     commitments::{CommitmentDef, GroupBasedCommitment},
     traits::CF2,
 };
 
 use crate::{
-    FoldingSchemeDef, FoldingSchemeDefGadget, FoldingSchemeFullVerifierGadget, FoldingSchemeOps,
-    FoldingSchemePartialVerifierGadget,
+    FoldingInstance, FoldingSchemeDef, FoldingSchemeDefGadget, FoldingSchemeFullVerifierGadget,
+    FoldingSchemeOps, FoldingSchemePartialVerifierGadget, definitions::instances::FoldingIncomingInstance,
 };
 
 /// [`GroupBasedFoldingSchemePrimaryDef`] defines a folding scheme based on
@@ -17,7 +18,12 @@ use crate::{
 pub trait GroupBasedFoldingSchemePrimaryDef:
     FoldingSchemeDef<
         CM: GroupBasedCommitment,
+        Arith: Arith<Field = <<Self as FoldingSchemeDef>::CM as CommitmentDef>::Scalar>,
         TranscriptField = <<Self as FoldingSchemeDef>::CM as CommitmentDef>::Scalar,
+        IU: FoldingIncomingInstance<
+            <Self as FoldingSchemeDef>::CM,
+            PublicInput = <<Self as FoldingSchemeDef>::CM as CommitmentDef>::Scalar,
+        >,
     >
 {
     /// [`GroupBasedFoldingSchemePrimaryDef::Gadget`] is the in-circuit gadget
@@ -45,6 +51,7 @@ impl<FS, const M: usize, const N: usize> GroupBasedFoldingSchemePrimary<M, N> fo
 pub trait GroupBasedFoldingSchemeSecondaryDef:
     FoldingSchemeDef<
         CM: GroupBasedCommitment,
+        Arith: Arith<Field = <<Self as FoldingSchemeDef>::CM as CommitmentDef>::Scalar>,
         TranscriptField = CF2<<<Self as FoldingSchemeDef>::CM as CommitmentDef>::Commitment>,
     >
 {

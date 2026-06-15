@@ -17,23 +17,21 @@ use super::utils::TaggedVec;
 pub trait FoldingInstance<CM: CommitmentDef>:
     Clone + Debug + PartialEq + Eq + Absorbable + for<'a> Dummy<&'a ArithConfig>
 {
-    /// [`FoldingInstance::N_COMMITMENTS`] defines the number of commitments
-    /// contained in the instance.
-    const N_COMMITMENTS: usize;
-
     /// [`FoldingInstance::commitments`] returns the commitments contained in
     /// the instance.
     // TODO (@winderica): consider the scenario where the instance has multiple
     // commitments of different types.
-    fn commitments(&self) -> Vec<&CM::Commitment>;
+    fn commitments(&self) -> Vec<CM::Commitment>;
+}
+
+pub trait FoldingIncomingInstance<CM: CommitmentDef>:
+    FoldingInstance<CM>
+{
+    type PublicInput;
 
     /// [`FoldingInstance::public_inputs`] returns the reference to the public
     /// inputs contained in the instance.
-    fn public_inputs(&self) -> &[CM::Scalar];
-
-    /// [`FoldingInstance::public_inputs_mut`] returns the mutable reference to
-    /// the public inputs contained in the instance.
-    fn public_inputs_mut(&mut self) -> &mut [CM::Scalar];
+    fn public_inputs(&self) -> &[Self::PublicInput];
 }
 
 /// [`PlainInstance`] is a vector of field elements that are the statements /
@@ -53,17 +51,15 @@ impl<V: Default + Clone> Dummy<&ArithConfig> for PlainInstance<V> {
 }
 
 impl<CM: CommitmentDef> FoldingInstance<CM> for PlainInstance<CM::Scalar> {
-    const N_COMMITMENTS: usize = 0;
-
-    fn commitments(&self) -> Vec<&CM::Commitment> {
+    fn commitments(&self) -> Vec<CM::Commitment> {
         vec![]
     }
+}
+
+impl<CM: CommitmentDef> FoldingIncomingInstance<CM> for PlainInstance<CM::Scalar> {
+    type PublicInput = CM::Scalar;
 
     fn public_inputs(&self) -> &[CM::Scalar] {
-        self
-    }
-
-    fn public_inputs_mut(&mut self) -> &mut [CM::Scalar] {
         self
     }
 }

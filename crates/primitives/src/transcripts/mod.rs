@@ -7,23 +7,27 @@
 //! Concrete implementations live in the [`poseidon`] and [`griffin`]
 //! sub-modules.
 
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::{BigInteger, Field, One, PrimeField};
 use ark_r1cs_std::{boolean::Boolean, convert::ToBitsGadget, fields::fp::FpVar};
 use ark_relations::gr1cs::SynthesisError;
+use num_bigint::BigUint;
+use num_traits::ToPrimitive;
 
 pub use self::absorbable::{Absorbable, AbsorbableVar};
+use crate::transcripts::squeezable::Squeezable;
 
 pub mod absorbable;
 pub mod griffin;
 pub mod poseidon;
 pub mod recording;
 pub mod replay;
+pub mod squeezable;
 
 /// [`Transcript`] is the out-of-circuit widget for transcripts and sponges.
 ///
 /// Provers and verifiers can use this trait to absorb messages and squeeze
 /// challenges in a way that is agnostic to the underlying hash function.
-pub trait Transcript<F: PrimeField>: Clone {
+pub trait Transcript<F: PrimeField + Absorbable>: Clone {
     /// [`Transcript::Config`] is the configuration for the underlying hash
     /// function of the transcript.
     type Config: Clone;
@@ -58,6 +62,48 @@ pub trait Transcript<F: PrimeField>: Clone {
     /// represented as field elements into the transcript / sponge.
     fn add_field_elements(&mut self, input: &[F]) -> &mut Self;
 
+    fn get<T: Squeezable<F>>(&mut self) -> T {
+        T::squeeze_from(self.get_field_elements(T::size()))
+    }
+
+    fn get_many<T: Squeezable<F>>(&mut self, n: usize) -> Vec<T> {
+        (0..n)
+            .map(|_| T::squeeze_from(self.get_field_elements(T::size())))
+            .collect()
+    }
+
+    fn get_decomposed(&mut self, base: u8, n: usize) -> Vec<u8> {
+        let b = BigUint::from(base);
+        let capacity = {
+            let m = F::MODULUS.into();
+            let mut n = BigUint::one();
+            let mut i = 0;
+            loop {
+                n *= &b;
+                if n > m {
+                    break;
+                }
+                i += 1;
+            }
+            i
+        };
+
+        let num_elements = n.div_ceil(capacity);
+        let src_elements = self.get_field_elements(num_elements);
+
+        let mut result = vec![];
+        for elem in &src_elements {
+            let mut elem = elem.into_bigint().into();
+            for _ in 0..capacity {
+                result.push((&elem % &b).to_u8().unwrap());
+                elem /= &b;
+            }
+        }
+
+        result.truncate(n);
+        result
+    }
+
     /// [`Transcript::get_bits`] squeezes `num_bits` bits from the transcript /
     /// sponge.
     fn get_bits(&mut self, num_bits: usize) -> Vec<bool> {
@@ -74,12 +120,6 @@ pub trait Transcript<F: PrimeField>: Clone {
 
         bits.truncate(num_bits);
         bits
-    }
-
-    /// [`Transcript::get_field_element`] squeezes a single field element from
-    /// the transcript / sponge.
-    fn get_field_element(&mut self) -> F {
-        self.get_field_elements(1)[0]
     }
 
     /// [`Transcript::get_field_elements`] squeezes `num_elements` field
@@ -104,15 +144,20 @@ pub trait Transcript<F: PrimeField>: Clone {
         new_sponge
     }
 
-    /// [`Transcript::challenge_field_element`] squeezes a challenge from the
-    /// transcript as a field element.
-    ///
-    /// Internally, it first squeezes a field element and then absorbs it back
-    /// into the transcript to ensure security.
-    fn challenge_field_element(&mut self) -> F {
-        let c = self.get_field_elements(1);
-        self.add_field_elements(&c);
-        c[0]
+    fn challenge<T: Squeezable<F>>(&mut self) -> T {
+        let v = self.get_field_elements(T::size());
+        self.add(&v);
+        T::squeeze_from(v)
+    }
+
+    fn challenge_many<T: Squeezable<F>>(&mut self, n: usize) -> Vec<T> {
+        let v = (0..n)
+            .map(|_| self.get_field_elements(T::size()))
+            .collect::<Vec<_>>();
+        for i in &v {
+            self.add(i);
+        }
+        v.into_iter().map(T::squeeze_from).collect()
     }
 
     /// [`Transcript::challenge_bits`] squeezes a challenge from the transcript
@@ -124,7 +169,8 @@ pub trait Transcript<F: PrimeField>: Clone {
         let usable_bits = (F::MODULUS_BIT_SIZE - 1) as usize;
 
         let num_elements = num_bits.div_ceil(usable_bits);
-        let src_elements = self.challenge_field_elements(num_elements);
+        let src_elements = self.get_field_elements(num_elements);
+        self.add_field_elements(&src_elements);
 
         let mut bits: Vec<bool> = Vec::with_capacity(usable_bits * num_elements);
         for elem in &src_elements {
@@ -136,20 +182,42 @@ pub trait Transcript<F: PrimeField>: Clone {
         bits
     }
 
-    /// [`Transcript::challenge_field_elements`] squeezes `n` challenges from
-    /// the transcript as field elements.
-    ///
-    /// Internally, it first squeezes the field elements and then absorbs them
-    /// back into the transcript to ensure security.
-    fn challenge_field_elements(&mut self, n: usize) -> Vec<F> {
-        let c = self.get_field_elements(n);
-        self.add_field_elements(&c);
-        c
+    fn challenge_decomposed(&mut self, base: u8, n: usize) -> Vec<u8> {
+        let b = BigUint::from(base);
+        let capacity = {
+            let m = F::MODULUS.into();
+            let mut n = BigUint::one();
+            let mut i = 0;
+            loop {
+                n *= &b;
+                if n > m {
+                    break;
+                }
+                i += 1;
+            }
+            i
+        };
+
+        let num_elements = n.div_ceil(capacity);
+        let src_elements = self.get_field_elements(num_elements);
+        self.add_field_elements(&src_elements);
+
+        let mut result = vec![];
+        for elem in &src_elements {
+            let mut elem = elem.into_bigint().into();
+            for _ in 0..capacity {
+                result.push((&elem % &b).to_u8().unwrap());
+                elem /= &b;
+            }
+        }
+
+        result.truncate(n);
+        result
     }
 }
 
 /// [`TranscriptGadget`] is the in-circuit gadget for transcripts and sponges.
-pub trait TranscriptGadget<F: PrimeField>: Clone {
+pub trait TranscriptGadget<F: PrimeField + Absorbable>: Clone {
     /// [`TranscriptGadget::Config`] is the configuration for the underlying
     /// hash function of the transcript gadget.
     type Config: Clone;

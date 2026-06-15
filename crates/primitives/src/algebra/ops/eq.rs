@@ -23,7 +23,7 @@ impl<F: PrimeField> EquivalenceGadget<FpVar<F>> for FpVar<F> {
     }
 }
 
-impl<T: EquivalenceGadget<T>> EquivalenceGadget<[T]> for [T] {
+impl<S: EquivalenceGadget<T>, T> EquivalenceGadget<[T]> for [S] {
     fn enforce_equivalent(&self, other: &[T]) -> Result<(), SynthesisError> {
         if self.len() != other.len() {
             return Err(SynthesisError::Unsatisfiable);

@@ -2,7 +2,9 @@
 //! for proof verification.
 
 use ark_relations::gr1cs::SynthesisError;
-use sonobe_primitives::{commitments::CommitmentDefGadget, transcripts::TranscriptGadget};
+use sonobe_primitives::{
+    commitments::CommitmentDefGadget, relations::RelationGadget, transcripts::TranscriptGadget,
+};
 
 use super::{FoldingSchemeDefGadget, algorithms::FoldingSchemeOps};
 
@@ -57,4 +59,35 @@ pub trait FoldingSchemeFullVerifierGadget<const M: usize, const N: usize>:
         us: [&Self::IU; N],
         proof: &Self::Proof<M, N>,
     ) -> Result<Self::RU, SynthesisError>;
+}
+
+pub trait FoldingSchemeDeciderGadget:
+    FoldingSchemeDefGadget<
+    DeciderKey: RelationGadget<Self::RW, Self::RU> + RelationGadget<Self::IW, Self::IU>,
+>
+{
+    #[allow(non_snake_case)]
+    fn decide_running(
+        dk: &Self::DeciderKey,
+        W: &Self::RW,
+        U: &Self::RU,
+    ) -> Result<(), SynthesisError> {
+        RelationGadget::<Self::RW, Self::RU>::check_relation(dk, W, U)
+    }
+
+    fn decide_incoming(
+        dk: &Self::DeciderKey,
+        w: &Self::IW,
+        u: &Self::IU,
+    ) -> Result<(), SynthesisError> {
+        RelationGadget::<Self::IW, Self::IU>::check_relation(dk, w, u)
+    }
+}
+
+impl<
+    FS: FoldingSchemeDefGadget<
+        DeciderKey: RelationGadget<Self::RW, Self::RU> + RelationGadget<Self::IW, Self::IU>,
+    >,
+> FoldingSchemeDeciderGadget for FS
+{
 }

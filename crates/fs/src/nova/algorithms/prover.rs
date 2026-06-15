@@ -11,7 +11,7 @@ use sonobe_primitives::{
     arithmetizations::r1cs::R1CS,
     circuits::{Assignments, AssignmentsOwned},
     commitments::GroupBasedCommitment,
-    traits::SonobeField,
+    traits::SonobePrimeField,
     transcripts::Transcript,
 };
 
@@ -49,7 +49,7 @@ fn cross_term<'a, F: Field>(
         .collect())
 }
 
-impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemeProver<1, 1>
+impl<CM: GroupBasedCommitment, TF: SonobePrimeField, const B: usize> FoldingSchemeProver<1, 1>
     for AbstractNova<CM, TF, B>
 {
     #[allow(non_snake_case)]
@@ -98,7 +98,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemePro
     }
 }
 
-impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemeProver<2, 0>
+impl<CM: GroupBasedCommitment, TF: SonobePrimeField, const B: usize> FoldingSchemeProver<2, 0>
     for AbstractNova<CM, TF, B>
 {
     #[allow(non_snake_case)]

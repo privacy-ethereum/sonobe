@@ -1,7 +1,10 @@
 //! This module defines helper traits used across Sonobe's crates.
 
+use ark_ff::Field;
+use ark_r1cs_std::GR1CSVar;
+
 pub use crate::algebra::{
-    field::SonobeField,
+    field::{SonobePrimeField, SonobeField},
     group::{CF1, CF2, SonobeCurve},
 };
 
@@ -15,6 +18,12 @@ pub trait Dummy<Cfg> {
     /// [`Dummy::dummy`] constructs a dummy value of `Self` based on the given
     /// configuration `cfg`.
     fn dummy(cfg: Cfg) -> Self;
+}
+
+impl<T> Dummy<T> for () {
+    fn dummy(_: T) -> Self {
+        ()
+    }
 }
 
 impl<T: Default + Clone> Dummy<usize> for Vec<T> {
@@ -37,42 +46,23 @@ impl<Cfg: Copy, A: Dummy<Cfg>, B: Dummy<Cfg>> Dummy<Cfg> for (A, B) {
 
 /// [`Inputize`] converts a value into a vector of field elements, ordered in
 /// the same way as how the value's corresponding in-circuit variable would be
-/// represented in the canonical way in the circuit when allocated as public
-/// input.
+/// represented in the circuit when allocated as public input.
 ///
 /// This is useful for the verifier to compute the public inputs.
-pub trait Inputize<F> {
+pub trait Inputize<F: Field>: GR1CSVar<F> {
     /// [`Inputize::inputize`] outputs the underlying field elements of `self`
     /// as if it is allocated in the canonical way in-circuit.
-    fn inputize(&self) -> Vec<F>;
+    fn inputize(value: &Self::Value) -> Vec<F>;
 }
 
-impl<F, T: Inputize<F>> Inputize<F> for [T] {
-    fn inputize(&self) -> Vec<F> {
-        self.iter().flat_map(Inputize::<F>::inputize).collect()
+impl<F: Field, T: Inputize<F>> Inputize<F> for [T] {
+    fn inputize(value: &Self::Value) -> Vec<F> {
+        value.iter().flat_map(T::inputize).collect()
     }
 }
 
-/// [`InputizeEmulated`] converts a value into a vector of field elements,
-/// ordered in the same way as how the value's corresponding in-circuit variable
-/// would be represented in the emulated way in the circuit when allocated as
-/// public input.
-///
-/// This is useful for the verifier to compute the public inputs.
-///
-/// Note that we require this trait because we need to distinguish between some
-/// data types that can be represented in both the canonical and emulated ways
-/// in-circuit (e.g., field elements or elliptic curve points).
-pub trait InputizeEmulated<F> {
-    /// [`InputizeEmulated::inputize_emulated`] outputs the underlying field
-    /// elements of `self` as if it is allocated in the emulated way in-circuit.
-    fn inputize_emulated(&self) -> Vec<F>;
-}
-
-impl<F, T: InputizeEmulated<F>> InputizeEmulated<F> for [T] {
-    fn inputize_emulated(&self) -> Vec<F> {
-        self.iter()
-            .flat_map(InputizeEmulated::<F>::inputize_emulated)
-            .collect()
+impl<F: Field, T: Inputize<F>, const N: usize> Inputize<F> for [T; N] {
+    fn inputize(value: &Self::Value) -> Vec<F> {
+        value.iter().flat_map(T::inputize).collect()
     }
 }

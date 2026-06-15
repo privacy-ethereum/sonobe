@@ -5,17 +5,19 @@ use ark_ff::PrimeField;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::SynthesisError;
 
+use crate::transcripts::Absorbable;
+
 use super::{AbsorbableVar, Transcript, TranscriptGadget};
 
 /// [`RecordingTranscript`] wraps a regular transcript to record all challenges
 /// it produces.
 #[derive(Clone)]
-pub struct RecordingTranscript<F: PrimeField, T: Transcript<F>> {
+pub struct RecordingTranscript<F: PrimeField + Absorbable, T: Transcript<F>> {
     inner: T,
     pub(super) cached_challenges: Vec<F>,
 }
 
-impl<F: PrimeField, T: Transcript<F>> Transcript<F> for RecordingTranscript<F, T> {
+impl<F: PrimeField + Absorbable, T: Transcript<F>> Transcript<F> for RecordingTranscript<F, T> {
     type Config = T;
     type Gadget = RecordingTranscriptVar<F, T::Gadget>;
 
@@ -40,12 +42,12 @@ impl<F: PrimeField, T: Transcript<F>> Transcript<F> for RecordingTranscript<F, T
 
 /// [`RecordingTranscriptVar`] is the in-circuit variable of [`RecordingTranscript`].
 #[derive(Clone)]
-pub struct RecordingTranscriptVar<F: PrimeField, T: TranscriptGadget<F>> {
+pub struct RecordingTranscriptVar<F: PrimeField + Absorbable, T: TranscriptGadget<F>> {
     inner: T,
     pub(super) cached_challenges: Vec<FpVar<F>>,
 }
 
-impl<F: PrimeField, T: TranscriptGadget<F>> TranscriptGadget<F> for RecordingTranscriptVar<F, T> {
+impl<F: PrimeField + Absorbable, T: TranscriptGadget<F>> TranscriptGadget<F> for RecordingTranscriptVar<F, T> {
     type Config = T;
     type Widget = RecordingTranscript<F, T::Widget>;
 

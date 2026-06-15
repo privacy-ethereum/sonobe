@@ -3,6 +3,7 @@
 use ark_relations::gr1cs::SynthesisError;
 use sonobe_primitives::{
     arithmetizations::Error as ArithError, commitments::Error as CommitmentError,
+    sumcheck::Error as SumCheckError,
 };
 use thiserror::Error;
 
@@ -21,6 +22,10 @@ pub enum Error {
     /// synthesis.
     #[error(transparent)]
     SynthesisError(#[from] SynthesisError),
+    /// [`Error::SumCheckError`] indicates an error from the underlying sumcheck
+    /// protocol.
+    #[error(transparent)]
+    SumCheckError(#[from] SumCheckError),
     /// [`Error::Unsupported`] indicates that a certain use case is not
     /// supported.
     #[error("Unsupported use case: {0}")]

@@ -19,6 +19,8 @@ use super::{
 };
 use crate::{DeciderKey, Error, PlainInstance as PU, PlainWitness as PW};
 
+pub mod circuits;
+
 /// [`NovaKey`] is Nova's decider key.
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct NovaKey<A: Arith, CM: CommitmentDef> {
@@ -30,12 +32,12 @@ impl<A: Arith, CM: CommitmentDef> DeciderKey for NovaKey<A, CM> {
     type ProverKey = Self;
     type VerifierKey = ();
 
-    fn to_pk(&self) -> &Self::ProverKey {
-        self
+    fn to_pk(&self) -> Self::ProverKey {
+        self.clone()
     }
 
-    fn to_vk(&self) -> &Self::VerifierKey {
-        &()
+    fn to_vk(&self) -> Self::VerifierKey {
+        ()
     }
 
     fn to_arith_config(&self) -> ArithConfig {
@@ -117,11 +119,11 @@ impl<A: Arith, CM: CommitmentDef> WitnessInstanceSampler<PW<CM::Scalar>, PU<CM::
 impl<A, CM> WitnessInstanceSampler<RW<CM>, RU<CM>> for NovaKey<A, CM>
 where
     A: for<'a> ArithRelation<
-            RelaxedWitness<&'a [CM::Scalar]>,
-            RelaxedInstance<&'a [CM::Scalar]>,
-            Evaluation = Vec<CM::Scalar>,
+            RelaxedWitness<&'a [<A as Arith>::Field]>,
+            RelaxedInstance<&'a [<A as Arith>::Field]>,
+            Evaluation = Vec<<A as Arith>::Field>,
         >,
-    CM: CommitmentOps,
+    CM: CommitmentOps<Scalar = A::Field>,
 {
     type Source = ();
     type Error = Error;
@@ -129,12 +131,12 @@ where
     fn sample(&self, _: Self::Source, mut rng: impl RngCore) -> Result<(RW<CM>, RU<CM>), Error> {
         let cfg = self.arith.config();
 
-        let u = CM::Scalar::rand(&mut rng);
+        let u = A::Field::rand(&mut rng);
         let x = (0..cfg.n_public_inputs)
-            .map(|_| CM::Scalar::rand(&mut rng))
+            .map(|_| A::Field::rand(&mut rng))
             .collect::<Vec<_>>();
         let w = (0..cfg.n_witnesses)
-            .map(|_| CM::Scalar::rand(&mut rng))
+            .map(|_| A::Field::rand(&mut rng))
             .collect::<Vec<_>>();
         let e = self.arith.eval_relation(
             &RelaxedWitness { w: &w, e: &[] },

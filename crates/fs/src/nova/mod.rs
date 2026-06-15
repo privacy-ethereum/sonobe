@@ -6,9 +6,9 @@
 use ark_r1cs_std::boolean::Boolean;
 use ark_std::marker::PhantomData;
 use sonobe_primitives::{
-    arithmetizations::r1cs::R1CS,
+    arithmetizations::r1cs::{R1CS, circuits::R1CSVar},
     commitments::{CommitmentDef, CommitmentDefGadget, GroupBasedCommitment},
-    traits::{CF2, SonobeField},
+    traits::{CF2, SonobePrimeField},
 };
 
 use self::{
@@ -16,11 +16,15 @@ use self::{
         IncomingInstance as IU, RunningInstance as RU,
         circuits::{IncomingInstanceVar as IUVar, RunningInstanceVar as RUVar},
     },
-    witnesses::{IncomingWitness as IW, RunningWitness as RW},
+    witnesses::{
+        IncomingWitness as IW, RunningWitness as RW,
+        circuits::{IncomingWitnessVar as IWVar, RunningWitnessVar as RWVar},
+    },
 };
 use crate::{
     FoldingSchemeDef, FoldingSchemeDefGadget, GroupBasedFoldingSchemePrimaryDef,
-    GroupBasedFoldingSchemeSecondaryDef, nova::keys::NovaKey,
+    GroupBasedFoldingSchemeSecondaryDef,
+    nova::keys::{NovaKey, circuits::NovaKeyVar},
 };
 
 pub mod algorithms;
@@ -48,7 +52,7 @@ pub type Nova<CM, const CHALLENGE_BITS: usize = 128> =
 pub type CycleFoldNova<CM, const CHALLENGE_BITS: usize = 128> =
     AbstractNova<CM, CF2<<CM as CommitmentDef>::Commitment>, CHALLENGE_BITS>;
 
-impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingSchemeDef
+impl<CM: GroupBasedCommitment, TF: SonobePrimeField, const CHALLENGE_BITS: usize> FoldingSchemeDef
     for AbstractNova<CM, TF, CHALLENGE_BITS>
 {
     type CM = CM;
@@ -79,10 +83,14 @@ where
 {
     type Widget = AbstractNova<CM::Widget, CM::ConstraintField, CHALLENGE_BITS>;
 
+    type Arith = R1CSVar<CM::ScalarVar>;
     type CM = CM;
+    type RW = RWVar<CM>;
     type RU = RUVar<CM>;
+    type IW = IWVar<CM>;
     type IU = IUVar<CM>;
     type VerifierKey = ();
+    type DeciderKey = NovaKeyVar<Self::Arith, CM>;
     type Challenge = [Boolean<CM::ConstraintField>; CHALLENGE_BITS];
     type Proof<const M: usize, const N: usize> = CM::CommitmentVar;
 }
@@ -117,7 +125,7 @@ mod tests {
     use super::*;
     use crate::tests::test_folding_scheme;
 
-    fn test_nova_opt<TF: SonobeField>(
+    fn test_nova_opt<TF: SonobePrimeField>(
         rounds: usize,
         mut rng: impl RngCore,
     ) -> Result<(), Box<dyn Error>> {

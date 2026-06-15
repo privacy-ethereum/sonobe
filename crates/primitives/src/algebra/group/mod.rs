@@ -19,9 +19,13 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::SynthesisError;
 
 use crate::{
-    algebra::{Val, field::SonobeField, group::emulated::EmulatedAffineVar},
+    algebra::{
+        Val,
+        field::{SonobePrimeField, emulated::EmulatedFieldVar},
+        group::emulated::EmulatedAffineVar,
+    },
     circuits::WitnessToPublic,
-    traits::{Dummy, Inputize, InputizeEmulated},
+    traits::{Dummy, Inputize},
     transcripts::{Absorbable, AbsorbableVar},
 };
 
@@ -35,30 +39,29 @@ pub type CF2<C> = <<C as CurveGroup>::BaseField as Field>::BasePrimeField;
 /// [`SonobeCurve`] trait is a wrapper around [`CurveGroup`] that also includes
 /// necessary bounds for the curve to be used conveniently in folding schemes.
 pub trait SonobeCurve:
-    CurveGroup<ScalarField: SonobeField, BaseField: SonobeField, Config: SWCurveConfig>
+    CurveGroup<ScalarField: SonobePrimeField, BaseField: SonobePrimeField, Config: SWCurveConfig>
     + Absorbable
-    + Inputize<Self::BaseField>
-    + InputizeEmulated<Self::ScalarField>
     + Val<
         Var: CurveVar<Self, Self::BaseField>
                  + AbsorbableVar<Self::BaseField>
                  + WitnessToPublic
-                 + JointScalarMul<Self::BaseField>,
+                 + JointScalarMul<Self::BaseField>
+                 + Inputize<Self::BaseField>,
         EmulatedVar<Self::ScalarField> = EmulatedAffineVar<Self::ScalarField, Self>,
     >
 {
 }
 
-impl<P: SWCurveConfig<ScalarField: SonobeField, BaseField: SonobeField>> SonobeCurve
+impl<P: SWCurveConfig<ScalarField: SonobePrimeField, BaseField: SonobePrimeField>> SonobeCurve
     for Projective<P>
 {
 }
 
-impl<P: SWCurveConfig<ScalarField: SonobeField, BaseField: SonobeField>> Val for Projective<P> {
+impl<P: SWCurveConfig<ScalarField: SonobePrimeField, BaseField: SonobePrimeField>> Val for Projective<P> {
     type PreferredConstraintField = P::BaseField;
     type Var = ProjectiveVar<P, FpVar<P::BaseField>>;
 
-    type EmulatedVar<F: SonobeField> = EmulatedAffineVar<F, Self>;
+    type EmulatedVar<F: SonobePrimeField> = EmulatedAffineVar<F, Self>;
 }
 
 impl<T, C: SonobeCurve> Dummy<T> for C {
@@ -93,9 +96,11 @@ impl<P: SWCurveConfig<BaseField: PrimeField>> AbsorbableVar<P::BaseField>
     }
 }
 
-impl<P: SWCurveConfig<BaseField: SonobeField>> Inputize<P::BaseField> for Projective<P> {
-    fn inputize(&self) -> Vec<P::BaseField> {
-        let affine = self.into_affine();
+impl<P: SWCurveConfig<BaseField: PrimeField>> Inputize<P::BaseField>
+    for ProjectiveVar<P, FpVar<P::BaseField>>
+{
+    fn inputize(value: &Self::Value) -> Vec<P::BaseField> {
+        let affine = value.into_affine();
         match affine.xy() {
             Some((x, y)) => vec![x, y, One::one()],
             None => vec![Zero::zero(), One::one(), Zero::zero()],
@@ -103,14 +108,11 @@ impl<P: SWCurveConfig<BaseField: SonobeField>> Inputize<P::BaseField> for Projec
     }
 }
 
-impl<P: SWCurveConfig<BaseField: SonobeField, ScalarField: SonobeField>>
-    InputizeEmulated<P::ScalarField> for Projective<P>
-{
-    fn inputize_emulated(&self) -> Vec<P::ScalarField> {
-        let affine = self.into_affine();
+impl<Base: SonobePrimeField, Target: SonobeCurve> Inputize<Base> for EmulatedAffineVar<Base, Target> {
+    fn inputize(value: &Self::Value) -> Vec<Base> {
+        let affine = value.into_affine();
         let (x, y) = affine.xy().unwrap_or_default();
-
-        [x, y].inputize_emulated()
+        <[EmulatedFieldVar<Base, Target::BaseField>]>::inputize(&vec![x, y])
     }
 }
 
@@ -121,6 +123,14 @@ impl<P: SWCurveConfig<BaseField: PrimeField>> WitnessToPublic
         // We only need the x and y coordinates of the point, but the `infinity`
         // flag is not necessary.
         self.to_constraint_field()?[..2].mark_as_public()
+    }
+}
+
+impl<Base: SonobePrimeField, Target: SonobeCurve> WitnessToPublic for EmulatedAffineVar<Base, Target> {
+    fn mark_as_public(&self) -> Result<(), SynthesisError> {
+        self.x.mark_as_public()?;
+        self.y.mark_as_public()?;
+        Ok(())
     }
 }
 

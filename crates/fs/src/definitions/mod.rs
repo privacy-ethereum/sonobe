@@ -16,7 +16,7 @@ use sonobe_primitives::{
     circuits::AssignmentsOwned,
     commitments::{CommitmentDef, CommitmentDefGadget},
     relations::{Relation, WitnessInstanceSampler},
-    traits::{Dummy, SonobeField},
+    traits::{Dummy, SonobePrimeField},
 };
 
 use self::{
@@ -25,6 +25,7 @@ use self::{
     keys::DeciderKey,
     witnesses::FoldingWitness,
 };
+use crate::FoldingWitnessVar;
 
 /// [`FoldingSchemeDef`] provides the core type definitions of a folding scheme.
 ///
@@ -52,7 +53,7 @@ use self::{
 pub trait FoldingSchemeDef {
     /// [`FoldingSchemeDef::CM`] is the commitment scheme used by the folding
     /// scheme.
-    type CM: CommitmentDef<Scalar: SonobeField>;
+    type CM: CommitmentDef;
     /// [`FoldingSchemeDef::RW`] is the type of running witness.
     type RW: FoldingWitness<Self::CM>;
     /// [`FoldingSchemeDef::RU`] is the type of running instance.
@@ -63,7 +64,7 @@ pub trait FoldingSchemeDef {
     type IU: FoldingInstance<Self::CM>;
     /// [`FoldingSchemeDef::TranscriptField`] is the field type used in the
     /// transcript of the folding scheme.
-    type TranscriptField: SonobeField;
+    type TranscriptField: SonobePrimeField;
     /// [`FoldingSchemeDef::Arith`] is the constraint system supported by the
     /// folding scheme.
     type Arith: Arith;
@@ -84,7 +85,7 @@ pub trait FoldingSchemeDef {
         + WitnessInstanceSampler<
             Self::IW,
             Self::IU,
-            Source = AssignmentsOwned<<Self::CM as CommitmentDef>::Scalar>,
+            Source = AssignmentsOwned<<Self::Arith as Arith>::Field>,
             Error = Error,
         >;
     /// [`FoldingSchemeDef::Challenge`] is the type of challenge generated
@@ -104,16 +105,27 @@ pub trait FoldingSchemeDefGadget {
 
     /// [`FoldingSchemeDefGadget::CM`] is the commitment scheme gadget.
     type CM: CommitmentDefGadget<Widget = <Self::Widget as FoldingSchemeDef>::CM>;
+    type RW: FoldingWitnessVar<Self::CM, Value = <Self::Widget as FoldingSchemeDef>::RW>;
     /// [`FoldingSchemeDefGadget::RU`] is the type of in-circuit running
     /// instance variable.
     type RU: FoldingInstanceVar<Self::CM, Value = <Self::Widget as FoldingSchemeDef>::RU>;
+    type IW: FoldingWitnessVar<Self::CM, Value = <Self::Widget as FoldingSchemeDef>::IW>;
     /// [`FoldingSchemeDefGadget::IU`] is the type of in-circuit incoming
     /// instance variable.
     type IU: FoldingInstanceVar<Self::CM, Value = <Self::Widget as FoldingSchemeDef>::IU>;
 
+    type Arith: AllocVar<
+            <Self::Widget as FoldingSchemeDef>::Arith,
+            <Self::CM as CommitmentDefGadget>::ConstraintField,
+        >;
+
     /// [`FoldingSchemeDefGadget::VerifierKey`] is the type of in-circuit
     /// verifier key variable.
     type VerifierKey;
+    type DeciderKey: AllocVar<
+            <Self::Widget as FoldingSchemeDef>::DeciderKey,
+            <Self::CM as CommitmentDefGadget>::ConstraintField,
+        >;
 
     /// [`FoldingSchemeDefGadget::Challenge`] is the type of in-circuit
     /// challenge variable.

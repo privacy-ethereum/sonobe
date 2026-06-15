@@ -7,8 +7,7 @@ use ark_relations::gr1cs::SynthesisError;
 use ark_std::sync::Arc;
 
 use crate::transcripts::{
-    AbsorbableVar, Transcript, TranscriptGadget,
-    griffin::{Griffin, GriffinGadget, GriffinParams},
+    Absorbable, AbsorbableVar, Transcript, TranscriptGadget, griffin::{Griffin, GriffinGadget, GriffinParams}
 };
 
 /// [`GriffinSponge`] is a duplex sponge built on the Griffin permutation.
@@ -180,7 +179,7 @@ impl<F: PrimeField> GriffinSpongeVar<F> {
     }
 }
 
-impl<F: PrimeField> Transcript<F> for GriffinSponge<F> {
+impl<F: PrimeField + Absorbable> Transcript<F> for GriffinSponge<F> {
     type Config = Arc<GriffinParams<F>>;
     type Gadget = GriffinSpongeVar<F>;
 
@@ -243,7 +242,7 @@ impl<F: PrimeField> Transcript<F> for GriffinSponge<F> {
     }
 }
 
-impl<F: PrimeField> TranscriptGadget<F> for GriffinSpongeVar<F> {
+impl<F: PrimeField + Absorbable> TranscriptGadget<F> for GriffinSpongeVar<F> {
     type Config = Arc<GriffinParams<F>>;
     type Widget = GriffinSponge<F>;
 
@@ -340,7 +339,7 @@ mod tests {
         let config = Arc::new(GriffinParams::<Fr>::new(3, 5, 12));
         let mut tr = GriffinSponge::<Fr>::new(config.clone());
         tr.add(&Fr::from(42_u32));
-        let c = tr.challenge_field_element();
+        let c = tr.challenge::<Fr>();
 
         // Create a transcript inside of the circuit
         let cs = ConstraintSystem::<Fr>::new_ref();
@@ -387,7 +386,7 @@ mod tests {
 
         let p = G1::rand(rng);
         tr.add(&p);
-        let c = tr.challenge_field_element();
+        let c = tr.challenge::<Fq>();
 
         // Create a transcript inside of the circuit
         let cs = ConstraintSystem::<Fq>::new_ref();
@@ -411,7 +410,7 @@ mod tests {
 
         let p = G1::rand(rng);
         tr.add(&p);
-        let c = tr.challenge_field_element();
+        let c = tr.challenge::<Fr>();
 
         // Create a transcript inside of the circuit
         let cs = ConstraintSystem::<Fr>::new_ref();

@@ -10,9 +10,9 @@ use ark_r1cs_std::fields::{FieldVar, fp::FpVar};
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::mem::transmute_copy;
 
-use crate::transcripts::{AbsorbableVar, Transcript, TranscriptGadget};
+use crate::transcripts::{Absorbable, AbsorbableVar, Transcript, TranscriptGadget};
 
-impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
+impl<F: PrimeField + Absorbable> Transcript<F> for PoseidonSponge<F> {
     type Config = PoseidonConfig<F>;
     type Gadget = PoseidonSpongeVar<F>;
 
@@ -51,7 +51,7 @@ impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
     }
 }
 
-impl<F: PrimeField> TranscriptGadget<F> for PoseidonSpongeVar<F> {
+impl<F: PrimeField + Absorbable> TranscriptGadget<F> for PoseidonSpongeVar<F> {
     type Config = PoseidonConfig<F>;
     type Widget = PoseidonSponge<F>;
 
@@ -128,7 +128,7 @@ mod tests {
         let config = poseidon_circom_config::<Fr>();
         let mut tr = PoseidonSponge::<Fr>::new(config.clone());
         tr.add(&Fr::from(42_u32));
-        let c = tr.challenge_field_element();
+        let c = tr.challenge::<Fr>();
 
         // Create a transcript inside of the circuit
         let cs = ConstraintSystem::<Fr>::new_ref();
@@ -175,7 +175,7 @@ mod tests {
 
         let p = G1::rand(rng);
         tr.add(&p);
-        let c = tr.challenge_field_element();
+        let c = tr.challenge::<Fq>();
 
         // Create a transcript inside of the circuit
         let cs = ConstraintSystem::<Fq>::new_ref();
@@ -199,7 +199,7 @@ mod tests {
 
         let p = G1::rand(rng);
         tr.add(&p);
-        let c = tr.challenge_field_element();
+        let c = tr.challenge::<Fr>();
 
         // Create a transcript inside of the circuit
         let cs = ConstraintSystem::<Fr>::new_ref();

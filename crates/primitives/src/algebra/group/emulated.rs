@@ -23,7 +23,7 @@ use ark_std::borrow::Borrow;
 
 use crate::{
     algebra::{field::emulated::EmulatedFieldVar, group::SonobeCurve},
-    traits::SonobeField,
+    traits::SonobePrimeField,
     transcripts::AbsorbableVar,
 };
 
@@ -32,7 +32,7 @@ use crate::{
 /// `Target::BaseField` and are emulated over the constraint field `Base` in the
 /// circuit.
 #[derive(Debug, Clone)]
-pub struct EmulatedAffineVar<Base: SonobeField, Target: SonobeCurve> {
+pub struct EmulatedAffineVar<Base: SonobePrimeField, Target: SonobeCurve> {
     /// [`EmulatedAffineVar::x`] is the x-coordinate of the point's affine
     /// representation.
     pub x: EmulatedFieldVar<Base, Target::BaseField>,
@@ -41,7 +41,7 @@ pub struct EmulatedAffineVar<Base: SonobeField, Target: SonobeCurve> {
     pub y: EmulatedFieldVar<Base, Target::BaseField>,
 }
 
-impl<Base: SonobeField, Target: SonobeCurve> AllocVar<Target, Base>
+impl<Base: SonobePrimeField, Target: SonobeCurve> AllocVar<Target, Base>
     for EmulatedAffineVar<Base, Target>
 {
     fn new_variable<T: Borrow<Target>>(
@@ -63,7 +63,7 @@ impl<Base: SonobeField, Target: SonobeCurve> AllocVar<Target, Base>
     }
 }
 
-impl<Base: SonobeField, Target: SonobeCurve> GR1CSVar<Base> for EmulatedAffineVar<Base, Target> {
+impl<Base: SonobePrimeField, Target: SonobeCurve> GR1CSVar<Base> for EmulatedAffineVar<Base, Target> {
     type Value = Target;
 
     fn cs(&self) -> ConstraintSystemRef<Base> {
@@ -100,7 +100,7 @@ impl<Base: SonobeField, Target: SonobeCurve> GR1CSVar<Base> for EmulatedAffineVa
     }
 }
 
-impl<Base: SonobeField, Target: SonobeCurve> EqGadget<Base> for EmulatedAffineVar<Base, Target> {
+impl<Base: SonobePrimeField, Target: SonobeCurve> EqGadget<Base> for EmulatedAffineVar<Base, Target> {
     fn is_eq(&self, other: &Self) -> Result<Boolean<Base>, SynthesisError> {
         Ok(self.x.is_eq(&other.x)? & self.y.is_eq(&other.y)?)
     }
@@ -112,7 +112,7 @@ impl<Base: SonobeField, Target: SonobeCurve> EqGadget<Base> for EmulatedAffineVa
     }
 }
 
-impl<Base: SonobeField, Target: SonobeCurve> EmulatedAffineVar<Base, Target> {
+impl<Base: SonobePrimeField, Target: SonobeCurve> EmulatedAffineVar<Base, Target> {
     /// [`EmulatedAffineVar::zero`] allocates the zero point (point at infinity)
     /// of the curve as a constant.
     pub fn zero() -> Self {
@@ -122,7 +122,7 @@ impl<Base: SonobeField, Target: SonobeCurve> EmulatedAffineVar<Base, Target> {
     }
 }
 
-impl<Base: SonobeField, Target: SonobeCurve> AbsorbableVar<Base>
+impl<Base: SonobePrimeField, Target: SonobeCurve> AbsorbableVar<Base>
     for EmulatedAffineVar<Base, Target>
 {
     fn absorb_into(&self, dest: &mut Vec<FpVar<Base>>) -> Result<(), SynthesisError> {
@@ -130,7 +130,7 @@ impl<Base: SonobeField, Target: SonobeCurve> AbsorbableVar<Base>
     }
 }
 
-impl<Base: SonobeField, Target: SonobeCurve> CondSelectGadget<Base>
+impl<Base: SonobePrimeField, Target: SonobeCurve> CondSelectGadget<Base>
     for EmulatedAffineVar<Base, Target>
 {
     fn conditionally_select(
@@ -155,10 +155,7 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::*;
-    use crate::{
-        traits::{Inputize, InputizeEmulated},
-        transcripts::Absorbable,
-    };
+    use crate::{traits::Inputize, transcripts::Absorbable};
 
     #[test]
     fn test_alloc_zero() {
@@ -195,14 +192,14 @@ mod tests {
         let p_var = EmulatedAffineVar::<Fr, Projective>::new_witness(cs.clone(), || Ok(p))?;
         assert_eq!(
             [p_var.x.limbs.value()?, p_var.y.limbs.value()?].concat(),
-            p.inputize_emulated()
+            EmulatedAffineVar::inputize(&p)
         );
 
         let cs = ConstraintSystem::<Fq>::new_ref();
         let p_var = ProjectiveVar::<PallasConfig, FpVar<Fq>>::new_witness(cs.clone(), || Ok(p))?;
         assert_eq!(
             vec![p_var.x.value()?, p_var.y.value()?, p_var.z.value()?],
-            p.inputize()
+            ProjectiveVar::inputize(&p)
         );
         Ok(())
     }

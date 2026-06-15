@@ -27,6 +27,7 @@
 
 pub mod definitions;
 pub mod nova;
+pub mod superneo;
 
 pub use self::definitions::{
     FoldingSchemeDef, FoldingSchemeDefGadget,
@@ -48,15 +49,16 @@ pub use self::definitions::{
 
 #[cfg(test)]
 mod tests {
-    use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystem};
+    use ark_crypto_primitives::sponge::poseidon::PoseidonSponge;
+use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystem};
     use ark_std::{error::Error, rand::Rng, sync::Arc};
     use sonobe_primitives::{
+        arithmetizations::Arith,
         circuits::{ArithExtractor, AssignmentsOwned},
-        commitments::CommitmentDef,
         relations::WitnessInstanceSampler,
         transcripts::{
             Transcript,
-            griffin::{GriffinParams, sponge::GriffinSponge},
+            griffin::{GriffinParams, sponge::GriffinSponge}, poseidon::poseidon_paper_config,
         },
     };
 
@@ -65,16 +67,16 @@ mod tests {
     #[allow(non_snake_case)]
     pub fn test_folding_scheme<FS: FoldingSchemeOps<M, N>, const M: usize, const N: usize>(
         config: FS::Config,
-        circuit: impl ConstraintSynthesizer<<FS::CM as CommitmentDef>::Scalar>,
-        assignments_vec: Vec<AssignmentsOwned<<FS::CM as CommitmentDef>::Scalar>>,
+        circuit: impl ConstraintSynthesizer<<FS::Arith as Arith>::Field>,
+        assignments_vec: Vec<AssignmentsOwned<<FS::Arith as Arith>::Field>>,
         mut rng: impl Rng,
     ) -> Result<(), Box<dyn Error>>
     where
-        FS::Arith: From<ConstraintSystem<<FS::CM as CommitmentDef>::Scalar>>,
+        FS::Arith: From<ConstraintSystem<<FS::Arith as Arith>::Field>>,
     {
         let pp = FS::preprocess(config, &mut rng)?;
 
-        let cs = ArithExtractor::new();
+        let mut cs = ArithExtractor::new();
         cs.execute_synthesizer(circuit)?;
         let arith = cs.arith()?;
         let dk = FS::generate_keys(pp, arith)?;
@@ -92,10 +94,10 @@ mod tests {
         let mut Ws = Ws.try_into().unwrap();
         let mut Us = Us.try_into().unwrap();
 
-        let config = Arc::new(GriffinParams::new(16, 5, 9));
+        let config = poseidon_paper_config::<_, 128>(7, 4);
 
-        let mut transcript_p = GriffinSponge::new(config.clone());
-        let mut transcript_v = GriffinSponge::new(config);
+        let mut transcript_p = PoseidonSponge::new(config.clone());
+        let mut transcript_v = PoseidonSponge::new(config);
 
         for assignments in assignments_vec {
             let mut ws = vec![];
@@ -113,9 +115,9 @@ mod tests {
             let ws = ws.try_into().unwrap();
             let us = us.try_into().unwrap();
 
-            let (WW, UU, pi) = FS::prove(pk, &mut transcript_p, &Ws, &Us, &ws, &us, &mut rng)?;
+            let (WW, UU, pi) = FS::prove(&pk, &mut transcript_p, &Ws, &Us, &ws, &us, &mut rng)?;
             FS::decide_running(&dk, &WW, &UU)?;
-            assert_eq!(FS::verify(vk, &mut transcript_v, &Us, &us, &pi)?, UU);
+            assert_eq!(FS::verify(&vk, &mut transcript_v, &Us, &us, &pi)?, UU);
 
             for i in 0..M {
                 let (W, U) = WitnessInstanceSampler::<FS::RW, FS::RU>::sample(&dk, (), &mut rng)?;

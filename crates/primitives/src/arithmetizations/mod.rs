@@ -6,6 +6,8 @@
 //! However, user circuits are always synthesized into R1CS currently, since
 //! R1CS is the only supported constraint system by ark-relations.
 
+use ark_ff::Field;
+use ark_r1cs_std::alloc::AllocVar;
 use ark_relations::gr1cs::SynthesisError;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{fmt::Debug, log2};
@@ -66,6 +68,8 @@ pub struct ArithConfig {
     /// [`ArithConfig::n_witnesses`] specifies the number of witnesses in the
     /// constraint system.
     pub n_witnesses: usize,
+
+    pub n_matrices: usize,
 }
 
 impl ArithConfig {
@@ -74,6 +78,12 @@ impl ArithConfig {
     pub fn log_constraints(&self) -> usize {
         log2(self.n_constraints) as usize
     }
+
+    /// [`ArithConfig::log_variables`] returns the base-2 logarithm of the
+    /// number of variables in the constraint system.
+    pub fn log_variables(&self) -> usize {
+        log2(self.n_variables) as usize
+    }
 }
 
 /// [`Arith`] is a trait for constraint systems (R1CS, CCS, etc.), where we
@@ -81,8 +91,16 @@ impl ArithConfig {
 /// In addition to the configuration, the implementor of this trait may also
 /// store the actual constraints and other information.
 pub trait Arith: Clone + Default + Send + Sync + CanonicalSerialize + CanonicalDeserialize {
+    type Field: Field;
+
     /// [`Arith::config`] returns the configuration of the constraint system.
     fn config(&self) -> ArithConfig;
+}
+
+pub trait ArithGadget: AllocVar<Self::Widget, Self::ConstraintField> {
+    type ConstraintField: Field;
+
+    type Widget: Arith;
 }
 
 /// [`ArithRelation`] treats a constraint system as a relation between a witness
@@ -171,7 +189,7 @@ impl<W, U, A: ArithRelation<W, U>> Relation<W, U> for A {
 
 /// [`ArithRelationGadget`] defines the in-circuit gadget for constraint system
 /// operations in the same way as [`ArithRelation`].
-pub trait ArithRelationGadget<WVar, UVar> {
+pub trait ArithRelationGadget<WVar, UVar>: ArithGadget {
     /// [`ArithRelationGadget::Evaluation`] defines the type of the evaluation
     /// result returned by [`ArithRelationGadget::eval_relation`], and consumed
     /// by [`ArithRelationGadget::check_evaluation`].
