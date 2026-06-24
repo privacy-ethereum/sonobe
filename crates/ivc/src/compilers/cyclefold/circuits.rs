@@ -8,7 +8,6 @@ use ark_r1cs_std::{
     fields::{FieldVar, fp::FpVar},
 };
 use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
-use ark_serialize::CanonicalSerialize;
 use ark_std::marker::PhantomData;
 use sonobe_fs::{
     FoldingInstanceVar, FoldingSchemeFullVerifierGadget, FoldingSchemePartialVerifierGadget,
@@ -118,8 +117,6 @@ where
 
         let is_basecase = i.is_zero()?;
 
-        let state_size = FpVar::Constant((initial_state.uncompressed_size() as u64).into());
-
         let initial_state = FC::StateVar::new_witness(cs.clone(), || Ok(initial_state))?;
         let current_state = FC::StateVar::new_witness(cs.clone(), || Ok(current_state))?;
 
@@ -139,7 +136,6 @@ where
         //      the `i-1`-th step, which is `u.x = H(i, z_0, z_i, U, cf_U)`.
         let u_x = sponge
             .clone()
-            .add(&state_size)?
             .add(&i)?
             .add(&initial_state)?
             .add(&current_state)?
@@ -189,7 +185,6 @@ where
         // 4. Compute public input `uu.x = H(i+1, z_0, z_{i+1}, UU, cf_UU)`.
         let uu_x = sponge
             .clone()
-            .add(&state_size)?
             .add(&ii)?
             .add(&initial_state)?
             .add(&next_state)?

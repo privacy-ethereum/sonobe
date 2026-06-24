@@ -56,15 +56,15 @@ pub trait IVC {
     /// [`IVC::ProverKey`] defines the prover key type for the IVC scheme.
     /// We parameterize it by the step circuit type `FC`, so that a prover key
     /// for one step circuit cannot be used for another step circuit.
-    type ProverKey<FC>;
+    type ProverKey<FC: FCircuit>;
     /// [`IVC::VerifierKey`] defines the verifier key type for the IVC scheme.
     /// We parameterize it by the step circuit type `FC`, so that a verifier key
     /// for one step circuit cannot be used for another step circuit.
-    type VerifierKey<FC>;
+    type VerifierKey<FC: FCircuit>;
     /// [`IVC::Proof`] defines the proof type for the IVC scheme.
     /// We parameterize it by the step circuit type `FC`, so that a proof for
     /// one step circuit cannot be used for another step circuit.
-    type Proof<FC>: for<'a> Dummy<&'a Self::ProverKey<FC>>;
+    type Proof<FC: FCircuit>: for<'a> Dummy<&'a Self::ProverKey<FC>>;
 
     /// [`IVC::preprocess`] defines the preprocessing algorithm, which is a
     /// randomized algorithm that takes as input the config / parameterization
@@ -135,7 +135,7 @@ pub trait IVC {
 /// prover who maintains running state across iterations, so that the user does
 /// not need to manually track and pass in the current state and proof at each
 /// step.
-pub struct IVCStatefulProver<'a, FC: FCircuit, I: IVC> {
+pub struct IVCStatefulProver<'a, FC: FCircuit<Field = I::Field>, I: IVC> {
     pk: &'a I::ProverKey<FC>,
     step_circuit: &'a FC,
     i: usize,
@@ -211,7 +211,7 @@ pub trait Decider {
     ///
     /// This can be seen as a SNARK with circuit-specific setup.
     // TODO (@winderica): consider universal/transparent setup
-    fn preprocess_and_generate_keys<FC>(
+    fn preprocess_and_generate_keys<FC: FCircuit<Field = <Self::IVC as IVC>::Field>>(
         ivc_pk: &<Self::IVC as IVC>::ProverKey<FC>,
         rng: impl RngCore,
     ) -> Result<(Self::ProverKey, Self::VerifierKey), Error>;

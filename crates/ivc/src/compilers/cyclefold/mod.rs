@@ -95,11 +95,8 @@ pub trait FoldingSchemeCycleFoldExt<const M: usize, const N: usize>:
 }
 
 /// [`Key`] is the prover / verifier key for the CycleFold-based IVC scheme.
-pub struct Key<FS1: FoldingSchemeDef, FS2: FoldingSchemeDef, T>(
-    pub FS1::DeciderKey,
-    pub FS2::DeciderKey,
-    pub T,
-);
+#[derive(Clone)]
+pub struct Key<DK1: Clone, DK2: Clone, T: Clone>(pub DK1, pub DK2, pub T);
 
 /// [`Proof`] is the proof produced by the CycleFold compiler.
 pub struct Proof<FS1: FoldingSchemeDef, FS2: FoldingSchemeDef>(
@@ -111,8 +108,10 @@ pub struct Proof<FS1: FoldingSchemeDef, FS2: FoldingSchemeDef>(
     pub FS2::RU,
 );
 
-impl<FS1: FoldingSchemeDef, FS2: FoldingSchemeDef, T> Dummy<&Key<FS1, FS2, T>> for Proof<FS1, FS2> {
-    fn dummy(pk: &Key<FS1, FS2, T>) -> Self {
+impl<FS1: FoldingSchemeDef, FS2: FoldingSchemeDef, T: Clone>
+    Dummy<&Key<FS1::DeciderKey, FS2::DeciderKey, T>> for Proof<FS1, FS2>
+{
+    fn dummy(pk: &Key<FS1::DeciderKey, FS2::DeciderKey, T>) -> Self {
         let cfg1 = &pk.0.to_arith_config();
         let cfg2 = &pk.1.to_arith_config();
         Self(
@@ -173,11 +172,13 @@ where
 
     type PublicParam = (FS1::PublicParam, FS2::PublicParam, T::Config);
 
-    type ProverKey<FC> = Key<FS1, FS2, (T::Config, Self::Field)>;
+    type ProverKey<FC: FCircuit> =
+        Key<FS1::DeciderKey, FS2::DeciderKey, (T::Config, Self::Field, FC::State)>;
 
-    type VerifierKey<FC> = Key<FS1, FS2, (T::Config, Self::Field)>;
+    type VerifierKey<FC: FCircuit> =
+        Key<FS1::DeciderKey, FS2::DeciderKey, (T::Config, Self::Field, FC::State)>;
 
-    type Proof<FC> = Proof<FS1, FS2>;
+    type Proof<FC: FCircuit> = Proof<FS1, FS2>;
 
     fn preprocess(
         (cfg1, cfg2, hash_config): Self::Config,
@@ -261,16 +262,15 @@ where
             hash_config.serialize_compressed(HashMarshaller(&mut shake))?;
             hash_to_field::<_, _, 128>(&mut shake.finalize_xof())
         };
+        let reference_state = step_circuit.dummy_state();
+        let key = Key(dk1, dk2, (hash_config, pp_hash, reference_state));
 
-        Ok((
-            Key(dk1.clone(), dk2.clone(), (hash_config.clone(), pp_hash)),
-            Key(dk1, dk2, (hash_config, pp_hash)),
-        ))
+        Ok((key.clone(), key))
     }
 
     #[allow(non_snake_case)]
     fn prove<FC: FCircuit<Field = Self::Field>>(
-        Key(dk1, dk2, (hash_config, pp_hash)): &Self::ProverKey<FC>,
+        Key(dk1, dk2, (hash_config, pp_hash, _)): &Self::ProverKey<FC>,
         step_circuit: &FC,
         i: usize,
         initial_state: &FC::State,
@@ -358,7 +358,7 @@ where
 
     #[allow(non_snake_case)]
     fn verify<FC: FCircuit<Field = Self::Field>>(
-        Key(dk1, dk2, (hash_config, pp_hash)): &Self::VerifierKey<FC>,
+        Key(dk1, dk2, (hash_config, pp_hash, reference_state)): &Self::VerifierKey<FC>,
         i: usize,
         initial_state: &FC::State,
         current_state: &FC::State,
@@ -370,7 +370,16 @@ where
                 .ok_or(Error::IVCVerificationFail);
         }
 
-        if initial_state.uncompressed_size() != current_state.uncompressed_size() {
+        // Ensure the prover supplied `initial_state` and `current_state` have
+        // the same shape as `reference_state`'s, which is exactly what the
+        // augmented circuit was synthesized for.
+        //
+        // A state that merely re-groups the same flattened field elements (e.g.
+        // `[[x, y], []]` vs `[[x], [y]]`) has a different shape and is rejected
+        // here.
+        if !FC::same_state_shape(reference_state, initial_state)
+            || !FC::same_state_shape(reference_state, current_state)
+        {
             return Err(Error::IVCVerificationFail);
         }
 
@@ -378,7 +387,6 @@ where
         let mut sponge = hash.separate_domain("sponge".as_ref());
 
         let u_x = sponge
-            .add(&initial_state.uncompressed_size())
             .add(&i)
             .add(initial_state)
             .add(current_state)

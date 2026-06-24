@@ -5,7 +5,6 @@ use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
 use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError, SynthesisMode,
 };
-use ark_serialize::CanonicalSerialize;
 use ark_std::{
     fmt::Debug,
     ops::{Deref, Index, IndexMut},
@@ -68,7 +67,7 @@ pub trait FCircuit {
     /// It is usually an array of field elements, but we make our design quite
     /// flexible so that the implementation is free to choose any structure for
     /// it.
-    type State: Clone + PartialEq + Absorbable + CanonicalSerialize;
+    type State: Clone + PartialEq + Absorbable;
     /// [`FCircuit::StateVar`] is the in-circuit variable type for the state.
     ///
     /// If the implementation chooses custom structures for the state, it should
@@ -84,7 +83,25 @@ pub trait FCircuit {
     /// by each step of the circuit.
     type ExternalOutputs;
 
+    /// [`FCircuit::same_state_shape`] returns whether two states `a` and `b`
+    /// have the same shape/structure.
+    ///
+    /// This allows the verifier to check whether the prover's claimed states
+    /// have the desired shape.
+    ///
+    /// The implementation should perform the checks carefully to ensure that
+    /// all fields/members of the provided states are consistent. Specifically,
+    /// if all fields/members of [`FCircuit::State`] have fixed size, then the
+    /// shape consistency is trivially `true`. However, if [`FCircuit::State`]
+    /// contains variable-length fields/members (e.g., `Vec<F>`, `Vec<Vec<F>>`),
+    /// then the implementation must examine all of such fields/members and
+    /// return `false` when any of them are differently sized in `a` and `b`.
+    fn same_state_shape(a: &Self::State, b: &Self::State) -> bool;
+
     /// [`FCircuit::dummy_state`] returns a dummy state for the circuit.
+    ///
+    /// The dummy state should have the same shape as states in real IVC
+    /// executions.
     fn dummy_state(&self) -> Self::State;
 
     /// [`FCircuit::dummy_external_inputs`] returns dummy external inputs for

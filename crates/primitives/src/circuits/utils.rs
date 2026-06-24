@@ -65,6 +65,11 @@ impl<F: SonobeField> FCircuit for CircuitForTest<F> {
         [F::zero(); 1]
     }
 
+    fn same_state_shape(_a: &Self::State, _b: &Self::State) -> bool {
+        // `[F; 1]` is fixed-size, so all states share the same shape.
+        true
+    }
+
     fn dummy_external_inputs(&self) -> Self::ExternalInputs {}
 
     fn generate_step_constraints(
