@@ -6,6 +6,8 @@
 //! However, user circuits are always synthesized into R1CS currently, since
 //! R1CS is the only supported constraint system by ark-relations.
 
+use ark_ff::Field;
+use ark_r1cs_std::alloc::AllocVar;
 use ark_relations::gr1cs::SynthesisError;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{fmt::Debug, log2};
@@ -83,6 +85,12 @@ impl ArithConfig {
 pub trait Arith: Clone + Default + Send + Sync + CanonicalSerialize + CanonicalDeserialize {
     /// [`Arith::config`] returns the configuration of the constraint system.
     fn config(&self) -> ArithConfig;
+}
+
+pub trait ArithGadget: AllocVar<Self::Widget, Self::ConstraintField> {
+    type ConstraintField: Field;
+
+    type Widget: Arith;
 }
 
 /// [`ArithRelation`] treats a constraint system as a relation between a witness
@@ -171,7 +179,7 @@ impl<W, U, A: ArithRelation<W, U>> Relation<W, U> for A {
 
 /// [`ArithRelationGadget`] defines the in-circuit gadget for constraint system
 /// operations in the same way as [`ArithRelation`].
-pub trait ArithRelationGadget<WVar, UVar> {
+pub trait ArithRelationGadget<WVar, UVar>: ArithGadget {
     /// [`ArithRelationGadget::Evaluation`] defines the type of the evaluation
     /// result returned by [`ArithRelationGadget::eval_relation`], and consumed
     /// by [`ArithRelationGadget::check_evaluation`].

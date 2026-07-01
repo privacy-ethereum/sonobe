@@ -10,21 +10,24 @@ use sonobe_fs::{
     FoldingSchemeDefGadget,
     nova::{CycleFoldNova, Nova},
 };
+#[cfg(feature = "evm")]
+use sonobe_primitives::utils::evm::serialize::EVMSerialize;
 use sonobe_primitives::{
     algebra::{
         field::emulated::{Bounds, EmulatedFieldVar},
-        group::emulated::EmulatedAffineVar,
+        group::{CF1, CF2, SonobeCurve, emulated::EmulatedAffineVar},
         ops::bits::{FromBits, ToBitsGadgetExt},
     },
     circuits::WitnessToPublic,
     commitments::GroupBasedCommitment,
-    traits::{CF1, CF2, SonobeCurve},
     transcripts::{
         Transcript, TranscriptGadget,
         replay::{ReplayTranscript, ReplayTranscriptVar},
     },
 };
 
+#[cfg(feature = "evm")]
+use crate::compilers::cyclefold::evm_verifier::{DeciderFoldFragment, FoldingSchemeEVMExt};
 use crate::compilers::cyclefold::{
     CycleFoldBasedIVC, FoldingSchemeCycleFoldExt, circuits::CycleFoldCircuit,
 };
@@ -209,22 +212,69 @@ impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> FoldingSchemeCycleFo
 pub type NovaNovaIVC<VC1, VC2, T, const CHALLENGE_BITS: usize = 128> =
     CycleFoldBasedIVC<Nova<VC1, CHALLENGE_BITS>, CycleFoldNova<VC2, CHALLENGE_BITS>, T>;
 
+#[cfg(feature = "evm")]
+impl<
+    CM: GroupBasedCommitment<Commitment: sonobe_primitives::utils::evm::serialize::EVMSerialize>,
+    const CHALLENGE_BITS: usize,
+> FoldingSchemeEVMExt<1, 1> for Nova<CM, CHALLENGE_BITS>
+{
+    fn decider_fold_fragment() -> DeciderFoldFragment {
+        let challenge = "challenge";
+        DeciderFoldFragment {
+            challenge: challenge.to_string(),
+            params: ["U_cm_e", "cm_t", "U_cm_w", "u_cm_w"]
+                .map(|p| format!("uint256[2] calldata {p}"))
+                .to_vec(),
+            body: [
+                format!("uint256 rho = {challenge} & ((1 << {CHALLENGE_BITS}) - 1);"),
+                "uint256[2] memory cm_e = _ecAdd(U_cm_e, _ecMul(cm_t, rho));".to_string(),
+                "uint256[2] memory cm_w = _ecAdd(U_cm_w, _ecMul(u_cm_w, rho));".to_string(),
+            ]
+            .join("\n"),
+            commitments: ["cm_e", "cm_w"].map(ToString::to_string).to_vec(),
+        }
+    }
+
+    #[allow(non_snake_case)]
+    fn verify_calldata(
+        [U]: &[impl Borrow<Self::RU>; 1],
+        [u]: &[impl Borrow<Self::IU>; 1],
+        proof: &Self::Proof<1, 1>,
+    ) -> Result<Vec<u8>, sonobe_fs::Error> {
+        let (U, u) = (U.borrow(), u.borrow());
+        Ok((&U.cm_e, proof, &U.cm_w, &u.cm_w).to_calldata())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use ark_bn254::{Fr, G1Projective as C1};
+    use ark_bn254::{Bn254, Fr, G1Projective as C1};
     use ark_ff::UniformRand;
     use ark_grumpkin::Projective as C2;
     use ark_std::{error::Error, rand::thread_rng, sync::Arc};
+    #[cfg(feature = "evm")]
+    use askama::Template;
     use sonobe_primitives::{
-        circuits::utils::CircuitForTest,
+        circuits::test_utils::CircuitForTest,
         commitments::pedersen::Pedersen,
         transcripts::griffin::{GriffinParams, sponge::GriffinSponge},
     };
+    use sonobe_snarks::cp::legogroth16::LegoGroth16;
+    #[cfg(feature = "evm")]
+    use sonobe_snarks::cp::legogroth16::evm_verifier::LegoGroth16VerifierTemplate;
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::*;
-    use crate::tests::test_ivc;
+    use crate::{
+        compilers::cyclefold::CycleFoldBasedIVCDecider,
+        tests::{test_decider, test_ivc},
+    };
+    #[cfg(feature = "evm")]
+    use crate::{
+        compilers::cyclefold::evm_verifier::CycleFoldBasedIVCDeciderVerifierTemplate,
+        tests::test_decider_evm,
+    };
 
     #[test]
     fn test_nova_nova() -> Result<(), Box<dyn Error>> {
@@ -237,8 +287,63 @@ mod tests {
             },
             vec![(); 20],
             &mut rng,
-        )?;
+        )
+    }
 
-        Ok(())
+    #[test]
+    fn test_nova_nova_decider() -> Result<(), Box<dyn Error>> {
+        let mut rng = thread_rng();
+
+        test_decider::<
+            CycleFoldBasedIVCDecider<
+                Nova<Pedersen<C1, true>>,
+                CycleFoldNova<Pedersen<C2, true>>,
+                GriffinSponge<_>,
+                LegoGroth16<Bn254>,
+            >,
+            _,
+        >(
+            (65536, 2048, Arc::new(GriffinParams::new(16, 5, 9))),
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            vec![(); 20],
+            &mut rng,
+        )
+    }
+
+    #[cfg(feature = "evm")]
+    #[test]
+    fn test_nova_nova_decider_evm() -> Result<(), Box<dyn Error>> {
+        let mut rng = thread_rng();
+
+        test_decider_evm::<
+            CycleFoldBasedIVCDecider<
+                Nova<Pedersen<C1, true>>,
+                CycleFoldNova<Pedersen<C2, true>>,
+                GriffinSponge<Fr>,
+                LegoGroth16<Bn254>,
+            >,
+            _,
+        >(
+            (65536, 2048, Arc::new(GriffinParams::new(16, 5, 9))),
+            CircuitForTest {
+                x: Fr::rand(&mut rng),
+            },
+            vec![(); 20],
+            |(lego_vk, _, _, _, reference_state)| {
+                let lego_src = LegoGroth16VerifierTemplate { vk: lego_vk }.render()?;
+                let decider_src = CycleFoldBasedIVCDeciderVerifierTemplate::<
+                    Nova<Pedersen<C1, true>>,
+                    CircuitForTest<Fr>,
+                >::new(lego_vk, reference_state)
+                .render()?;
+                Ok(vec![
+                    ("DeciderVerifier.sol".to_string(), decider_src),
+                    ("LegoGroth16Verifier.sol".to_string(), lego_src),
+                ])
+            },
+            &mut rng,
+        )
     }
 }

@@ -1,0 +1,139 @@
+{%- let numCommitments = vk.link_vk.c.len() - 1 -%}
+{%- let numPublicInputs = vk.cc_vk.gamma_abc_g1_pub.len() - 1 %}
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.35;
+
+contract LegoGroth16Verifier {
+    error ProofInvalid();
+    error NonCanonicalInput();
+
+    // BN254 scalar field order
+    uint256 constant R = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+
+    uint256 constant ALPHA_X = {{ vk.cc_vk.alpha_g1.x().unwrap() }};
+    uint256 constant ALPHA_Y = {{ vk.cc_vk.alpha_g1.y().unwrap() }};
+
+    uint256 constant BETA_NEG_X_0 = {{ vk.cc_vk.beta_g2_neg.x().unwrap().c0 }};
+    uint256 constant BETA_NEG_X_1 = {{ vk.cc_vk.beta_g2_neg.x().unwrap().c1 }};
+    uint256 constant BETA_NEG_Y_0 = {{ vk.cc_vk.beta_g2_neg.y().unwrap().c0 }};
+    uint256 constant BETA_NEG_Y_1 = {{ vk.cc_vk.beta_g2_neg.y().unwrap().c1 }};
+
+    uint256 constant GAMMA_NEG_X_0 = {{ vk.cc_vk.gamma_g2_neg.x().unwrap().c0 }};
+    uint256 constant GAMMA_NEG_X_1 = {{ vk.cc_vk.gamma_g2_neg.x().unwrap().c1 }};
+    uint256 constant GAMMA_NEG_Y_0 = {{ vk.cc_vk.gamma_g2_neg.y().unwrap().c0 }};
+    uint256 constant GAMMA_NEG_Y_1 = {{ vk.cc_vk.gamma_g2_neg.y().unwrap().c1 }};
+
+    uint256 constant DELTA_NEG_X_0 = {{ vk.cc_vk.delta_g2_neg.x().unwrap().c0 }};
+    uint256 constant DELTA_NEG_X_1 = {{ vk.cc_vk.delta_g2_neg.x().unwrap().c1 }};
+    uint256 constant DELTA_NEG_Y_0 = {{ vk.cc_vk.delta_g2_neg.y().unwrap().c0 }};
+    uint256 constant DELTA_NEG_Y_1 = {{ vk.cc_vk.delta_g2_neg.y().unwrap().c1 }};
+
+    {% for i in 0..vk.cc_vk.gamma_abc_g1_pub.len() %}
+    uint256 constant GAMMA_ABC_{{ i }}_X = {{ vk.cc_vk.gamma_abc_g1_pub[i].x().unwrap() }};
+    uint256 constant GAMMA_ABC_{{ i }}_Y = {{ vk.cc_vk.gamma_abc_g1_pub[i].y().unwrap() }};
+    {%- endfor %}
+
+    {% for i in 0..vk.link_vk.c.len() %}
+    uint256 constant LINK_C_{{ i }}_X_0 = {{ vk.link_vk.c[i].x().unwrap().c0 }};
+    uint256 constant LINK_C_{{ i }}_X_1 = {{ vk.link_vk.c[i].x().unwrap().c1 }};
+    uint256 constant LINK_C_{{ i }}_Y_0 = {{ vk.link_vk.c[i].y().unwrap().c0 }};
+    uint256 constant LINK_C_{{ i }}_Y_1 = {{ vk.link_vk.c[i].y().unwrap().c1 }};
+    {%- endfor %}
+
+    uint256 constant LINK_A_NEG_X_0 = {{ vk.link_vk.a_neg.x().unwrap().c0 }};
+    uint256 constant LINK_A_NEG_X_1 = {{ vk.link_vk.a_neg.x().unwrap().c1 }};
+    uint256 constant LINK_A_NEG_Y_0 = {{ vk.link_vk.a_neg.y().unwrap().c0 }};
+    uint256 constant LINK_A_NEG_Y_1 = {{ vk.link_vk.a_neg.y().unwrap().c1 }};
+
+    function verifyProof(
+        uint256[{{ numPublicInputs }}] calldata x,
+        uint256[{{ numCommitments * 2 }}] calldata c,
+        uint256[12] calldata proof
+    ) public view {
+        for (uint256 k = 0; k < {{ numPublicInputs }}; k++) {
+            if (x[k] >= R) {
+                revert NonCanonicalInput();
+            }
+        }
+
+        bool ok = true;
+        uint256 pub_x;
+        uint256 pub_y;
+
+        assembly ("memory-safe") {
+            let f := mload(0x40)
+
+            // Public input MSM
+            mstore(f, GAMMA_ABC_0_X)
+            mstore(add(f, 0x20), GAMMA_ABC_0_Y)
+            {% for i in 1..vk.cc_vk.gamma_abc_g1_pub.len() %}
+            mstore(add(f, 0x40), GAMMA_ABC_{{ i }}_X)
+            mstore(add(f, 0x60), GAMMA_ABC_{{ i }}_Y)
+            mstore(add(f, 0x80), calldataload(add(x, {{ (i - 1) * 0x20 }})))
+            ok := and(ok, staticcall(gas(), 0x07, add(f, 0x40), 0x60, add(f, 0x40), 0x40))
+            ok := and(ok, staticcall(gas(), 0x06, f, 0x80, f, 0x40))
+            {%- endfor %}
+
+            pub_x := mload(f)
+            pub_y := mload(add(f, 0x20))
+
+            // A, B
+            calldatacopy(f, proof, 0xc0)
+
+            // C, -δ
+            calldatacopy(add(f, 0xc0), add(proof, 0xc0), 0x40)
+            mstore(add(f, 0x100), DELTA_NEG_X_1)
+            mstore(add(f, 0x120), DELTA_NEG_X_0)
+            mstore(add(f, 0x140), DELTA_NEG_Y_1)
+            mstore(add(f, 0x160), DELTA_NEG_Y_0)
+
+            // α, -β
+            mstore(add(f, 0x180), ALPHA_X)
+            mstore(add(f, 0x1a0), ALPHA_Y)
+            mstore(add(f, 0x1c0), BETA_NEG_X_1)
+            mstore(add(f, 0x1e0), BETA_NEG_X_0)
+            mstore(add(f, 0x200), BETA_NEG_Y_1)
+            mstore(add(f, 0x220), BETA_NEG_Y_0)
+
+            // pub + D, -γ
+            mstore(add(f, 0x240), pub_x)
+            mstore(add(f, 0x260), pub_y)
+            calldatacopy(add(f, 0x280), add(proof, 0x100), 0x40)
+            ok := and(ok, staticcall(gas(), 0x06, add(f, 0x240), 0x80, add(f, 0x240), 0x40))
+            mstore(add(f, 0x280), GAMMA_NEG_X_1)
+            mstore(add(f, 0x2a0), GAMMA_NEG_X_0)
+            mstore(add(f, 0x2c0), GAMMA_NEG_Y_1)
+            mstore(add(f, 0x2e0), GAMMA_NEG_Y_0)
+
+            ok := and(ok, staticcall(gas(), 0x08, f, 0x300, f, 0x20))
+            ok := and(ok, mload(f))
+
+            // c || D, Link_C
+            {% for i in 0..numCommitments %}
+            calldatacopy(add(f, {{ i * 6 * 0x20 }}), add(c, {{ i * 2 * 0x20 }}), 0x40)
+            mstore(add(f, {{ i * 6 * 0x20 + 0x40 }}), LINK_C_{{ i }}_X_1)
+            mstore(add(f, {{ i * 6 * 0x20 + 0x60 }}), LINK_C_{{ i }}_X_0)
+            mstore(add(f, {{ i * 6 * 0x20 + 0x80 }}), LINK_C_{{ i }}_Y_1)
+            mstore(add(f, {{ i * 6 * 0x20 + 0xa0 }}), LINK_C_{{ i }}_Y_0)
+            {%- endfor %}
+            calldatacopy(add(f, {{ numCommitments * 6 * 0x20 }}), add(proof, 0x100), 0x40)
+            mstore(add(f, {{ numCommitments * 6 * 0x20 + 0x40 }}), LINK_C_{{ numCommitments }}_X_1)
+            mstore(add(f, {{ numCommitments * 6 * 0x20 + 0x60 }}), LINK_C_{{ numCommitments }}_X_0)
+            mstore(add(f, {{ numCommitments * 6 * 0x20 + 0x80 }}), LINK_C_{{ numCommitments }}_Y_1)
+            mstore(add(f, {{ numCommitments * 6 * 0x20 + 0xa0 }}), LINK_C_{{ numCommitments }}_Y_0)
+            // Link_pi, -Link_A
+            calldatacopy(add(f, {{ (numCommitments + 1) * 6 * 0x20 }}), add(proof, 0x140), 0x40)
+            mstore(add(f, {{ (numCommitments + 1) * 6 * 0x20 + 0x40 }}), LINK_A_NEG_X_1)
+            mstore(add(f, {{ (numCommitments + 1) * 6 * 0x20 + 0x60 }}), LINK_A_NEG_X_0)
+            mstore(add(f, {{ (numCommitments + 1) * 6 * 0x20 + 0x80 }}), LINK_A_NEG_Y_1)
+            mstore(add(f, {{ (numCommitments + 1) * 6 * 0x20 + 0xa0 }}), LINK_A_NEG_Y_0)
+
+            ok := and(ok, staticcall(gas(), 0x08, f, {{ (numCommitments + 2) * 6 * 0x20 }}, f, 0x20))
+            ok := and(ok, mload(f))
+        }
+        if (!ok) {
+            revert ProofInvalid();
+        }
+    }
+}

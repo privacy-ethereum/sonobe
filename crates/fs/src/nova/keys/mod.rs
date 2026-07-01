@@ -19,6 +19,8 @@ use super::{
 };
 use crate::{DeciderKey, Error, PlainInstance as PU, PlainWitness as PW};
 
+pub mod circuits;
+
 /// [`NovaKey`] is Nova's decider key.
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct NovaKey<A: Arith, CM: CommitmentDef> {

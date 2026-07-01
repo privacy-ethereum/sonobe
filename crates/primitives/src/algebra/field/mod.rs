@@ -1,7 +1,7 @@
 //! This module defines extension traits for field elements and their in-circuit
 //! counterparts, along with some common implementations.
 
-use ark_ff::{BigInteger, Fp, FpConfig, PrimeField};
+use ark_ff::{BigInteger, Field, Fp, Fp2, Fp2Config, FpConfig, PrimeField};
 use ark_r1cs_std::{
     GR1CSVar,
     alloc::AllocVar,
@@ -12,13 +12,14 @@ use ark_relations::gr1cs::SynthesisError;
 use ark_std::{
     any::TypeId,
     mem::transmute_copy,
-    ops::{Add, Mul},
+    ops::{Add, Mul, Sub},
 };
 
+#[cfg(feature = "evm")]
+use crate::utils::evm::serialize::EVMSerialize;
 use crate::{
     algebra::{Val, field::emulated::EmulatedFieldVar},
-    circuits::WitnessToPublic,
-    traits::{Inputize, InputizeEmulated},
+    circuits::{WitnessToPublic, inputize::Inputize},
     transcripts::{Absorbable, AbsorbableVar},
 };
 
@@ -29,9 +30,8 @@ pub mod emulated;
 pub trait SonobeField:
     PrimeField<BasePrimeField = Self>
     + Absorbable
-    + Inputize<Self>
     + Val<
-        Var: FieldVar<Self, Self> + WitnessToPublic,
+        Var: FieldVar<Self, Self> + WitnessToPublic + Inputize<Self>,
         EmulatedVar<Self> = EmulatedFieldVar<Self, Self>,
     >
 {
@@ -83,18 +83,21 @@ impl<F: PrimeField> AbsorbableVar<F> for FpVar<F> {
     }
 }
 
-impl<P: FpConfig<N>, const N: usize> Inputize<Self> for Fp<P, N> {
-    fn inputize(&self) -> Vec<Self> {
-        vec![*self]
+impl<F: PrimeField> Inputize<F> for FpVar<F> {
+    fn inputize(value: &Self::Value) -> Vec<F> {
+        vec![*value]
     }
 }
 
-impl<F: SonobeField, P: SonobeField> InputizeEmulated<F> for P {
-    fn inputize_emulated(&self) -> Vec<F> {
-        self.into_bigint()
+impl<Base: SonobeField, Target: SonobeField> Inputize<Base> for EmulatedFieldVar<Base, Target> {
+    fn inputize(value: &Self::Value) -> Vec<Base> {
+        // TODO: pack bits
+        value
+            .into_bigint()
             .to_bits_le()
-            .chunks(F::BITS_PER_LIMB)
-            .map(|chunk| F::from(F::BigInt::from_bits_le(chunk)))
+            .chunks(Base::BITS_PER_LIMB)
+            .map(Base::BigInt::from_bits_le)
+            .map(Base::from)
             .collect()
     }
 }
@@ -111,7 +114,31 @@ impl<F: PrimeField> WitnessToPublic for FpVar<F> {
         //   computing them outside the circuit.
         // - `.enforce_equal()` prevents a malicious prover from claiming public
         //   inputs that are not the honest `x` computed in-circuit.
-        self.enforce_equal(&FpVar::new_input(self.cs(), || self.value())?)
+        self.enforce_equal(&Self::new_input(self.cs(), || {
+            Ok(self.value().unwrap_or_default())
+        })?)
+    }
+}
+
+impl<Base: SonobeField, Target: SonobeField> WitnessToPublic for EmulatedFieldVar<Base, Target> {
+    fn mark_as_public(&self) -> Result<(), SynthesisError> {
+        self.enforce_equal(&Self::new_input(self.cs(), || {
+            Ok(self.value().unwrap_or_default())
+        })?)
+    }
+}
+
+#[cfg(feature = "evm")]
+impl<P: FpConfig<N>, const N: usize> EVMSerialize for Fp<P, N> {
+    fn to_calldata(&self) -> Vec<u8> {
+        self.into_bigint().to_bytes_be()
+    }
+}
+
+#[cfg(feature = "evm")]
+impl<P: Fp2Config<Fp: EVMSerialize>> EVMSerialize for Fp2<P> {
+    fn to_calldata(&self) -> Vec<u8> {
+        [self.c1.to_calldata(), self.c0.to_calldata()].concat()
     }
 }
 
@@ -119,42 +146,67 @@ impl<F: PrimeField> WitnessToPublic for FpVar<F> {
 /// two-stage arithmetic model.
 ///
 /// In this model, we consider two stages of in-circuit variables for field
-/// elements when performing arithmetic operations:
+/// elements when performing field operations:
 /// 1. Before the operations, we have the standard field variable type, i.e.,
 ///    the implementor of this trait.
 /// 2. During the operations, we use [`TwoStageFieldVar::Intermediate`] to hold
 ///    the intermediate results.
-///    Therefore, the [`Add`] and [`Mul`] operations between two field variables
-///    yield an intermediate variable.
+///    Therefore, the field operations on two field variables yield a new
+///    intermediate variable.
 pub trait TwoStageFieldVar:
     Clone
     + Add<Output = Self::Intermediate>
     + for<'a> Add<&'a Self, Output = Self::Intermediate>
+    + Sub<Output = Self::Intermediate>
+    + for<'a> Sub<&'a Self, Output = Self::Intermediate>
     + Mul<Output = Self::Intermediate>
     + for<'a> Mul<&'a Self, Output = Self::Intermediate>
+    + GR1CSVar<Self::ConstraintField, Value = Self::ValueField>
+    + AllocVar<Self::Value, Self::ConstraintField>
 {
-    /// The intermediate variable type used during arithmetic operations.
+    // TODO: seems that using GR1CSVar's Value breaks the compiler...
+    type ValueField: Field;
+    type ConstraintField: Field;
+
+    /// The intermediate variable type used during field operations.
     ///
     /// We require this type to support conversions from and to the original
     /// field variable type.
     ///
     /// In addition, to allow chaining operations without excessive conversions,
-    /// we require this type to support [`Add`] and [`Mul`] operations with both
-    /// itself and the original field variable type.
+    /// we require this type to support field operations with both itself and
+    /// the original field variable type.
     type Intermediate: Clone
         + From<Self>
         + TryInto<Self>
         + Add<Output = Self::Intermediate>
         + for<'a> Add<&'a Self::Intermediate, Output = Self::Intermediate>
+        + Sub<Output = Self::Intermediate>
+        + for<'a> Sub<&'a Self::Intermediate, Output = Self::Intermediate>
         + Mul<Output = Self::Intermediate>
         + for<'a> Mul<&'a Self::Intermediate, Output = Self::Intermediate>
         + Add<Self, Output = Self::Intermediate>
         + for<'a> Add<&'a Self, Output = Self::Intermediate>
+        + Sub<Self, Output = Self::Intermediate>
+        + for<'a> Sub<&'a Self, Output = Self::Intermediate>
         + Mul<Self, Output = Self::Intermediate>
         + for<'a> Mul<&'a Self, Output = Self::Intermediate>;
+
+    fn additive_identity() -> Self;
+    fn multiplicative_identity() -> Self;
 }
 
 // Operations over the canonical variable `FpVar` always yield another `FpVar`.
 impl<F: PrimeField> TwoStageFieldVar for FpVar<F> {
+    type ValueField = F;
+    type ConstraintField = F;
     type Intermediate = Self;
+
+    fn additive_identity() -> Self {
+        Self::zero()
+    }
+
+    fn multiplicative_identity() -> Self {
+        Self::one()
+    }
 }

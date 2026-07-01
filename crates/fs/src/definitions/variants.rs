@@ -2,8 +2,8 @@
 //! mathematical structures.
 
 use sonobe_primitives::{
+    algebra::group::CF2,
     commitments::{CommitmentDef, GroupBasedCommitment},
-    traits::CF2,
 };
 
 use crate::{

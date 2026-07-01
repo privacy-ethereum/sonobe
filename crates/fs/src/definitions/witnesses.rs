@@ -5,23 +5,14 @@ use ark_std::fmt::Debug;
 use sonobe_primitives::{
     arithmetizations::ArithConfig,
     commitments::{CommitmentDef, CommitmentDefGadget},
-    traits::Dummy,
+    utils::dummy::Dummy,
 };
 
 use super::utils::TaggedVec;
 
 /// [`FoldingWitness`] defines the operations that a folding scheme's witness
 /// should support.
-pub trait FoldingWitness<CM: CommitmentDef>: Debug + for<'a> Dummy<&'a ArithConfig> {
-    /// [`FoldingWitness::N_OPENINGS`] defines the number of openings contained
-    /// in the witness.
-    const N_OPENINGS: usize;
-
-    /// [`FoldingWitness::openings`] returns the reference to all openings
-    /// contained in the witness, where each opening a tuple of the values being
-    /// committed to and the randomness used in the commitment.
-    fn openings(&self) -> Vec<(&[CM::Scalar], &CM::Randomness)>;
-}
+pub trait FoldingWitness<CM: CommitmentDef>: Debug + for<'a> Dummy<&'a ArithConfig> {}
 
 /// [`PlainWitness`] is a vector of field elements that are the witnesses to a
 /// constraint system.
@@ -39,13 +30,7 @@ impl<V: Default + Clone> Dummy<&ArithConfig> for PlainWitness<V> {
     }
 }
 
-impl<CM: CommitmentDef> FoldingWitness<CM> for PlainWitness<CM::Scalar> {
-    const N_OPENINGS: usize = 0;
-
-    fn openings(&self) -> Vec<(&[CM::Scalar], &CM::Randomness)> {
-        vec![]
-    }
-}
+impl<CM: CommitmentDef> FoldingWitness<CM> for PlainWitness<CM::Scalar> {}
 
 /// [`FoldingWitnessVar`] is the in-circuit variable of [`FoldingWitness`].
 pub trait FoldingWitnessVar<CM: CommitmentDefGadget>:

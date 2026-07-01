@@ -3,8 +3,8 @@
 
 use ark_ff::PrimeField;
 use sonobe_primitives::{
-    arithmetizations::ArithConfig, commitments::CommitmentDef, traits::Dummy,
-    transcripts::Absorbable,
+    arithmetizations::ArithConfig, commitments::CommitmentDef, transcripts::Absorbable,
+    utils::dummy::Dummy,
 };
 
 use crate::FoldingInstance;
@@ -25,18 +25,12 @@ pub struct RunningInstance<CM: CommitmentDef> {
 }
 
 impl<CM: CommitmentDef> FoldingInstance<CM> for RunningInstance<CM> {
-    const N_COMMITMENTS: usize = 2;
-
-    fn commitments(&self) -> Vec<&CM::Commitment> {
-        vec![&self.cm_e, &self.cm_w]
+    fn commitments(&self) -> Vec<CM::Commitment> {
+        vec![self.cm_e.clone(), self.cm_w.clone()]
     }
 
     fn public_inputs(&self) -> &[CM::Scalar] {
         &self.x
-    }
-
-    fn public_inputs_mut(&mut self) -> &mut [CM::Scalar] {
-        &mut self.x
     }
 }
 
@@ -70,18 +64,12 @@ pub struct IncomingInstance<CM: CommitmentDef> {
 }
 
 impl<CM: CommitmentDef> FoldingInstance<CM> for IncomingInstance<CM> {
-    const N_COMMITMENTS: usize = 1;
-
-    fn commitments(&self) -> Vec<&CM::Commitment> {
-        vec![&self.cm_w]
+    fn commitments(&self) -> Vec<CM::Commitment> {
+        vec![self.cm_w.clone()]
     }
 
     fn public_inputs(&self) -> &[CM::Scalar] {
         &self.x
-    }
-
-    fn public_inputs_mut(&mut self) -> &mut [CM::Scalar] {
-        &mut self.x
     }
 }
 

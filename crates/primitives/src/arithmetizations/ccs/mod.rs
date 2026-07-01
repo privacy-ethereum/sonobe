@@ -21,13 +21,19 @@
 
 use ark_ff::Field;
 use ark_poly::DenseMultilinearExtension;
-use ark_relations::gr1cs::{ConstraintSystem, Matrix};
-use ark_std::{cfg_into_iter, cfg_iter};
+use ark_relations::gr1cs::{ConstraintSystem, Matrix, SynthesisError};
+use ark_std::{cfg_into_iter, cfg_iter, ops::Index};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use super::{Arith, Error};
-use crate::{algebra::ops::poly::MLEHelper, circuits::Assignments};
+use crate::{
+    algebra::{
+        field::TwoStageFieldVar,
+        ops::{matrix::SparseMatrixVar, poly::MLEHelper, vector::VectorMulGadget},
+    },
+    circuits::Assignments,
+};
 
 /// [`CCS`] is an abstract trait that defines the behavior of all CCS variants,
 /// including but not limited to R1CS.
@@ -119,6 +125,54 @@ pub trait CCS:
                         .map(|row| row.iter().map(|(val, col)| z[*col] * val).sum())
                         .collect::<Vec<_>>(),
                 )
+            })
+            .collect()
+    }
+}
+
+pub trait CCSGadget {
+    type FieldVar: TwoStageFieldVar;
+
+    /// [`CCS::matrices`] returns the matrices contained in a concrete CCS
+    /// instance `self`.
+    fn matrices(&self) -> &[SparseMatrixVar<Self::FieldVar>];
+
+    /// [`CCS::evaluate_ccs`] evaluates the CCS relation at a given vector of
+    /// assignments, multisets, and coefficients.
+    fn evaluate_ccs<A: Index<usize, Output = Self::FieldVar>, const Q: usize>(
+        &self,
+        z: A,
+        multisets: [Vec<usize>; Q],
+        coefficients: [impl Clone + Into<<Self::FieldVar as TwoStageFieldVar>::Intermediate>; Q],
+    ) -> Result<Vec<<Self::FieldVar as TwoStageFieldVar>::Intermediate>, SynthesisError>
+    where
+        [(Self::FieldVar, usize)]:
+            VectorMulGadget<A, Output = <Self::FieldVar as TwoStageFieldVar>::Intermediate>,
+    {
+        let matrices = self.matrices();
+
+        // Recall that the evaluation of CCS at z is defined as:
+        // `Σ_{i ∈ {0, q-1}} (c_i · 〇_{j ∈ S_i} (M_j · z))`,
+        // where $\prod$ denotes the Hadamard product.
+        (0..matrices[0].0.len())
+            .map(|row| {
+                // The `row`-th entry of the resulting vector is:
+                // `Σ_{i ∈ {0, q-1}} (c_i · 〇_{j ∈ S_i} (M_j[row] · z))`
+                let mut sum = None;
+
+                for (s, c) in multisets.iter().zip(&coefficients) {
+                    // Each term in the sum is:
+                    // `c_i · 〇_{j ∈ S_i} (M_j[row] · z)`
+                    let mut prod = c.clone().into();
+                    for i in s {
+                        prod = prod * matrices[*i].0[row].mul(&z)?;
+                    }
+                    sum = match sum {
+                        Some(sum) => Some(sum + prod),
+                        None => Some(prod),
+                    };
+                }
+                Ok(sum.unwrap())
             })
             .collect()
     }

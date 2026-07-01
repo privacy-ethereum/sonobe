@@ -1,40 +1,46 @@
 //! This module implements in-circuit R1CS variables and relation check gadgets.
 
-use ark_ff::{PrimeField, Zero};
 use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
 use ark_relations::gr1cs::{Namespace, SynthesisError};
-use ark_std::{One, borrow::Borrow, ops::Mul};
+use ark_std::{borrow::Borrow, ops::Index};
 
-use super::R1CS;
+use super::{R1CS, RelaxedInstance, RelaxedWitness};
 use crate::{
-    algebra::ops::{
-        eq::EquivalenceGadget,
-        matrix::{MatrixGadget, SparseMatrixVar},
-        vector::VectorGadget,
+    algebra::{
+        field::TwoStageFieldVar,
+        ops::{eq::EquivalenceGadget, matrix::SparseMatrixVar, vector::VectorMulGadget},
     },
-    arithmetizations::ArithRelationGadget,
+    arithmetizations::{ArithGadget, ArithRelationGadget, ccs::CCSGadget},
     circuits::Assignments,
 };
 
-/// [`R1CSMatricesVar`] is the in-circuit variable of a given R1CS structure.
+/// [`R1CSVar`] is the in-circuit variable of a given R1CS structure.
 ///
 /// Only the matrices are represented, while the remaining R1CS parameters are
 /// constants to the circuit.
-///
-/// The naming is chosen to distinguish from arkworks' `(G)R1CSVar`.
 #[allow(non_snake_case)]
 #[derive(Debug, Clone)]
-pub struct R1CSMatricesVar<FVar> {
-    A: SparseMatrixVar<FVar>,
-    B: SparseMatrixVar<FVar>,
-    C: SparseMatrixVar<FVar>,
+pub struct R1CSVar<FVar> {
+    matrices: [SparseMatrixVar<FVar>; 3],
 }
 
-impl<F: PrimeField, ConstraintF: PrimeField, FVar: AllocVar<F, ConstraintF>>
-    AllocVar<R1CS<F>, ConstraintF> for R1CSMatricesVar<FVar>
-{
-    fn new_variable<T: Borrow<R1CS<F>>>(
-        cs: impl Into<Namespace<ConstraintF>>,
+impl<FVar: TwoStageFieldVar> ArithGadget for R1CSVar<FVar> {
+    type ConstraintField = FVar::ConstraintField;
+
+    type Widget = R1CS<FVar::Value>;
+}
+
+impl<FVar: TwoStageFieldVar> CCSGadget for R1CSVar<FVar> {
+    type FieldVar = FVar;
+
+    fn matrices(&self) -> &[SparseMatrixVar<Self::FieldVar>] {
+        &self.matrices[..]
+    }
+}
+
+impl<FVar: TwoStageFieldVar> AllocVar<R1CS<FVar::Value>, FVar::ConstraintField> for R1CSVar<FVar> {
+    fn new_variable<T: Borrow<R1CS<FVar::Value>>>(
+        cs: impl Into<Namespace<FVar::ConstraintField>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
@@ -44,68 +50,78 @@ impl<F: PrimeField, ConstraintF: PrimeField, FVar: AllocVar<F, ConstraintF>>
             let val = val.borrow();
 
             Ok(Self {
-                A: SparseMatrixVar::<FVar>::new_variable(
-                    cs.clone(),
-                    || Ok(&val.matrices[0]),
-                    mode,
-                )?,
-                B: SparseMatrixVar::<FVar>::new_variable(
-                    cs.clone(),
-                    || Ok(&val.matrices[1]),
-                    mode,
-                )?,
-                C: SparseMatrixVar::<FVar>::new_variable(
-                    cs.clone(),
-                    || Ok(&val.matrices[2]),
-                    mode,
-                )?,
+                matrices: [
+                    AllocVar::new_variable(cs.clone(), || Ok(&val.matrices[0]), mode)?,
+                    AllocVar::new_variable(cs.clone(), || Ok(&val.matrices[1]), mode)?,
+                    AllocVar::new_variable(cs.clone(), || Ok(&val.matrices[2]), mode)?,
+                ],
             })
         })
     }
 }
 
-impl<FVar> R1CSMatricesVar<FVar>
-where
-    SparseMatrixVar<FVar>: MatrixGadget<FVar>,
-    [FVar]: VectorGadget<FVar>,
-    for<'a> &'a FVar: Mul<&'a FVar, Output = FVar>,
-{
-    /// [`R1CSMatricesVar::evaluate_at`] is the in-circuit version of
-    /// [`R1CS::evaluate_at`] that evaluates the R1CS variable at a given vector
-    /// of assignments `z`.
-    #[allow(non_snake_case)]
-    pub fn evaluate_at(
+impl<FVar: TwoStageFieldVar> R1CSVar<FVar> {
+    pub fn evaluate_r1cs<A: Index<usize, Output = FVar>>(
         &self,
-        z: Assignments<FVar, impl AsRef<[FVar]>>,
-    ) -> Result<Vec<FVar>, SynthesisError> {
-        // Multiply Cz by z[0] (u) here, allowing this method to be reused for
-        // both relaxed and plain R1CS.
-        let Az = self.A.mul_vector(&z)?;
-        let Bz = self.B.mul_vector(&z)?;
-        let Cz = self.C.mul_vector(&z)?;
-        let uCz = Cz.scale(&z[0])?;
-        let AzBz = Az.hadamard(&Bz)?;
-        AzBz.sub(&uCz)
+        z: A,
+    ) -> Result<Vec<FVar::Intermediate>, SynthesisError>
+    where
+        [(FVar, usize)]: VectorMulGadget<A, Output = FVar::Intermediate>,
+    {
+        let neg_u = FVar::additive_identity() - &z[0];
+        self.evaluate_ccs(
+            z,
+            [vec![0, 1], vec![2]],
+            [FVar::multiplicative_identity().into(), neg_u],
+        )
     }
 }
 
-impl<FVar, WVar: AsRef<[FVar]>, UVar: AsRef<[FVar]>> ArithRelationGadget<WVar, UVar>
-    for R1CSMatricesVar<FVar>
+impl<FVar: TwoStageFieldVar, WVar: AsRef<[FVar]>, UVar: AsRef<[FVar]>>
+    ArithRelationGadget<WVar, UVar> for R1CSVar<FVar>
 where
-    SparseMatrixVar<FVar>: MatrixGadget<FVar>,
-    [FVar]: VectorGadget<FVar> + EquivalenceGadget<[FVar]>,
-    // TODO (@winderica): this will not work for our incoming decider
-    FVar: Clone + Zero + One,
-    for<'a> &'a FVar: Mul<&'a FVar, Output = FVar>,
+    [FVar::Intermediate]: EquivalenceGadget<[FVar]>,
+    [(FVar, usize)]:
+        for<'a> VectorMulGadget<Assignments<FVar, &'a [FVar]>, Output = FVar::Intermediate>,
 {
-    type Evaluation = Vec<FVar>;
+    type Evaluation = Vec<FVar::Intermediate>;
 
     fn eval_relation(&self, w: &WVar, u: &UVar) -> Result<Self::Evaluation, SynthesisError> {
-        self.evaluate_at((FVar::one(), u.as_ref(), w.as_ref()).into())
+        self.evaluate_r1cs(Assignments::from((
+            FVar::multiplicative_identity(),
+            u.as_ref(),
+            w.as_ref(),
+        )))
     }
 
     fn check_evaluation(_w: &WVar, _u: &UVar, e: Self::Evaluation) -> Result<(), SynthesisError> {
-        e.enforce_equivalent(&vec![FVar::zero(); e.len()])
+        e.enforce_equivalent(&vec![FVar::additive_identity(); e.len()])
+    }
+}
+
+impl<FVar: TwoStageFieldVar> ArithRelationGadget<RelaxedWitness<&[FVar]>, RelaxedInstance<&[FVar]>>
+    for R1CSVar<FVar>
+where
+    [FVar::Intermediate]: EquivalenceGadget<[FVar]>,
+    [(FVar, usize)]:
+        for<'a> VectorMulGadget<Assignments<FVar, &'a [FVar]>, Output = FVar::Intermediate>,
+{
+    type Evaluation = Vec<FVar::Intermediate>;
+
+    fn eval_relation(
+        &self,
+        w: &RelaxedWitness<&[FVar]>,
+        u: &RelaxedInstance<&[FVar]>,
+    ) -> Result<Self::Evaluation, SynthesisError> {
+        self.evaluate_r1cs(Assignments::from((u.u.clone(), u.x, w.w)))
+    }
+
+    fn check_evaluation(
+        w: &RelaxedWitness<&[FVar]>,
+        _u: &RelaxedInstance<&[FVar]>,
+        e: Self::Evaluation,
+    ) -> Result<(), SynthesisError> {
+        e.enforce_equivalent(&w.e)
     }
 }
 
@@ -117,7 +133,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        circuits::utils::{constraints_for_test, satisfying_assignments_for_test},
+        circuits::test_utils::{constraints_for_test, satisfying_assignments_for_test},
         relations::Relation,
     };
 

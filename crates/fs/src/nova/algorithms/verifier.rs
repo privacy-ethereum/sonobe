@@ -6,7 +6,8 @@ use itertools::Itertools;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use sonobe_primitives::{
-    algebra::ops::bits::FromBits, commitments::GroupBasedCommitment, traits::SonobeField,
+    algebra::{field::SonobeField, ops::bits::FromBits},
+    commitments::GroupBasedCommitment,
     transcripts::Transcript,
 };
 

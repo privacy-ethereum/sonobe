@@ -238,7 +238,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        circuits::utils::{constraints_for_test, satisfying_assignments_for_test},
+        circuits::test_utils::{constraints_for_test, satisfying_assignments_for_test},
         relations::Relation,
     };
 

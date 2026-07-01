@@ -12,7 +12,9 @@ use super::{AbsorbableVar, Transcript, TranscriptGadget};
 #[derive(Clone)]
 pub struct RecordingTranscript<F: PrimeField, T: Transcript<F>> {
     inner: T,
-    pub(super) cached_challenges: Vec<F>,
+    /// [`RecordingTranscript::cached_challenges`] contains the challenge field
+    /// elements recorded so far.
+    pub cached_challenges: Vec<F>,
 }
 
 impl<F: PrimeField, T: Transcript<F>> Transcript<F> for RecordingTranscript<F, T> {
@@ -42,7 +44,9 @@ impl<F: PrimeField, T: Transcript<F>> Transcript<F> for RecordingTranscript<F, T
 #[derive(Clone)]
 pub struct RecordingTranscriptVar<F: PrimeField, T: TranscriptGadget<F>> {
     inner: T,
-    pub(super) cached_challenges: Vec<FpVar<F>>,
+    /// [`RecordingTranscriptVar::cached_challenges`] contains the challenge
+    /// field element variables recorded so far.
+    pub cached_challenges: Vec<FpVar<F>>,
 }
 
 impl<F: PrimeField, T: TranscriptGadget<F>> TranscriptGadget<F> for RecordingTranscriptVar<F, T> {

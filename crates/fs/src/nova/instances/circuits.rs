@@ -106,7 +106,7 @@ impl<CM: CommitmentDefGadget> CondSelectGadget<CM::ConstraintField> for RunningI
 
 impl<CM: CommitmentDefGadget> FoldingInstanceVar<CM> for RunningInstanceVar<CM> {
     fn commitments(&self) -> Vec<&CM::CommitmentVar> {
-        vec![&self.cm_w, &self.cm_e]
+        vec![&self.cm_e, &self.cm_w]
     }
 
     fn public_inputs(&self) -> &Vec<CM::ScalarVar> {

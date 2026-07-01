@@ -1,0 +1,107 @@
+{%- let numCommitments = vk.link_vk.c.len() - 1 -%}
+{%- let numPublicInputs = vk.cc_vk.gamma_abc_g1_pub.len() - 1 -%}
+{%- let stateLen = (numPublicInputs - 1 - numCommitments * 16 - 1) / 2 %}
+{%- let fold = FS::decider_fold_fragment() %}
+{%- let state = FC::decider_state_fragment(&reference_state) %}
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.35;
+
+import "LegoGroth16Verifier.sol";
+
+{{ state.type_def|safe }}
+
+contract DeciderVerifier is LegoGroth16Verifier {
+    error PointRLCFailed();
+    error BaseCaseMismatch();
+    error StateShapeMismatch();
+
+    function verifyDeciderProof(
+        uint256 i,
+        {{ state.type_name }} calldata z_0,
+        {{ state.type_name }} calldata z_i,
+        uint256 {{ fold.challenge }},
+        {%- for p in fold.params %}
+        {{ p }},
+        {%- endfor %}
+        uint256[12] calldata proof
+    ) public view {
+        _checkStateShape(z_0);
+        _checkStateShape(z_i);
+        uint256[{{ stateLen }}] memory z_0_flattened = _flattenState(z_0);
+        uint256[{{ stateLen }}] memory z_i_flattened = _flattenState(z_i);
+
+        if (i == 0) {
+            for (uint256 k = 0; k < {{ stateLen }}; k++) {
+                if (z_0_flattened[k] != z_i_flattened[k]) {
+                    revert BaseCaseMismatch();
+                }
+            }
+            return;
+        }
+
+        // Scheme-emitted point RLC, which computes the folded commitments from
+        // the unfolded ones and the challenge.
+        {{ fold.body|indent(8)|safe }}
+
+        uint256[{{ numCommitments * 2 }}] memory c = [
+            {%- for cm in fold.commitments %}
+            {{ cm }}[0], {{ cm }}[1]{% if !loop.last %},{% endif %}
+            {%- endfor %}
+        ];
+
+        // x = [i, z_0.., z_i.., challenge, inputize(cm)].
+        uint256[{{ numPublicInputs }}] memory x;
+        x[0] = i;
+        for (uint256 k = 0; k < {{ stateLen }}; k++) {
+            x[1 + k] = z_0_flattened[k];
+            x[1 + {{ stateLen }} + k] = z_i_flattened[k];
+        }
+        x[{{ 1 + 2 * stateLen }}] = {{ fold.challenge }};
+        for (uint256 i = 0; i < {{ numCommitments * 2 }}; i++) {
+            for (uint256 k = 0; k < 8; k++) {
+                x[{{ 1 + 2 * stateLen + 1 }} + i * 8 + k] = (c[i] >> (32 * k)) & 0xFFFFFFFF;
+            }
+        }
+
+        this.verifyProof(x, c, proof);
+    }
+
+    function _checkStateShape({{ state.type_name }} calldata z) internal pure {
+        {{ state.shape_check_body|indent(8)|safe }}
+    }
+
+    function _flattenState({{ state.type_name }} calldata z) internal pure returns (uint256[{{ stateLen }}] memory) {
+        {{ state.flatten_body|indent(8)|safe }}
+    }
+
+    function _ecMul(uint256[2] calldata p, uint256 s)
+        internal
+        view
+        returns (uint256[2] memory r)
+    {
+        uint256[3] memory input = [p[0], p[1], s];
+        bool ok;
+        assembly ("memory-safe") {
+            ok := staticcall(gas(), 0x07, input, 0x60, r, 0x40)
+        }
+        if (!ok) {
+            revert PointRLCFailed();
+        }
+    }
+
+    function _ecAdd(uint256[2] calldata a, uint256[2] memory b)
+        internal
+        view
+        returns (uint256[2] memory r)
+    {
+        uint256[4] memory input = [a[0], a[1], b[0], b[1]];
+        bool ok;
+        assembly ("memory-safe") {
+            ok := staticcall(gas(), 0x06, input, 0x80, r, 0x40)
+        }
+        if (!ok) {
+            revert PointRLCFailed();
+        }
+    }
+}

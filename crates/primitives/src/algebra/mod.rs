@@ -5,7 +5,7 @@
 use ark_ff::PrimeField;
 use ark_r1cs_std::{GR1CSVar, alloc::AllocVar};
 
-use crate::traits::SonobeField;
+use crate::algebra::field::SonobeField;
 
 pub mod field;
 pub mod group;

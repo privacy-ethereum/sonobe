@@ -3,16 +3,23 @@
 use ark_ff::{Field, PrimeField};
 use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
 use ark_relations::gr1cs::{
-    ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError, SynthesisMode,
+    ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, OptimizationGoal, SynthesisError,
+    SynthesisMode,
 };
 use ark_std::{
     fmt::Debug,
+    mem::take,
     ops::{Deref, Index, IndexMut},
 };
 
-use crate::transcripts::{Absorbable, AbsorbableVar};
+use crate::{
+    circuits::inputize::Inputize,
+    transcripts::{Absorbable, AbsorbableVar},
+};
 
-pub mod utils;
+pub mod cache;
+pub mod inputize;
+pub mod test_utils;
 
 /// [`FCircuit`] defines the trait of step circuits being proven by IVC schemes.
 ///
@@ -49,7 +56,7 @@ pub mod utils;
 ///
 ///    For example, in a Merkle tree update circuit, one may write both the
 ///    Merkle proof generation (out-of-circuit) and verification (in-circuit)
-///    logic in a single [`FCircuit::generate_step_constraints`].
+///    logic in a single [`FCircuit::synthesize_step`].
 ///    In this case, the external inputs contain the leaf value to be added, as
 ///    well as all the existing tree nodes.
 ///    The latter will be used by the out-of-circuit logic to compute the path,
@@ -75,7 +82,8 @@ pub trait FCircuit {
     type StateVar: GR1CSVar<Self::Field, Value = Self::State>
         + AllocVar<Self::State, Self::Field>
         + AbsorbableVar<Self::Field>
-        + EqGadget<Self::Field>;
+        + EqGadget<Self::Field>
+        + Inputize<Self::Field>;
     /// [`FCircuit::ExternalInputs`] is the type of external inputs provided to
     /// each step of the circuit.
     type ExternalInputs;
@@ -108,7 +116,7 @@ pub trait FCircuit {
     /// the circuit.
     fn dummy_external_inputs(&self) -> Self::ExternalInputs;
 
-    /// [`FCircuit::generate_step_constraints`] generates the constraints for
+    /// [`FCircuit::synthesize_step`] generates the constraints for
     /// the `i`-th step of invocation of the step circuit with the current state
     /// `state` and external inputs `external_inputs`, producing the next state
     /// and external outputs.
@@ -121,7 +129,7 @@ pub trait FCircuit {
     ///   public inputs) in the implementation.
     /// - If needed, the constraint system `cs` can be accessed via `i.cs()` or
     ///   `state.cs()` using arkworks' [`GR1CSVar::cs`] method.
-    fn generate_step_constraints(
+    fn synthesize_step(
         &self,
         i: FpVar<Self::Field>,
         state: Self::StateVar,
@@ -188,18 +196,17 @@ impl<F, V: AsRef<[F]> + AsMut<[F]>> IndexMut<usize> for Assignments<F, V> {
 /// [`ConstraintSystemExt`] wraps a `ConstraintSystemRef` with compile-time
 /// flags that control whether constraint matrices (`ARITH_ENABLED`) and / or
 /// assignment vectors (`ASSIGNMENTS_ENABLED`) are collected during synthesis.
-pub struct ConstraintSystemExt<F: Field, const ARITH_ENABLED: bool, const ASSIGNMENTS_ENABLED: bool>
-{
-    cs: ConstraintSystemRef<F>,
-}
+pub struct ConstraintSystemExt<F: Field, const ARITH_ENABLED: bool, const ASSIGNMENTS_ENABLED: bool>(
+    ConstraintSystem<F>,
+);
 
 impl<F: Field, const ARITH_ENABLED: bool, const ASSIGNMENTS_ENABLED: bool> Deref
     for ConstraintSystemExt<F, ARITH_ENABLED, ASSIGNMENTS_ENABLED>
 {
-    type Target = ConstraintSystemRef<F>;
+    type Target = ConstraintSystem<F>;
 
     fn deref(&self) -> &Self::Target {
-        &self.cs
+        &self.0
     }
 }
 
@@ -209,7 +216,8 @@ impl<F: Field, const ARITH_ENABLED: bool, const ASSIGNMENTS_ENABLED: bool>
     /// [`ConstraintSystemExt::new`] creates a new constraint system wrapper
     /// with the specified flags.
     pub fn new() -> Self {
-        let cs = ConstraintSystem::<F>::new_ref();
+        let mut cs = ConstraintSystem::<F>::new();
+        cs.set_optimization_goal(OptimizationGoal::Constraints);
         let mode = if ASSIGNMENTS_ENABLED {
             SynthesisMode::Prove {
                 construct_matrices: ARITH_ENABLED,
@@ -219,14 +227,14 @@ impl<F: Field, const ARITH_ENABLED: bool, const ASSIGNMENTS_ENABLED: bool>
             SynthesisMode::Setup
         };
         cs.set_mode(mode);
-        Self { cs }
+        Self(cs)
     }
 
     /// [`ConstraintSystemExt::execute_synthesizer`] executes a circuit inside
     /// the constraint system, where the circuit should implement the
     /// [`ConstraintSynthesizer`] trait.
     pub fn execute_synthesizer(
-        &self,
+        &mut self,
         circuit: impl ConstraintSynthesizer<F>,
     ) -> Result<(), SynthesisError> {
         self.execute_fn(|cs| circuit.generate_constraints(cs))
@@ -237,12 +245,18 @@ impl<F: Field, const ARITH_ENABLED: bool, const ASSIGNMENTS_ENABLED: bool>
     /// takes as input a `ConstraintSystemRef` and returns a result of type `R`.
     /// The return value of the closure will be returned by this method.
     pub fn execute_fn<R>(
-        &self,
+        &mut self,
         circuit: impl FnOnce(ConstraintSystemRef<F>) -> Result<R, SynthesisError>,
     ) -> Result<R, SynthesisError> {
-        let result = circuit(self.cs.clone())?;
+        let cs = take(&mut self.0);
+        let result = {
+            let cs_ref = ConstraintSystemRef::new(cs);
+            let result = circuit(cs_ref.clone())?;
+            self.0 = cs_ref.into_inner().unwrap();
+            result
+        };
         if ARITH_ENABLED {
-            self.cs.finalize();
+            self.0.finalize();
         }
         Ok(result)
     }
@@ -268,7 +282,7 @@ impl<F: Field> ArithExtractor<F> {
     /// circuit and returns them as an arithmetization / constraint system
     /// structure of type `A`.
     pub fn arith<A: From<ConstraintSystem<F>>>(self) -> Result<A, SynthesisError> {
-        Ok(self.cs.into_inner().unwrap().into())
+        Ok(self.0.into())
     }
 }
 
@@ -276,9 +290,12 @@ impl<F: Field> AssignmentsExtractor<F> {
     /// [`AssignmentsExtractor::assignments`] extracts the assignments from the
     /// circuit and returns them as `Assignments`.
     pub fn assignments(self) -> Result<Assignments<F, Vec<F>>, SynthesisError> {
-        let witness = self.cs.witness_assignment()?.to_vec();
+        let cs = self.0;
+
+        let witness = cs.assignments.witness_assignment;
+        let mut instance = cs.assignments.instance_assignment;
         // skip the first element which is '1'
-        let instance = self.cs.instance_assignment()?[1..].to_vec();
+        instance.remove(0);
 
         Ok((F::one(), instance, witness).into())
     }
@@ -289,6 +306,12 @@ impl<F: Field> AssignmentsExtractor<F> {
 pub trait WitnessToPublic {
     /// [`WitnessToPublic::mark_as_public`] marks a witness variable as public.
     fn mark_as_public(&self) -> Result<(), SynthesisError>;
+}
+
+impl<T: WitnessToPublic> WitnessToPublic for &T {
+    fn mark_as_public(&self) -> Result<(), SynthesisError> {
+        (*self).mark_as_public()
+    }
 }
 
 impl<T: WitnessToPublic> WitnessToPublic for [T] {
@@ -307,7 +330,7 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::{
-        utils::{CircuitForTest, constraints_for_test, satisfying_assignments_for_test},
+        test_utils::{CircuitForTest, constraints_for_test, satisfying_assignments_for_test},
         *,
     };
     use crate::arithmetizations::r1cs::R1CS;
@@ -331,7 +354,7 @@ mod tests {
         let circuit = CircuitForTest::<Fr> {
             x: Fr::rand(&mut rng),
         };
-        let cs = ArithExtractor::new();
+        let mut cs = ArithExtractor::new();
         cs.execute_synthesizer(circuit)?;
         assert_eq!(cs.arith::<R1CS<_>>()?, constraints_for_test());
         Ok(())
@@ -343,7 +366,7 @@ mod tests {
         let x = Fr::rand(&mut rng);
         let circuit = CircuitForTest::<Fr> { x };
 
-        let cs = AssignmentsExtractor::new();
+        let mut cs = AssignmentsExtractor::new();
         cs.execute_synthesizer(circuit)?;
         assert_eq!(cs.assignments()?, satisfying_assignments_for_test(x));
         Ok(())

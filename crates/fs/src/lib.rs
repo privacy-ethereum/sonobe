@@ -74,7 +74,7 @@ mod tests {
     {
         let pp = FS::preprocess(config, &mut rng)?;
 
-        let cs = ArithExtractor::new();
+        let mut cs = ArithExtractor::new();
         cs.execute_synthesizer(circuit)?;
         let arith = cs.arith()?;
         let dk = FS::generate_keys(pp, arith)?;

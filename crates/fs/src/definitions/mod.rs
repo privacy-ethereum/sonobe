@@ -12,11 +12,12 @@ pub mod witnesses;
 
 use ark_r1cs_std::{GR1CSVar, alloc::AllocVar};
 use sonobe_primitives::{
+    algebra::field::SonobeField,
     arithmetizations::{Arith, ArithConfig},
     circuits::AssignmentsOwned,
     commitments::{CommitmentDef, CommitmentDefGadget},
     relations::{Relation, WitnessInstanceSampler},
-    traits::{Dummy, SonobeField},
+    utils::dummy::Dummy,
 };
 
 use self::{
@@ -25,6 +26,7 @@ use self::{
     keys::DeciderKey,
     witnesses::FoldingWitness,
 };
+use crate::FoldingWitnessVar;
 
 /// [`FoldingSchemeDef`] provides the core type definitions of a folding scheme.
 ///
@@ -104,16 +106,27 @@ pub trait FoldingSchemeDefGadget {
 
     /// [`FoldingSchemeDefGadget::CM`] is the commitment scheme gadget.
     type CM: CommitmentDefGadget<Widget = <Self::Widget as FoldingSchemeDef>::CM>;
+    type RW: FoldingWitnessVar<Self::CM, Value = <Self::Widget as FoldingSchemeDef>::RW>;
     /// [`FoldingSchemeDefGadget::RU`] is the type of in-circuit running
     /// instance variable.
     type RU: FoldingInstanceVar<Self::CM, Value = <Self::Widget as FoldingSchemeDef>::RU>;
+    type IW: FoldingWitnessVar<Self::CM, Value = <Self::Widget as FoldingSchemeDef>::IW>;
     /// [`FoldingSchemeDefGadget::IU`] is the type of in-circuit incoming
     /// instance variable.
     type IU: FoldingInstanceVar<Self::CM, Value = <Self::Widget as FoldingSchemeDef>::IU>;
 
+    type Arith: AllocVar<
+            <Self::Widget as FoldingSchemeDef>::Arith,
+            <Self::CM as CommitmentDefGadget>::ConstraintField,
+        >;
+
     /// [`FoldingSchemeDefGadget::VerifierKey`] is the type of in-circuit
     /// verifier key variable.
     type VerifierKey;
+    type DeciderKey: AllocVar<
+            <Self::Widget as FoldingSchemeDef>::DeciderKey,
+            <Self::CM as CommitmentDefGadget>::ConstraintField,
+        >;
 
     /// [`FoldingSchemeDefGadget::Challenge`] is the type of in-circuit
     /// challenge variable.

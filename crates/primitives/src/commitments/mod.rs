@@ -1,7 +1,9 @@
 //! Abstract traits and implementations for commitment schemes.
 
 use ark_ff::UniformRand;
-use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, fields::fp::FpVar, select::CondSelectGadget};
+use ark_r1cs_std::{
+    GR1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, select::CondSelectGadget,
+};
 use ark_relations::gr1cs::SynthesisError;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
@@ -15,11 +17,11 @@ use thiserror::Error;
 use crate::{
     algebra::{
         Val,
-        field::{TwoStageFieldVar, emulated::EmulatedFieldVar},
-        group::emulated::EmulatedAffineVar,
+        field::{SonobeField, TwoStageFieldVar, emulated::EmulatedFieldVar},
+        group::{CF1, CF2, SonobeCurve, emulated::EmulatedAffineVar},
         ops::bits::FromBitsGadget,
     },
-    traits::{CF1, CF2, SonobeCurve, SonobeField},
+    circuits::inputize::Inputize,
     transcripts::{Absorbable, AbsorbableVar},
 };
 
@@ -139,17 +141,20 @@ pub trait CommitmentDefGadget: Clone {
     /// the scalars being committed to.
     type ScalarVar: AbsorbableVar<Self::ConstraintField>
         + CondSelectGadget<Self::ConstraintField>
+        + EqGadget<Self::ConstraintField>
         + FromBitsGadget<Self::ConstraintField>
-        + AllocVar<<Self::Widget as CommitmentDef>::Scalar, Self::ConstraintField>
-        + GR1CSVar<Self::ConstraintField, Value = <Self::Widget as CommitmentDef>::Scalar>
-        + TwoStageFieldVar;
+        + TwoStageFieldVar<
+            ConstraintField = Self::ConstraintField,
+            ValueField = <Self::Widget as CommitmentDef>::Scalar,
+        >;
     /// [`CommitmentDefGadget::CommitmentVar`] is the in-circuit variable type
     /// for the commitment.
     type CommitmentVar: Clone
         + AbsorbableVar<Self::ConstraintField>
         + CondSelectGadget<Self::ConstraintField>
         + AllocVar<<Self::Widget as CommitmentDef>::Commitment, Self::ConstraintField>
-        + GR1CSVar<Self::ConstraintField, Value = <Self::Widget as CommitmentDef>::Commitment>;
+        + GR1CSVar<Self::ConstraintField, Value = <Self::Widget as CommitmentDef>::Commitment>
+        + Inputize<Self::ConstraintField>;
     /// [`CommitmentDefGadget::RandomnessVar`] is the in-circuit variable type
     /// for the randomness used in the commitment.
     type RandomnessVar: AllocVar<<Self::Widget as CommitmentDef>::Randomness, Self::ConstraintField>
@@ -181,8 +186,7 @@ pub trait GroupBasedCommitment:
 {
     /// [`GroupBasedCommitment::Gadget1`] points to the in-circuit gadget for
     /// the group-based commitment scheme over the curve's base field.
-    type Gadget1: CommitmentOpsGadget
-        + CommitmentDefGadget<
+    type Gadget1: CommitmentOpsGadget<
             ConstraintField = CF2<Self::Commitment>,
             ScalarVar = EmulatedFieldVar<CF2<Self::Commitment>, Self::Scalar>,
             CommitmentVar = <Self::Commitment as Val>::Var,
@@ -190,7 +194,7 @@ pub trait GroupBasedCommitment:
         >;
     /// [`GroupBasedCommitment::Gadget2`] points to the in-circuit gadget for
     /// the group-based commitment scheme over the curve's scalar field.
-    type Gadget2: CommitmentDefGadget<
+    type Gadget2: CommitmentOpsGadget<
             ConstraintField = Self::Scalar,
             ScalarVar = FpVar<Self::Scalar>,
             CommitmentVar = EmulatedAffineVar<Self::Scalar, Self::Commitment>,

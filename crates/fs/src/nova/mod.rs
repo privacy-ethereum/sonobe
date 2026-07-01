@@ -6,9 +6,9 @@
 use ark_r1cs_std::boolean::Boolean;
 use ark_std::marker::PhantomData;
 use sonobe_primitives::{
-    arithmetizations::r1cs::R1CS,
+    algebra::{field::SonobeField, group::CF2},
+    arithmetizations::r1cs::{R1CS, circuits::R1CSVar},
     commitments::{CommitmentDef, CommitmentDefGadget, GroupBasedCommitment},
-    traits::{CF2, SonobeField},
 };
 
 use self::{
@@ -16,11 +16,15 @@ use self::{
         IncomingInstance as IU, RunningInstance as RU,
         circuits::{IncomingInstanceVar as IUVar, RunningInstanceVar as RUVar},
     },
-    witnesses::{IncomingWitness as IW, RunningWitness as RW},
+    witnesses::{
+        IncomingWitness as IW, RunningWitness as RW,
+        circuits::{IncomingWitnessVar as IWVar, RunningWitnessVar as RWVar},
+    },
 };
 use crate::{
     FoldingSchemeDef, FoldingSchemeDefGadget, GroupBasedFoldingSchemePrimaryDef,
-    GroupBasedFoldingSchemeSecondaryDef, nova::keys::NovaKey,
+    GroupBasedFoldingSchemeSecondaryDef,
+    nova::keys::{NovaKey, circuits::NovaKeyVar},
 };
 
 pub mod algorithms;
@@ -79,10 +83,14 @@ where
 {
     type Widget = AbstractNova<CM::Widget, CM::ConstraintField, CHALLENGE_BITS>;
 
+    type Arith = R1CSVar<CM::ScalarVar>;
     type CM = CM;
+    type RW = RWVar<CM>;
     type RU = RUVar<CM>;
+    type IW = IWVar<CM>;
     type IU = IUVar<CM>;
     type VerifierKey = ();
+    type DeciderKey = NovaKeyVar<Self::Arith, CM>;
     type Challenge = [Boolean<CM::ConstraintField>; CHALLENGE_BITS];
     type Proof<const M: usize, const N: usize> = CM::CommitmentVar;
 }
@@ -108,7 +116,7 @@ mod tests {
         rand::{RngCore, thread_rng},
     };
     use sonobe_primitives::{
-        circuits::utils::{CircuitForTest, satisfying_assignments_for_test},
+        circuits::test_utils::{CircuitForTest, satisfying_assignments_for_test},
         commitments::pedersen::Pedersen,
     };
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]

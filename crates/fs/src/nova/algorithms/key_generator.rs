@@ -2,9 +2,9 @@
 
 use ark_std::sync::Arc;
 use sonobe_primitives::{
+    algebra::field::SonobeField,
     arithmetizations::Arith,
     commitments::{CommitmentKey, GroupBasedCommitment},
-    traits::SonobeField,
 };
 
 use crate::{Error, FoldingSchemeKeyGenerator, nova::AbstractNova};

@@ -9,7 +9,7 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError, Variable};
 
 use super::Assignments;
-use crate::{arithmetizations::r1cs::R1CS, circuits::FCircuit, traits::SonobeField};
+use crate::{algebra::field::SonobeField, arithmetizations::r1cs::R1CS, circuits::FCircuit};
 
 /// [`CircuitForTest`] implements a simple test circuit computing
 /// `y = x^3 + x + 5` with 4 R1CS constraints.
@@ -72,7 +72,7 @@ impl<F: SonobeField> FCircuit for CircuitForTest<F> {
 
     fn dummy_external_inputs(&self) -> Self::ExternalInputs {}
 
-    fn generate_step_constraints(
+    fn synthesize_step(
         &self,
         _i: FpVar<Self::Field>,
         z_i: Self::StateVar,

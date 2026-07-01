@@ -11,7 +11,7 @@ pub trait DeciderKey: CanonicalSerialize + CanonicalDeserialize {
     type ProverKey;
     /// [`DeciderKey::VerifierKey`] is the type of the verifier key contained in
     /// the decider key.
-    type VerifierKey;
+    type VerifierKey: Clone;
 
     /// [`DeciderKey::to_pk`] returns the reference to the prover key.
     fn to_pk(&self) -> &Self::ProverKey;

@@ -38,6 +38,7 @@ use crate::{
             bits::{FromBitsGadget, ToBitsGadgetExt},
             eq::EquivalenceGadget,
             matrix::{MatrixGadget, SparseMatrixVar},
+            vector::VectorMulGadget,
         },
     },
     transcripts::AbsorbableVar,
@@ -267,6 +268,97 @@ impl<F: SonobeField, Cfg, const ALIGNED: bool> LimbedVar<F, Cfg, ALIGNED> {
         }
 
         r
+    }
+}
+
+#[derive(PartialEq)]
+pub enum RangeCheckMode {
+    Loose,
+    Tight,
+}
+
+impl<F: SonobeField, Cfg> LimbedVar<F, Cfg, true> {
+    pub fn alloc<T: Borrow<(BigInt, Bounds)>>(
+        cs: impl Into<Namespace<F>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        alloc_mode: AllocationMode,
+        range_check_mode: RangeCheckMode,
+    ) -> Result<Self, SynthesisError> {
+        let cs = cs.into().cs();
+        let v = f()?;
+        let (x, Bounds(lb, ub)) = v.borrow();
+
+        if x < lb || x > ub {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+
+        let len = max(lb.bits(), ub.bits()) as usize;
+        let zero = BigInt::zero();
+        let one = BigInt::one();
+        let min = &one - (&one << len);
+        let max = (&one << len) - &one;
+
+        let (lb, ub) = if range_check_mode == RangeCheckMode::Loose {
+            (
+                if lb.is_negative() { &min } else { &zero },
+                if ub.is_positive() { &max } else { &zero },
+            )
+        } else {
+            (lb, ub)
+        };
+
+        let x_is_neg = x.is_negative();
+        let mut x_abs = x.magnitude().clone();
+        let mask = (BigUint::one() << F::BITS_PER_LIMB) - BigUint::one();
+        let mut limbs_abs = vec![];
+        for _ in 0..len.div_ceil(F::BITS_PER_LIMB) {
+            limbs_abs.push(F::from(&x_abs & &mask));
+            x_abs >>= F::BITS_PER_LIMB;
+        }
+
+        let x_is_neg = if !lb.is_negative() {
+            Boolean::FALSE
+        } else if !ub.is_positive() {
+            Boolean::TRUE
+        } else {
+            Boolean::new_variable(cs.clone(), || Ok(x_is_neg), alloc_mode)?
+        };
+        let limbs_abs = Vec::<FpVar<_>>::new_variable(cs, || Ok(limbs_abs), alloc_mode)?;
+
+        let limbs = limbs_abs
+            .into_iter()
+            .map(|limb_abs| {
+                limb_abs.enforce_bit_length(F::BITS_PER_LIMB)?;
+                x_is_neg.select(&limb_abs.negate()?, &limb_abs)
+            })
+            .collect::<Result<_, _>>()?;
+
+        let bounds = compute_bounds(lb, ub, F::BITS_PER_LIMB);
+
+        let var = Self::new(limbs, bounds);
+
+        // At this point, we are confident that:
+        // * If `lb >= 0`, then `0 <= var <= 2^len - 1`.
+        // * If `ub <= 0`, then `-2^len + 1 <= var <= 0`.
+        // * Otherwise, `-2^len + 1 <= var <= 2^len - 1`.
+        //
+        // However, for soundness, we need to enforce `lb <= var <= ub`, which
+        // is already guaranteed only if:
+        // * `lb = 0` and `ub = 2^len - 1`
+        // * `lb = -2^len + 1` and `ub = 0`
+        // * `lb = -2^len + 1` and `ub = 2^len - 1`
+        //
+        // For other cases, we additionally check:
+        // * `var <= ub`
+        // * `var >= lb`
+        if !lb.is_zero() && lb != &min {
+            Self::constant(lb - &one).enforce_lt(&var)?;
+        }
+        if !ub.is_zero() && ub != &max {
+            var.enforce_lt(&Self::constant(ub + &one))?;
+        }
+
+        Ok(var)
     }
 }
 
@@ -647,21 +739,33 @@ impl<Base: SonobeField, Target: SonobeField, const LHS_ALIGNED: bool>
         let cs = self.cs();
         let m = BigInt::from_biguint(Sign::Plus, Target::MODULUS.into());
         // Provide the quotient and remainder as hints
-        let (q, r) = {
+        let (q, mut r) = {
             let v = compose(self.limbs.value().unwrap_or_default());
             let q = v.div_floor(&m);
             let r = v - &q * &m;
+            let mode = if cs.is_none() {
+                AllocationMode::Constant
+            } else {
+                AllocationMode::Witness
+            };
 
             (
-                LimbedVar::new_variable_with_inferred_mode(cs.clone(), || {
-                    Ok((
-                        q,
-                        Bounds(self.lbound().div_floor(&m), self.ubound().div_floor(&m)),
-                    ))
-                })?,
-                LimbedVar::new_variable_with_inferred_mode(cs.clone(), || {
-                    Ok((r, Bounds(Zero::zero(), m.clone())))
-                })?,
+                LimbedVar::alloc(
+                    cs.clone(),
+                    || {
+                        let lb = self.lbound().div_floor(&m);
+                        let ub = self.ubound().div_floor(&m);
+                        Ok((q, Bounds(lb, ub)))
+                    },
+                    mode,
+                    RangeCheckMode::Loose,
+                )?,
+                LimbedVar::alloc(
+                    cs.clone(),
+                    || Ok((r, Bounds(Zero::zero(), m.clone()))),
+                    mode,
+                    RangeCheckMode::Loose,
+                )?,
             )
         };
 
@@ -673,6 +777,11 @@ impl<Base: SonobeField, Target: SonobeField, const LHS_ALIGNED: bool>
             .enforce_equal_unaligned(self)?;
         // Enforce `r < m` (and `r >= 0` already holds)
         r.enforce_lt(&m)?;
+        r.bounds = compute_bounds(
+            &BigInt::zero(),
+            &(-Target::one()).into_bigint().into().into(),
+            Base::BITS_PER_LIMB,
+        );
 
         Ok(r)
     }
@@ -683,20 +792,25 @@ impl<Base: SonobeField, Target: SonobeField, const LHS_ALIGNED: bool>
         &self,
         other: &LimbedVar<Base, Target, RHS_ALIGNED>,
     ) -> Result<(), SynthesisError> {
-        let cs = self.cs();
+        let cs = self.cs().or(other.cs());
         let m = BigInt::from_biguint(Sign::Plus, Target::MODULUS.into());
         // Provide the quotient as hint
-        let q = LimbedVar::new_variable_with_inferred_mode(cs.clone(), || {
-            let x = compose(self.limbs.value().unwrap_or_default());
-            let y = compose(other.limbs.value().unwrap_or_default());
-            Ok((
-                (x - y).div_floor(&m),
-                Bounds(
-                    (self.lbound() - other.ubound()).div_floor(&m),
-                    (self.ubound() - other.lbound()).div_floor(&m),
-                ),
-            ))
-        })?;
+        let q = LimbedVar::alloc(
+            cs.clone(),
+            || {
+                let x = compose(self.limbs.value().unwrap_or_default());
+                let y = compose(other.limbs.value().unwrap_or_default());
+                let lb = (self.lbound() - other.ubound()).div_floor(&m);
+                let ub = (self.ubound() - other.lbound()).div_floor(&m);
+                Ok(((x - y).div_floor(&m), Bounds(lb, ub)))
+            },
+            if cs.is_none() {
+                AllocationMode::Constant
+            } else {
+                AllocationMode::Witness
+            },
+            RangeCheckMode::Loose,
+        )?;
 
         let m = LimbedVar::constant(m);
 
@@ -784,7 +898,17 @@ impl<Base: SonobeField, Target: SonobeField> TryFrom<LimbedVar<Base, Target, fal
 }
 
 impl<Base: SonobeField, Target: SonobeField> TwoStageFieldVar for LimbedVar<Base, Target, true> {
+    type ValueField = Target;
+    type ConstraintField = Base;
     type Intermediate = LimbedVar<Base, Target, false>;
+
+    fn additive_identity() -> Self {
+        Self::constant(BigInt::zero())
+    }
+
+    fn multiplicative_identity() -> Self {
+        Self::constant(BigInt::one())
+    }
 }
 
 // Only implement `EqGadget` for aligned variables.
@@ -911,6 +1035,59 @@ impl<F: PrimeField, Cfg> AbsorbableVar<F> for LimbedVar<F, Cfg, true> {
     }
 }
 
+impl<
+    CF: SonobeField,
+    Cfg,
+    Other: Index<usize, Output = LimbedVar<CF, Cfg, RHS_ALIGNED>>,
+    const LHS_ALIGNED: bool,
+    const RHS_ALIGNED: bool,
+> VectorMulGadget<Other> for [(LimbedVar<CF, Cfg, LHS_ALIGNED>, usize)]
+{
+    type Output = LimbedVar<CF, Cfg, false>;
+
+    fn mul(&self, other: &Other) -> Result<Self::Output, SynthesisError> {
+        let len = self
+            .iter()
+            .map(|(value, index)| value.limbs.len() + other[*index].limbs.len() - 1)
+            .max()
+            .unwrap_or(0);
+        // This is a combination of `mul_unaligned` and `add_unaligned`
+        // that results in more flattened `LinearCombination`s.
+        // Consequently, `ConstraintSystem::inline_all_lcs` costs less
+        // time, thus making trusted setup and proof generation faster.
+        let bounds = (0..len)
+            .map(|i| {
+                Bounds::add_many(
+                    &self
+                        .iter()
+                        .flat_map(|(value, index)| {
+                            let start =
+                                max(i + 1, other[*index].bounds.len()) - other[*index].bounds.len();
+                            let end = min(i + 1, value.bounds.len());
+                            (start..end).map(|j| value.bounds[j].mul(&other[*index].bounds[i - j]))
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .filter_safe::<CF>()
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or(SynthesisError::Unsatisfiable)?;
+        let limbs = (0..len)
+            .map(|i| {
+                self.iter()
+                    .flat_map(|(value, index)| {
+                        let start =
+                            max(i + 1, other[*index].limbs.len()) - other[*index].limbs.len();
+                        let end = min(i + 1, value.limbs.len());
+                        (start..end).map(|j| &value.limbs[j] * &other[*index].limbs[i - j])
+                    })
+                    .sum()
+            })
+            .collect();
+        Ok(LimbedVar::new(limbs, bounds))
+    }
+}
+
 impl<CF: SonobeField, Cfg> MatrixGadget<LimbedVar<CF, Cfg, false>>
     for SparseMatrixVar<LimbedVar<CF, Cfg, false>>
 {
@@ -918,50 +1095,7 @@ impl<CF: SonobeField, Cfg> MatrixGadget<LimbedVar<CF, Cfg, false>>
         &self,
         v: &impl Index<usize, Output = LimbedVar<CF, Cfg, false>>,
     ) -> Result<Vec<LimbedVar<CF, Cfg, false>>, SynthesisError> {
-        self.0
-            .iter()
-            .map(|row| {
-                let len = row
-                    .iter()
-                    .map(|(value, col_i)| value.limbs.len() + v[*col_i].limbs.len() - 1)
-                    .max()
-                    .unwrap_or(0);
-                // This is a combination of `mul_unaligned` and `add_unaligned`
-                // that results in more flattened `LinearCombination`s.
-                // Consequently, `ConstraintSystem::inline_all_lcs` costs less
-                // time, thus making trusted setup and proof generation faster.
-                let bounds = (0..len)
-                    .map(|i| {
-                        Bounds::add_many(
-                            &row.iter()
-                                .flat_map(|(value, col_i)| {
-                                    let start =
-                                        max(i + 1, v[*col_i].bounds.len()) - v[*col_i].bounds.len();
-                                    let end = min(i + 1, value.bounds.len());
-                                    (start..end)
-                                        .map(|j| value.bounds[j].mul(&v[*col_i].bounds[i - j]))
-                                })
-                                .collect::<Vec<_>>(),
-                        )
-                        .filter_safe::<CF>()
-                    })
-                    .collect::<Option<Vec<_>>>()
-                    .ok_or(SynthesisError::Unsatisfiable)?;
-                let limbs = (0..len)
-                    .map(|i| {
-                        row.iter()
-                            .flat_map(|(value, col_i)| {
-                                let start =
-                                    max(i + 1, v[*col_i].limbs.len()) - v[*col_i].limbs.len();
-                                let end = min(i + 1, value.limbs.len());
-                                (start..end).map(|j| &value.limbs[j] * &v[*col_i].limbs[i - j])
-                            })
-                            .sum()
-                    })
-                    .collect();
-                Ok(LimbedVar::new(limbs, bounds))
-            })
-            .collect()
+        self.0.iter().map(|row| row.mul(v)).collect()
     }
 }
 
@@ -999,72 +1133,7 @@ impl<F: SonobeField, Cfg> AllocVar<(BigInt, Bounds), F> for LimbedVar<F, Cfg, tr
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
-        let cs = cs.into().cs();
-        let v = f()?;
-        let (x, Bounds(lb, ub)) = v.borrow();
-
-        if x < lb || x > ub {
-            return Err(SynthesisError::Unsatisfiable);
-        }
-
-        let len = max(lb.bits(), ub.bits()) as usize;
-
-        let x_is_neg = x.is_negative();
-        let mut x_bits = x
-            .magnitude()
-            .to_radix_le(2)
-            .into_iter()
-            .map(|i| i == 1)
-            .collect::<Vec<_>>();
-        x_bits.resize(len, false);
-
-        let x_is_neg = if !lb.is_negative() {
-            Boolean::FALSE
-        } else if !ub.is_positive() {
-            Boolean::TRUE
-        } else {
-            Boolean::new_variable(cs.clone(), || Ok(x_is_neg), mode)?
-        };
-        let x_bits = Vec::new_variable(cs, || Ok(x_bits), mode)?;
-
-        let limbs = x_bits
-            .chunks(F::BITS_PER_LIMB)
-            .map(|chunk| {
-                let limb_abs = Boolean::le_bits_to_fp(chunk)?;
-                x_is_neg.select(&limb_abs.negate()?, &limb_abs)
-            })
-            .collect::<Result<_, _>>()?;
-
-        let bounds = compute_bounds(lb, ub, F::BITS_PER_LIMB);
-
-        let var = Self::new(limbs, bounds);
-
-        // At this point, we are confident that:
-        // * If `lb >= 0`, then `0 <= var <= 2^len - 1`.
-        // * If `ub <= 0`, then `-2^len + 1 <= var <= 0`.
-        // * Otherwise, `-2^len + 1 <= var <= 2^len - 1`.
-        //
-        // However, for soundness, we need to enforce `lb <= var <= ub`, which
-        // is already guaranteed only if:
-        // * `lb = 0` and `ub = 2^len - 1`
-        // * `lb = -2^len + 1` and `ub = 0`
-        // * `lb = -2^len + 1` and `ub = 2^len - 1`
-        //
-        // For other cases, we additionally check:
-        // * `var <= ub`
-        // * `var >= lb`
-        #[allow(clippy::if_same_then_else)]
-        if lb.is_zero() && ub + BigInt::one() == BigInt::one() << len {
-        } else if BigInt::one() - lb == BigInt::one() << len && ub.is_zero() {
-        } else if BigInt::one() - lb == BigInt::one() << len
-            && ub + BigInt::one() == BigInt::one() << len
-        {
-        } else {
-            var.enforce_lt(&Self::constant(ub + BigInt::one()))?;
-            Self::constant(lb - BigInt::one()).enforce_lt(&var)?;
-        }
-
-        Ok(var)
+        Self::alloc(cs, f, mode, RangeCheckMode::Tight)
     }
 
     fn new_constant(
