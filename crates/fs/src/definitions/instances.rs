@@ -5,6 +5,7 @@ use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::fmt::Debug;
 use sonobe_primitives::{
     arithmetizations::ArithConfig,
+    circuits::linkage::CF,
     commitments::{CommitmentDef, CommitmentDefGadget},
     traits::Dummy,
     transcripts::{Absorbable, AbsorbableVar},
@@ -29,11 +30,11 @@ pub trait FoldingInstance<CM: CommitmentDef>:
 
     /// [`FoldingInstance::public_inputs`] returns the reference to the public
     /// inputs contained in the instance.
-    fn public_inputs(&self) -> &[CM::Scalar];
+    fn public_inputs(&self) -> &[CM::Unit];
 
     /// [`FoldingInstance::public_inputs_mut`] returns the mutable reference to
     /// the public inputs contained in the instance.
-    fn public_inputs_mut(&mut self) -> &mut [CM::Scalar];
+    fn public_inputs_mut(&mut self) -> &mut [CM::Unit];
 }
 
 /// [`PlainInstance`] is a vector of field elements that are the statements /
@@ -52,28 +53,28 @@ impl<V: Default + Clone> Dummy<&ArithConfig> for PlainInstance<V> {
     }
 }
 
-impl<CM: CommitmentDef> FoldingInstance<CM> for PlainInstance<CM::Scalar> {
+impl<CM: CommitmentDef> FoldingInstance<CM> for PlainInstance<CM::Unit> {
     const N_COMMITMENTS: usize = 0;
 
     fn commitments(&self) -> Vec<&CM::Commitment> {
         vec![]
     }
 
-    fn public_inputs(&self) -> &[CM::Scalar] {
+    fn public_inputs(&self) -> &[CM::Unit] {
         self
     }
 
-    fn public_inputs_mut(&mut self) -> &mut [CM::Scalar] {
+    fn public_inputs_mut(&mut self) -> &mut [CM::Unit] {
         self
     }
 }
 
 /// [`FoldingInstanceVar`] is the in-circuit variable of [`FoldingInstance`].
 pub trait FoldingInstanceVar<CM: CommitmentDefGadget>:
-    AllocVar<Self::Value, CM::ConstraintField>
-    + GR1CSVar<CM::ConstraintField, Value: FoldingInstance<CM::Widget>>
-    + AbsorbableVar<CM::ConstraintField>
-    + CondSelectGadget<CM::ConstraintField>
+    AllocVar<Self::Value, CF<CM>>
+    + GR1CSVar<CF<CM>, Value: FoldingInstance<CM::Widget>>
+    + AbsorbableVar<CF<CM>>
+    + CondSelectGadget<CF<CM>>
 {
     /// [`FoldingInstanceVar::commitments`] returns the commitments contained in
     /// the instance variable.
@@ -81,31 +82,31 @@ pub trait FoldingInstanceVar<CM: CommitmentDefGadget>:
 
     /// [`FoldingInstanceVar::public_inputs`] returns the reference to the
     /// public inputs contained in the instance variable.
-    fn public_inputs(&self) -> &Vec<CM::ScalarVar>;
+    fn public_inputs(&self) -> &Vec<CM::UnitVar>;
 
     /// [`FoldingInstanceVar::new_witness_with_public_inputs`] allocates a
     /// folding instance in the circuit as a witness variable, with the given
     /// pre-allocated public inputs.
     fn new_witness_with_public_inputs(
-        cs: impl Into<Namespace<CM::ConstraintField>>,
+        cs: impl Into<Namespace<CF<CM>>>,
         u: &Self::Value,
-        x: Vec<CM::ScalarVar>,
+        x: Vec<CM::UnitVar>,
     ) -> Result<Self, SynthesisError>;
 }
 
-impl<CM: CommitmentDefGadget> FoldingInstanceVar<CM> for PlainInstanceVar<CM::ScalarVar> {
+impl<CM: CommitmentDefGadget> FoldingInstanceVar<CM> for PlainInstanceVar<CM::UnitVar> {
     fn commitments(&self) -> Vec<&CM::CommitmentVar> {
         vec![]
     }
 
-    fn public_inputs(&self) -> &Vec<CM::ScalarVar> {
+    fn public_inputs(&self) -> &Vec<CM::UnitVar> {
         self
     }
 
     fn new_witness_with_public_inputs(
-        _cs: impl Into<Namespace<CM::ConstraintField>>,
+        _cs: impl Into<Namespace<CF<CM>>>,
         _u: &Self::Value,
-        x: Vec<CM::ScalarVar>,
+        x: Vec<CM::UnitVar>,
     ) -> Result<Self, SynthesisError> {
         Ok(Self(x))
     }

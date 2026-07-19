@@ -5,8 +5,14 @@ use ark_ff::PrimeField;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::SynthesisError;
 
-use super::{AbsorbableVar, Transcript, TranscriptGadget};
-use crate::transcripts::recording::{RecordingTranscript, RecordingTranscriptVar};
+use super::{
+    AbsorbableVar, Transcript, TranscriptVar,
+    recording::{RecordingTranscript, RecordingTranscriptVar},
+};
+use crate::{
+    circuits::linkage::{CF, Canonical, HasConstraintField, HasValue, HasVar},
+    transcripts::{TranscriptTypes, TranscriptVarTypes},
+};
 
 /// [`ReplayTranscript`] is a convenience struct that generates specific values
 /// as challenges without running the actual hash function.
@@ -18,16 +24,22 @@ pub struct ReplayTranscript<F> {
     cached_challenges: Vec<F>,
 }
 
-impl<F: PrimeField, T: Transcript<F>> From<RecordingTranscript<F, T>> for ReplayTranscript<F> {
-    fn from(value: RecordingTranscript<F, T>) -> Self {
+impl<T: Transcript> From<RecordingTranscript<T>> for ReplayTranscript<T::Field> {
+    fn from(value: RecordingTranscript<T>) -> Self {
         Self::new(value.cached_challenges)
     }
 }
 
-impl<F: PrimeField> Transcript<F> for ReplayTranscript<F> {
-    type Config = Vec<F>;
-    type Gadget = ReplayTranscriptVar<F>;
+impl<F: PrimeField> HasVar<Canonical> for ReplayTranscript<F> {
+    type Var = ReplayTranscriptVar<F>;
+}
 
+impl<F: PrimeField> TranscriptTypes for ReplayTranscript<F> {
+    type Field = F;
+    type Config = Vec<F>;
+}
+
+impl<F: PrimeField> Transcript for ReplayTranscript<F> {
     fn new(mut cached_challenges: Self::Config) -> Self {
         cached_challenges.reverse();
         Self { cached_challenges }
@@ -52,18 +64,25 @@ pub struct ReplayTranscriptVar<F: PrimeField> {
     cached_challenges: Vec<FpVar<F>>,
 }
 
-impl<F: PrimeField, T: TranscriptGadget<F>> From<RecordingTranscriptVar<F, T>>
-    for ReplayTranscriptVar<F>
-{
-    fn from(value: RecordingTranscriptVar<F, T>) -> Self {
+impl<T: TranscriptVar> From<RecordingTranscriptVar<T>> for ReplayTranscriptVar<CF<T>> {
+    fn from(value: RecordingTranscriptVar<T>) -> Self {
         Self::new(value.cached_challenges)
     }
 }
 
-impl<F: PrimeField> TranscriptGadget<F> for ReplayTranscriptVar<F> {
-    type Config = Vec<FpVar<F>>;
-    type Widget = ReplayTranscript<F>;
+impl<F: PrimeField> HasConstraintField for ReplayTranscriptVar<F> {
+    type ConstraintField = F;
+}
 
+impl<F: PrimeField> HasValue for ReplayTranscriptVar<F> {
+    type Value = ReplayTranscript<F>;
+}
+
+impl<F: PrimeField> TranscriptVarTypes for ReplayTranscriptVar<F> {
+    type Config = Vec<FpVar<F>>;
+}
+
+impl<F: PrimeField> TranscriptVar for ReplayTranscriptVar<F> {
     fn new(mut cached_challenges: Vec<FpVar<F>>) -> Self {
         cached_challenges.reverse();
         Self { cached_challenges }

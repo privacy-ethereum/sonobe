@@ -6,9 +6,10 @@ use ark_r1cs_std::fields::{FieldVar, fp::FpVar};
 use ark_relations::gr1cs::SynthesisError;
 use ark_std::sync::Arc;
 
-use crate::transcripts::{
-    AbsorbableVar, Transcript, TranscriptGadget,
-    griffin::{Griffin, GriffinGadget, GriffinParams},
+use super::{Griffin, GriffinGadget, GriffinParams};
+use crate::{
+    circuits::linkage::{Canonical, HasConstraintField, HasValue, HasVar},
+    transcripts::{AbsorbableVar, Transcript, TranscriptTypes, TranscriptVar, TranscriptVarTypes},
 };
 
 /// [`GriffinSponge`] is a duplex sponge built on the Griffin permutation.
@@ -180,10 +181,16 @@ impl<F: PrimeField> GriffinSpongeVar<F> {
     }
 }
 
-impl<F: PrimeField> Transcript<F> for GriffinSponge<F> {
-    type Config = Arc<GriffinParams<F>>;
-    type Gadget = GriffinSpongeVar<F>;
+impl<F: PrimeField> HasVar<Canonical> for GriffinSponge<F> {
+    type Var = GriffinSpongeVar<F>;
+}
 
+impl<F: PrimeField> TranscriptTypes for GriffinSponge<F> {
+    type Field = F;
+    type Config = Arc<GriffinParams<F>>;
+}
+
+impl<F: PrimeField> Transcript for GriffinSponge<F> {
     fn new(parameters: Arc<GriffinParams<F>>) -> Self {
         let state = vec![F::zero(); parameters.rate + parameters.capacity];
         let mode = DuplexSpongeMode::Absorbing {
@@ -243,10 +250,19 @@ impl<F: PrimeField> Transcript<F> for GriffinSponge<F> {
     }
 }
 
-impl<F: PrimeField> TranscriptGadget<F> for GriffinSpongeVar<F> {
-    type Config = Arc<GriffinParams<F>>;
-    type Widget = GriffinSponge<F>;
+impl<F: PrimeField> HasConstraintField for GriffinSpongeVar<F> {
+    type ConstraintField = F;
+}
 
+impl<F: PrimeField> HasValue for GriffinSpongeVar<F> {
+    type Value = GriffinSponge<F>;
+}
+
+impl<F: PrimeField> TranscriptVarTypes for GriffinSpongeVar<F> {
+    type Config = Arc<GriffinParams<F>>;
+}
+
+impl<F: PrimeField> TranscriptVar for GriffinSpongeVar<F> {
     fn new(parameters: Arc<GriffinParams<F>>) -> Self
     where
         Self: Sized,

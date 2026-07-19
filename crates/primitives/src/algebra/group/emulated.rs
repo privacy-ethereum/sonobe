@@ -22,7 +22,11 @@ use ark_serialize::{CanonicalSerialize, CanonicalSerializeWithFlags};
 use ark_std::borrow::Borrow;
 
 use crate::{
-    algebra::{field::emulated::EmulatedFieldVar, group::SonobeCurve},
+    algebra::{
+        field::emulated::EmulatedFieldVar,
+        group::{BF, SonobeCurve},
+    },
+    circuits::linkage::{HasConstraintField, HasValue},
     traits::SonobeField,
     transcripts::AbsorbableVar,
 };
@@ -35,10 +39,10 @@ use crate::{
 pub struct EmulatedAffineVar<Base: SonobeField, Target: SonobeCurve> {
     /// [`EmulatedAffineVar::x`] is the x-coordinate of the point's affine
     /// representation.
-    pub x: EmulatedFieldVar<Base, Target::BaseField>,
+    pub x: EmulatedFieldVar<Base, BF<Target>>,
     /// [`EmulatedAffineVar::y`] is the y-coordinate of the point's affine
     /// representation.
-    pub y: EmulatedFieldVar<Base, Target::BaseField>,
+    pub y: EmulatedFieldVar<Base, BF<Target>>,
 }
 
 impl<Base: SonobeField, Target: SonobeCurve> AllocVar<Target, Base>
@@ -61,6 +65,16 @@ impl<Base: SonobeField, Target: SonobeCurve> AllocVar<Target, Base>
             Ok(Self { x, y })
         })
     }
+}
+
+impl<Base: SonobeField, Target: SonobeCurve> HasConstraintField
+    for EmulatedAffineVar<Base, Target>
+{
+    type ConstraintField = Base;
+}
+
+impl<Base: SonobeField, Target: SonobeCurve> HasValue for EmulatedAffineVar<Base, Target> {
+    type Value = Target;
 }
 
 impl<Base: SonobeField, Target: SonobeCurve> GR1CSVar<Base> for EmulatedAffineVar<Base, Target> {

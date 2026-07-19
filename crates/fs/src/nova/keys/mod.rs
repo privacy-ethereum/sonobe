@@ -45,7 +45,7 @@ impl<A: Arith, CM: CommitmentDef> DeciderKey for NovaKey<A, CM> {
 
 impl<A, CM> Relation<RW<CM>, RU<CM>> for NovaKey<A, CM>
 where
-    A: for<'a> ArithRelation<RelaxedWitness<&'a [CM::Scalar]>, RelaxedInstance<&'a [CM::Scalar]>>,
+    A: for<'a> ArithRelation<RelaxedWitness<&'a [CM::Unit]>, RelaxedInstance<&'a [CM::Unit]>>,
     CM: CommitmentOps,
 {
     type Error = Error;
@@ -63,7 +63,7 @@ where
 
 impl<A, CM> Relation<IW<CM>, IU<CM>> for NovaKey<A, CM>
 where
-    A: ArithRelation<Vec<CM::Scalar>, Vec<CM::Scalar>>,
+    A: ArithRelation<Vec<CM::Unit>, Vec<CM::Unit>>,
     CM: CommitmentOps,
 {
     type Error = Error;
@@ -75,21 +75,21 @@ where
     }
 }
 
-impl<A, CM> Relation<PW<CM::Scalar>, PU<CM::Scalar>> for NovaKey<A, CM>
+impl<A, CM> Relation<PW<CM::Unit>, PU<CM::Unit>> for NovaKey<A, CM>
 where
-    A: ArithRelation<Vec<CM::Scalar>, Vec<CM::Scalar>>,
+    A: ArithRelation<Vec<CM::Unit>, Vec<CM::Unit>>,
     CM: CommitmentDef,
 {
     type Error = Error;
 
-    fn check_relation(&self, w: &PW<CM::Scalar>, u: &PU<CM::Scalar>) -> Result<(), Self::Error> {
+    fn check_relation(&self, w: &PW<CM::Unit>, u: &PU<CM::Unit>) -> Result<(), Self::Error> {
         self.arith.check_relation(w, u)?;
         Ok(())
     }
 }
 
 impl<A: Arith, CM: CommitmentOps> WitnessInstanceSampler<IW<CM>, IU<CM>> for NovaKey<A, CM> {
-    type Source = AssignmentsOwned<CM::Scalar>;
+    type Source = AssignmentsOwned<CM::Unit>;
     type Error = Error;
 
     fn sample(&self, z: Self::Source, rng: impl RngCore) -> Result<(IW<CM>, IU<CM>), Error> {
@@ -99,17 +99,17 @@ impl<A: Arith, CM: CommitmentOps> WitnessInstanceSampler<IW<CM>, IU<CM>> for Nov
     }
 }
 
-impl<A: Arith, CM: CommitmentDef> WitnessInstanceSampler<PW<CM::Scalar>, PU<CM::Scalar>>
+impl<A: Arith, CM: CommitmentDef> WitnessInstanceSampler<PW<CM::Unit>, PU<CM::Unit>>
     for NovaKey<A, CM>
 {
-    type Source = AssignmentsOwned<CM::Scalar>;
+    type Source = AssignmentsOwned<CM::Unit>;
     type Error = Error;
 
     fn sample(
         &self,
         z: Self::Source,
         _rng: impl RngCore,
-    ) -> Result<(PW<CM::Scalar>, PU<CM::Scalar>), Error> {
+    ) -> Result<(PW<CM::Unit>, PU<CM::Unit>), Error> {
         Ok((z.private.into(), z.public.into()))
     }
 }
@@ -117,9 +117,9 @@ impl<A: Arith, CM: CommitmentDef> WitnessInstanceSampler<PW<CM::Scalar>, PU<CM::
 impl<A, CM> WitnessInstanceSampler<RW<CM>, RU<CM>> for NovaKey<A, CM>
 where
     A: for<'a> ArithRelation<
-            RelaxedWitness<&'a [CM::Scalar]>,
-            RelaxedInstance<&'a [CM::Scalar]>,
-            Evaluation = Vec<CM::Scalar>,
+            RelaxedWitness<&'a [CM::Unit]>,
+            RelaxedInstance<&'a [CM::Unit]>,
+            Evaluation = Vec<CM::Unit>,
         >,
     CM: CommitmentOps,
 {
@@ -129,12 +129,12 @@ where
     fn sample(&self, _: Self::Source, mut rng: impl RngCore) -> Result<(RW<CM>, RU<CM>), Error> {
         let cfg = self.arith.config();
 
-        let u = CM::Scalar::rand(&mut rng);
+        let u = CM::Unit::rand(&mut rng);
         let x = (0..cfg.n_public_inputs)
-            .map(|_| CM::Scalar::rand(&mut rng))
+            .map(|_| CM::Unit::rand(&mut rng))
             .collect::<Vec<_>>();
         let w = (0..cfg.n_witnesses)
-            .map(|_| CM::Scalar::rand(&mut rng))
+            .map(|_| CM::Unit::rand(&mut rng))
             .collect::<Vec<_>>();
         let e = self.arith.eval_relation(
             &RelaxedWitness { w: &w, e: &[] },

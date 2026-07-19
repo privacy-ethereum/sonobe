@@ -18,7 +18,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemeVer
     #[allow(non_snake_case)]
     fn verify(
         _vk: &(),
-        transcript: &mut impl Transcript<TF>,
+        transcript: &mut impl Transcript<Field = TF>,
         Us: &[impl Borrow<Self::RU>; 1],
         us: &[impl Borrow<Self::IU>; 1],
         cm_t: &Self::Proof<1, 1>,
@@ -26,7 +26,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemeVer
         let (U, u) = (Us[0].borrow(), us[0].borrow());
 
         let rho_bits = transcript.add(&U).add(&u).add(cm_t).challenge_bits(B);
-        let rho = CM::Scalar::from_bits_le(&rho_bits);
+        let rho = CM::Unit::from_bits_le(&rho_bits);
 
         Ok(Self::RU {
             cm_e: U.cm_e + cm_t.mul(rho),
@@ -46,7 +46,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemeVer
     #[allow(non_snake_case)]
     fn verify(
         _vk: &(),
-        transcript: &mut impl Transcript<TF>,
+        transcript: &mut impl Transcript<Field = TF>,
         [U1, U2]: &[impl Borrow<Self::RU>; 2],
         _: &[impl Borrow<Self::IU>; 0],
         cm_t: &Self::Proof<2, 0>,
@@ -54,7 +54,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemeVer
         let (U1, U2) = (U1.borrow(), U2.borrow());
 
         let rho_bits = transcript.add(&(U1, U2)).add(cm_t).challenge_bits(B);
-        let rho = CM::Scalar::from_bits_le(&rho_bits);
+        let rho = CM::Unit::from_bits_le(&rho_bits);
         let rho_squared = rho * rho;
 
         Ok(Self::RU {

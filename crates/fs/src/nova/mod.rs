@@ -6,9 +6,11 @@
 use ark_r1cs_std::boolean::Boolean;
 use ark_std::marker::PhantomData;
 use sonobe_primitives::{
+    algebra::group::{BF, SF},
     arithmetizations::r1cs::R1CS,
-    commitments::{CommitmentDef, CommitmentDefGadget, GroupBasedCommitment},
-    traits::{CF2, SonobeField},
+    circuits::linkage::{CF, Gadget, HasConstraintField, HasGadget, HasWidget},
+    commitments::{CommitmentDefGadget, FieldFriendly, GroupBasedCommitment, GroupFriendly},
+    traits::SonobeField,
 };
 
 use self::{
@@ -20,7 +22,9 @@ use self::{
 };
 use crate::{
     FoldingSchemeDef, FoldingSchemeDefGadget, GroupBasedFoldingSchemePrimaryDef,
-    GroupBasedFoldingSchemeSecondaryDef, nova::keys::NovaKey,
+    GroupBasedFoldingSchemeSecondaryDef,
+    definitions::variants::{Primary, Secondary},
+    nova::keys::NovaKey,
 };
 
 pub mod algorithms;
@@ -40,13 +44,12 @@ pub struct AbstractNova<CM, TF, const CHALLENGE_BITS: usize = 128> {
 }
 
 /// [`Nova`] is the main Nova folding scheme on the primary curve.
-pub type Nova<CM, const CHALLENGE_BITS: usize = 128> =
-    AbstractNova<CM, <CM as CommitmentDef>::Scalar, CHALLENGE_BITS>;
+pub type Nova<CM, const CHALLENGE_BITS: usize = 128> = AbstractNova<CM, SF<CM>, CHALLENGE_BITS>;
 
 /// [`CycleFoldNova`] is the Nova folding scheme on the secondary curve which
 /// can be used as the folding scheme for folding CycleFold instances.
 pub type CycleFoldNova<CM, const CHALLENGE_BITS: usize = 128> =
-    AbstractNova<CM, CF2<<CM as CommitmentDef>::Commitment>, CHALLENGE_BITS>;
+    AbstractNova<CM, BF<CM>, CHALLENGE_BITS>;
 
 impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> FoldingSchemeDef
     for AbstractNova<CM, TF, CHALLENGE_BITS>
@@ -58,7 +61,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const CHALLENGE_BITS: usize> Fol
     type IU = IU<CM>;
 
     type TranscriptField = TF;
-    type Arith = R1CS<CM::Scalar>;
+    type Arith = R1CS<CM::Unit>;
 
     type Config = usize;
     type PublicParam = CM::Key;
@@ -72,31 +75,53 @@ pub struct AbstractNovaGadget<CM, const CHALLENGE_BITS: usize = 128> {
     _vc: PhantomData<CM>,
 }
 
+impl<CM, const CHALLENGE_BITS: usize> HasConstraintField for AbstractNovaGadget<CM, CHALLENGE_BITS>
+where
+    CM: CommitmentDefGadget<Widget: GroupBasedCommitment>,
+{
+    type ConstraintField = CF<CM>;
+}
+
+impl<CM, const CHALLENGE_BITS: usize> HasWidget for AbstractNovaGadget<CM, CHALLENGE_BITS>
+where
+    CM: CommitmentDefGadget<Widget: GroupBasedCommitment>,
+{
+    type Widget = AbstractNova<CM::Widget, CF<CM>, CHALLENGE_BITS>;
+}
+
 impl<CM, const CHALLENGE_BITS: usize> FoldingSchemeDefGadget
     for AbstractNovaGadget<CM, CHALLENGE_BITS>
 where
     CM: CommitmentDefGadget<Widget: GroupBasedCommitment>,
 {
-    type Widget = AbstractNova<CM::Widget, CM::ConstraintField, CHALLENGE_BITS>;
-
     type CM = CM;
     type RU = RUVar<CM>;
     type IU = IUVar<CM>;
     type VerifierKey = ();
-    type Challenge = [Boolean<CM::ConstraintField>; CHALLENGE_BITS];
+    type Challenge = [Boolean<CF<CM>>; CHALLENGE_BITS];
     type Proof<const M: usize, const N: usize> = CM::CommitmentVar;
 }
 
-impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemePrimaryDef
-    for AbstractNova<CM, CM::Scalar, CHALLENGE_BITS>
+impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> HasGadget<Primary>
+    for AbstractNova<CM, SF<CM>, CHALLENGE_BITS>
 {
-    type Gadget = AbstractNovaGadget<CM::Gadget2, CHALLENGE_BITS>;
+    type Gadget = AbstractNovaGadget<Gadget<CM, FieldFriendly>, CHALLENGE_BITS>;
+}
+
+impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemePrimaryDef
+    for AbstractNova<CM, SF<CM>, CHALLENGE_BITS>
+{
+}
+
+impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> HasGadget<Secondary>
+    for AbstractNova<CM, BF<CM>, CHALLENGE_BITS>
+{
+    type Gadget = AbstractNovaGadget<Gadget<CM, GroupFriendly>, CHALLENGE_BITS>;
 }
 
 impl<CM: GroupBasedCommitment, const CHALLENGE_BITS: usize> GroupBasedFoldingSchemeSecondaryDef
-    for AbstractNova<CM, CF2<CM::Commitment>, CHALLENGE_BITS>
+    for AbstractNova<CM, BF<CM>, CHALLENGE_BITS>
 {
-    type Gadget = AbstractNovaGadget<CM::Gadget1, CHALLENGE_BITS>;
 }
 
 #[cfg(test)]

@@ -14,11 +14,11 @@ use sonobe_fs::{
     GroupBasedFoldingSchemePrimary, GroupBasedFoldingSchemeSecondary,
 };
 use sonobe_primitives::{
+    algebra::group::{HasGroup, SF},
     arithmetizations::ArithConfig,
     circuits::{FCircuit, WitnessToPublic},
-    commitments::CommitmentDef,
     traits::{Dummy, SonobeCurve},
-    transcripts::{TranscriptGadget, recording::RecordingTranscriptVar},
+    transcripts::{TranscriptVar, recording::RecordingTranscriptVar},
 };
 
 use crate::compilers::cyclefold::FoldingSchemeCycleFoldExt;
@@ -30,7 +30,7 @@ pub struct AugmentedCircuit<
     FS1: GroupBasedFoldingSchemePrimary<1, 1>,
     FS2: GroupBasedFoldingSchemeSecondary<1, 1>,
     FC: FCircuit,
-    T: TranscriptGadget<FC::Field>,
+    T: TranscriptVar<ConstraintField = FC::Field>,
 > {
     _fs: PhantomData<(FS1, FS2)>,
     hash_config: &'a T::Config,
@@ -44,7 +44,7 @@ where
     FS1: GroupBasedFoldingSchemePrimary<1, 1>,
     FS2: GroupBasedFoldingSchemeSecondary<1, 1>,
     FC: FCircuit,
-    T: TranscriptGadget<FC::Field>,
+    T: TranscriptVar<ConstraintField = FC::Field>,
 {
     /// [`AugmentedCircuit::new`] creates an instance of the augmented circuit
     /// for the given step circuit.
@@ -70,20 +70,16 @@ where
             1,
             1,
             Gadget: FoldingSchemePartialVerifierGadget<1, 1, VerifierKey = ()>,
-            CM: CommitmentDef<
-                Commitment: SonobeCurve<BaseField = <FS2::CM as CommitmentDef>::Scalar>,
-            >,
+            CM: HasGroup<Group: SonobeCurve<BaseField = SF<FS2::CM>>>,
         >,
     FS2: GroupBasedFoldingSchemeSecondary<
             1,
             1,
             Gadget: FoldingSchemeFullVerifierGadget<1, 1, VerifierKey = ()>,
-            CM: CommitmentDef<
-                Commitment: SonobeCurve<BaseField = <FS1::CM as CommitmentDef>::Scalar>,
-            >,
+            CM: HasGroup<Group: SonobeCurve<BaseField = SF<FS1::CM>>>,
         >,
-    FC: FCircuit<Field = <FS1::CM as CommitmentDef>::Scalar>,
-    T: TranscriptGadget<FC::Field>,
+    FC: FCircuit<Field = FS1::TranscriptField>,
+    T: TranscriptVar<ConstraintField = FC::Field>,
 {
     /// [`AugmentedCircuit::compute_next_state`] invokes the step circuit on the
     /// current state and external inputs to compute the next state and external
@@ -207,20 +203,16 @@ where
             1,
             1,
             Gadget: FoldingSchemePartialVerifierGadget<1, 1, VerifierKey = ()>,
-            CM: CommitmentDef<
-                Commitment: SonobeCurve<BaseField = <FS2::CM as CommitmentDef>::Scalar>,
-            >,
+            CM: HasGroup<Group: SonobeCurve<BaseField = SF<FS2::CM>>>,
         >,
     FS2: GroupBasedFoldingSchemeSecondary<
             1,
             1,
             Gadget: FoldingSchemeFullVerifierGadget<1, 1, VerifierKey = ()>,
-            CM: CommitmentDef<
-                Commitment: SonobeCurve<BaseField = <FS1::CM as CommitmentDef>::Scalar>,
-            >,
+            CM: HasGroup<Group: SonobeCurve<BaseField = SF<FS1::CM>>>,
         >,
-    FC: FCircuit<Field = <FS1::CM as CommitmentDef>::Scalar>,
-    T: TranscriptGadget<FC::Field>,
+    FC: FCircuit<Field = FS1::TranscriptField>,
+    T: TranscriptVar<ConstraintField = FC::Field>,
 {
     fn generate_constraints(
         self,

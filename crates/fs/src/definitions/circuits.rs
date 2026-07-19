@@ -2,7 +2,7 @@
 //! for proof verification.
 
 use ark_relations::gr1cs::SynthesisError;
-use sonobe_primitives::{commitments::CommitmentDefGadget, transcripts::TranscriptGadget};
+use sonobe_primitives::{circuits::linkage::CF, transcripts::TranscriptVar};
 
 use super::{FoldingSchemeDefGadget, algorithms::FoldingSchemeOps};
 
@@ -28,7 +28,7 @@ pub trait FoldingSchemePartialVerifierGadget<const M: usize, const N: usize>:
     #[allow(non_snake_case)]
     fn verify_hinted(
         vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptGadget<<Self::CM as CommitmentDefGadget>::ConstraintField>,
+        transcript: &mut impl TranscriptVar<ConstraintField = CF<Self::CM>>,
         Us: [&Self::RU; M],
         us: [&Self::IU; N],
         proof: &Self::Proof<M, N>,
@@ -52,7 +52,7 @@ pub trait FoldingSchemeFullVerifierGadget<const M: usize, const N: usize>:
     #[allow(non_snake_case)]
     fn verify(
         vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptGadget<<Self::CM as CommitmentDefGadget>::ConstraintField>,
+        transcript: &mut impl TranscriptVar<ConstraintField = CF<Self::CM>>,
         Us: [&Self::RU; M],
         us: [&Self::IU; N],
         proof: &Self::Proof<M, N>,

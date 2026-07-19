@@ -13,7 +13,10 @@ pub mod witnesses;
 use ark_r1cs_std::{GR1CSVar, alloc::AllocVar};
 use sonobe_primitives::{
     arithmetizations::{Arith, ArithConfig},
-    circuits::AssignmentsOwned,
+    circuits::{
+        AssignmentsOwned,
+        linkage::{CF, HasWidget},
+    },
     commitments::{CommitmentDef, CommitmentDefGadget},
     relations::{Relation, WitnessInstanceSampler},
     traits::{Dummy, SonobeField},
@@ -52,7 +55,7 @@ use self::{
 pub trait FoldingSchemeDef {
     /// [`FoldingSchemeDef::CM`] is the commitment scheme used by the folding
     /// scheme.
-    type CM: CommitmentDef<Scalar: SonobeField>;
+    type CM: CommitmentDef<Unit: SonobeField>;
     /// [`FoldingSchemeDef::RW`] is the type of running witness.
     type RW: FoldingWitness<Self::CM>;
     /// [`FoldingSchemeDef::RU`] is the type of running instance.
@@ -84,7 +87,7 @@ pub trait FoldingSchemeDef {
         + WitnessInstanceSampler<
             Self::IW,
             Self::IU,
-            Source = AssignmentsOwned<<Self::CM as CommitmentDef>::Scalar>,
+            Source = AssignmentsOwned<<Self::CM as CommitmentDef>::Unit>,
             Error = Error,
         >;
     /// [`FoldingSchemeDef::Challenge`] is the type of challenge generated
@@ -97,11 +100,7 @@ pub trait FoldingSchemeDef {
 
 /// [`FoldingSchemeDefGadget`] specifies the in-circuit associated types for a
 /// folding scheme gadget.
-pub trait FoldingSchemeDefGadget {
-    /// [`FoldingSchemeDefGadget::Widget`] points to the out-of-circuit folding
-    /// scheme widget.
-    type Widget: FoldingSchemeDef;
-
+pub trait FoldingSchemeDefGadget: HasWidget<Widget: FoldingSchemeDef> {
     /// [`FoldingSchemeDefGadget::CM`] is the commitment scheme gadget.
     type CM: CommitmentDefGadget<Widget = <Self::Widget as FoldingSchemeDef>::CM>;
     /// [`FoldingSchemeDefGadget::RU`] is the type of in-circuit running
@@ -117,20 +116,10 @@ pub trait FoldingSchemeDefGadget {
 
     /// [`FoldingSchemeDefGadget::Challenge`] is the type of in-circuit
     /// challenge variable.
-    type Challenge: AllocVar<
-            <Self::Widget as FoldingSchemeDef>::Challenge,
-            <Self::CM as CommitmentDefGadget>::ConstraintField,
-        > + GR1CSVar<
-            <Self::CM as CommitmentDefGadget>::ConstraintField,
-            Value = <Self::Widget as FoldingSchemeDef>::Challenge,
-        >;
+    type Challenge: AllocVar<<Self::Widget as FoldingSchemeDef>::Challenge, CF<Self::CM>>
+        + GR1CSVar<CF<Self::CM>, Value = <Self::Widget as FoldingSchemeDef>::Challenge>;
     /// [`FoldingSchemeDefGadget::Proof`] is the type of in-circuit proof
     /// variable.
-    type Proof<const M: usize, const N: usize>: AllocVar<
-            <Self::Widget as FoldingSchemeDef>::Proof<M, N>,
-            <Self::CM as CommitmentDefGadget>::ConstraintField,
-        > + GR1CSVar<
-            <Self::CM as CommitmentDefGadget>::ConstraintField,
-            Value = <Self::Widget as FoldingSchemeDef>::Proof<M, N>,
-        >;
+    type Proof<const M: usize, const N: usize>: AllocVar<<Self::Widget as FoldingSchemeDef>::Proof<M, N>, CF<Self::CM>>
+        + GR1CSVar<CF<Self::CM>, Value = <Self::Widget as FoldingSchemeDef>::Proof<M, N>>;
 }

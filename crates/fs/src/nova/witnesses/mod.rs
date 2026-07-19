@@ -11,11 +11,11 @@ pub mod circuits;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunningWitness<CM: CommitmentDef> {
     /// [`RunningWitness::e`] is the error term.
-    pub e: Vec<CM::Scalar>,
+    pub e: Vec<CM::Unit>,
     /// [`RunningWitness::r_e`] is the randomness for the error term commitment.
     pub r_e: CM::Randomness,
     /// [`RunningWitness::w`] is the vector of witnesses (to the circuit).
-    pub w: Vec<CM::Scalar>,
+    pub w: Vec<CM::Unit>,
     /// [`RunningWitness::r_w`] is the randomness for the witness commitment.
     pub r_w: CM::Randomness,
 }
@@ -23,7 +23,7 @@ pub struct RunningWitness<CM: CommitmentDef> {
 impl<CM: CommitmentDef> FoldingWitness<CM> for RunningWitness<CM> {
     const N_OPENINGS: usize = 2;
 
-    fn openings(&self) -> Vec<(&[CM::Scalar], &CM::Randomness)> {
+    fn openings(&self) -> Vec<(&[CM::Unit], &CM::Randomness)> {
         vec![(&self.e, &self.r_e), (&self.w, &self.r_w)]
     }
 }
@@ -43,7 +43,7 @@ impl<CM: CommitmentDef> Dummy<&ArithConfig> for RunningWitness<CM> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IncomingWitness<CM: CommitmentDef> {
     /// [`IncomingWitness::w`] is the witness (to the circuit).
-    pub w: Vec<CM::Scalar>,
+    pub w: Vec<CM::Unit>,
     /// [`IncomingWitness::r_w`] is the randomness for the witness commitment.
     pub r_w: CM::Randomness,
 }
@@ -51,7 +51,7 @@ pub struct IncomingWitness<CM: CommitmentDef> {
 impl<CM: CommitmentDef> FoldingWitness<CM> for IncomingWitness<CM> {
     const N_OPENINGS: usize = 1;
 
-    fn openings(&self) -> Vec<(&[CM::Scalar], &CM::Randomness)> {
+    fn openings(&self) -> Vec<(&[CM::Unit], &CM::Randomness)> {
         vec![(&self.w, &self.r_w)]
     }
 }

@@ -14,12 +14,12 @@ use thiserror::Error;
 
 use crate::{
     algebra::{
-        Val,
         field::{TwoStageFieldVar, emulated::EmulatedFieldVar},
-        group::emulated::EmulatedAffineVar,
+        group::{BF, HasGroup, SF, emulated::EmulatedAffineVar},
         ops::bits::FromBitsGadget,
     },
-    traits::{CF1, CF2, SonobeCurve, SonobeField},
+    circuits::linkage::{Canonical, CircuitRepr, HasGadget, HasWidget, Var},
+    traits::SonobeField,
     transcripts::{Absorbable, AbsorbableVar},
 };
 
@@ -59,11 +59,11 @@ pub trait CommitmentDef: 'static + Clone + Debug + PartialEq + Eq {
 
     /// [`CommitmentDef::Key`] is the type of the commitment key.
     type Key: CommitmentKey;
-    /// [`CommitmentDef::Scalar`] is the type of the scalars being committed to.
+    /// [`CommitmentDef::Unit`] is the type of the values being committed to.
     ///
     /// For generality, we do not restrict this to field elements and instead
     /// only bound it by necessary traits.
-    type Scalar: Clone + Copy + Default + Debug + PartialEq + Eq + Sync + Absorbable + UniformRand;
+    type Unit: Clone + Copy + Default + Debug + PartialEq + Eq + Sync + Absorbable + UniformRand;
     /// [`CommitmentDef::Commitment`] is the type of the commitment.
     ///
     /// In the future we may introduce other commitment schemes such as those
@@ -86,10 +86,10 @@ pub trait CommitmentDef: 'static + Clone + Debug + PartialEq + Eq {
         + PartialEq
         + Eq
         + Sync
-        + Add<Self::Scalar, Output = Self::Randomness>
-        + Mul<Self::Scalar, Output = Self::Randomness>
-        + for<'a> Add<&'a Self::Scalar, Output = Self::Randomness>
-        + for<'a> Mul<&'a Self::Scalar, Output = Self::Randomness>
+        + Add<Self::Unit, Output = Self::Randomness>
+        + Mul<Self::Unit, Output = Self::Randomness>
+        + for<'a> Add<&'a Self::Unit, Output = Self::Randomness>
+        + for<'a> Mul<&'a Self::Unit, Output = Self::Randomness>
         + Add<Output = Self::Randomness>
         + Mul<Output = Self::Randomness>
         + Sum;
@@ -109,7 +109,7 @@ pub trait CommitmentOps: CommitmentDef {
     /// randomness source `rng`, and outputs the commitment and the randomness.
     fn commit(
         ck: &Self::Key,
-        v: &[Self::Scalar],
+        v: &[Self::Unit],
         rng: impl RngCore,
     ) -> Result<(Self::Commitment, Self::Randomness), Error>;
 
@@ -119,7 +119,7 @@ pub trait CommitmentOps: CommitmentDef {
     /// outputs `Ok(())` if the opening verifies, or an error otherwise.
     fn open(
         ck: &Self::Key,
-        v: &[Self::Scalar],
+        v: &[Self::Unit],
         r: &Self::Randomness,
         cm: &Self::Commitment,
     ) -> Result<(), Error>;
@@ -127,21 +127,19 @@ pub trait CommitmentOps: CommitmentDef {
 
 /// [`CommitmentDefGadget`] specifies the in-circuit associated types for a
 /// commitment scheme gadget.
-pub trait CommitmentDefGadget: Clone {
-    /// [`CommitmentDefGadget::ConstraintField`] is the field over which the
-    /// circuit running the commitment scheme is defined.
-    type ConstraintField: SonobeField;
-
+pub trait CommitmentDefGadget:
+    Clone + HasWidget<Widget: CommitmentDef, ConstraintField: SonobeField>
+{
     /// [`CommitmentDefGadget::KeyVar`] is the in-circuit variable type for the
     /// commitment key.
     type KeyVar: AllocVar<<Self::Widget as CommitmentDef>::Key, Self::ConstraintField>;
-    /// [`CommitmentDefGadget::ScalarVar`] is the in-circuit variable type for
-    /// the scalars being committed to.
-    type ScalarVar: AbsorbableVar<Self::ConstraintField>
+    /// [`CommitmentDefGadget::UnitVar`] is the in-circuit variable type for the
+    /// values being committed to.
+    type UnitVar: AbsorbableVar<Self::ConstraintField>
         + CondSelectGadget<Self::ConstraintField>
         + FromBitsGadget<Self::ConstraintField>
-        + AllocVar<<Self::Widget as CommitmentDef>::Scalar, Self::ConstraintField>
-        + GR1CSVar<Self::ConstraintField, Value = <Self::Widget as CommitmentDef>::Scalar>
+        + AllocVar<<Self::Widget as CommitmentDef>::Unit, Self::ConstraintField>
+        + GR1CSVar<Self::ConstraintField, Value = <Self::Widget as CommitmentDef>::Unit>
         + TwoStageFieldVar;
     /// [`CommitmentDefGadget::CommitmentVar`] is the in-circuit variable type
     /// for the commitment.
@@ -154,48 +152,71 @@ pub trait CommitmentDefGadget: Clone {
     /// for the randomness used in the commitment.
     type RandomnessVar: AllocVar<<Self::Widget as CommitmentDef>::Randomness, Self::ConstraintField>
         + GR1CSVar<Self::ConstraintField, Value = <Self::Widget as CommitmentDef>::Randomness>;
-
-    /// [`CommitmentDefGadget::Widget`] points to the out-of-circuit commitment
-    /// scheme widget.
-    type Widget: CommitmentDef;
 }
 
 /// [`CommitmentOpsGadget`] defines algorithms (majorly the opening algorithm)
 /// for commitment schemes in-circuit.
-pub trait CommitmentOpsGadget: CommitmentDefGadget<Widget: CommitmentOps> {
+pub trait CommitmentOpsGadget: CommitmentDefGadget + HasWidget<Widget: CommitmentOps> {
     /// [`CommitmentOpsGadget::open`] defines the commitment opening gadget
     /// that matches its out-of-circuit widget [`CommitmentOps::open`].
     fn open(
         ck: &Self::KeyVar,
-        v: &[Self::ScalarVar],
+        v: &[Self::UnitVar],
         r: &Self::RandomnessVar,
         cm: &Self::CommitmentVar,
     ) -> Result<(), SynthesisError>;
 }
 
+pub enum GroupFriendly {}
+
+pub enum FieldFriendly {}
+
+impl CircuitRepr for GroupFriendly {}
+impl CircuitRepr for FieldFriendly {}
+
 /// [`GroupBasedCommitment`] is a variant of commitment schemes built on groups
 /// (elliptic curves).
 pub trait GroupBasedCommitment:
-    CommitmentDef<Commitment: SonobeCurve, Scalar = CF1<<Self as CommitmentDef>::Commitment>>
-    + CommitmentOps
+    HasGroup
+    + CommitmentOps<Commitment = Self::Group, Unit = SF<Self>>
+    + HasGadget<
+        GroupFriendly,
+        Gadget: CommitmentOpsGadget<
+            ConstraintField = BF<Self>,
+            UnitVar = EmulatedFieldVar<BF<Self>, SF<Self>>,
+            CommitmentVar = Var<Self::Group, Canonical>,
+        >,
+    > + HasGadget<
+        FieldFriendly,
+        Gadget: CommitmentDefGadget<
+            ConstraintField = SF<Self>,
+            UnitVar = FpVar<SF<Self>>,
+            CommitmentVar = EmulatedAffineVar<SF<Self>, Self::Commitment>,
+        >,
+    >
 {
-    /// [`GroupBasedCommitment::Gadget1`] points to the in-circuit gadget for
-    /// the group-based commitment scheme over the curve's base field.
-    type Gadget1: CommitmentOpsGadget
-        + CommitmentDefGadget<
-            ConstraintField = CF2<Self::Commitment>,
-            ScalarVar = EmulatedFieldVar<CF2<Self::Commitment>, Self::Scalar>,
-            CommitmentVar = <Self::Commitment as Val>::Var,
-            Widget = Self,
-        >;
-    /// [`GroupBasedCommitment::Gadget2`] points to the in-circuit gadget for
-    /// the group-based commitment scheme over the curve's scalar field.
-    type Gadget2: CommitmentDefGadget<
-            ConstraintField = Self::Scalar,
-            ScalarVar = FpVar<Self::Scalar>,
-            CommitmentVar = EmulatedAffineVar<Self::Scalar, Self::Commitment>,
-            Widget = Self,
-        >;
+}
+
+impl<
+    T: HasGroup
+        + CommitmentOps<Commitment = Self::Group, Unit = SF<Self>>
+        + HasGadget<
+            GroupFriendly,
+            Gadget: CommitmentOpsGadget<
+                ConstraintField = BF<Self>,
+                UnitVar = EmulatedFieldVar<BF<Self>, SF<Self>>,
+                CommitmentVar = Var<Self::Group, Canonical>,
+            >,
+        > + HasGadget<
+            FieldFriendly,
+            Gadget: CommitmentDefGadget<
+                ConstraintField = SF<Self>,
+                UnitVar = FpVar<SF<Self>>,
+                CommitmentVar = EmulatedAffineVar<SF<Self>, Self::Commitment>,
+            >,
+        >,
+> GroupBasedCommitment for T
+{
 }
 
 #[cfg(test)]
@@ -211,7 +232,7 @@ mod tests {
         len: usize,
     ) -> Result<(), Box<dyn Error>> {
         let v = (0..len)
-            .map(|_| CM::Scalar::rand(&mut rng))
+            .map(|_| CM::Unit::rand(&mut rng))
             .collect::<Vec<_>>();
 
         let ck = CM::generate_key(len, &mut rng)?;

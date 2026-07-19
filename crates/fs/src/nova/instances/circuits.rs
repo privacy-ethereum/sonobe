@@ -9,7 +9,9 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
-use sonobe_primitives::{commitments::CommitmentDefGadget, transcripts::AbsorbableVar};
+use sonobe_primitives::{
+    circuits::linkage::CF, commitments::CommitmentDefGadget, transcripts::AbsorbableVar,
+};
 
 use super::{IncomingInstance, RunningInstance};
 use crate::FoldingInstanceVar;
@@ -20,19 +22,19 @@ pub struct RunningInstanceVar<CM: CommitmentDefGadget> {
     /// [`RunningInstanceVar::cm_e`] is the error term commitment.
     pub cm_e: CM::CommitmentVar,
     /// [`RunningInstanceVar::u`] is the constant term.
-    pub u: CM::ScalarVar,
+    pub u: CM::UnitVar,
     /// [`RunningInstanceVar::cm_w`] is the witness commitment.
     pub cm_w: CM::CommitmentVar,
     /// [`RunningInstanceVar::x`] is the vector of public inputs (to the
     /// circuit).
-    pub x: Vec<CM::ScalarVar>,
+    pub x: Vec<CM::UnitVar>,
 }
 
-impl<CM: CommitmentDefGadget> AllocVar<RunningInstance<CM::Widget>, CM::ConstraintField>
+impl<CM: CommitmentDefGadget> AllocVar<RunningInstance<CM::Widget>, CF<CM>>
     for RunningInstanceVar<CM>
 {
     fn new_variable<T: Borrow<RunningInstance<CM::Widget>>>(
-        cs: impl Into<Namespace<CM::ConstraintField>>,
+        cs: impl Into<Namespace<CF<CM>>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
@@ -48,10 +50,10 @@ impl<CM: CommitmentDefGadget> AllocVar<RunningInstance<CM::Widget>, CM::Constrai
     }
 }
 
-impl<CM: CommitmentDefGadget> GR1CSVar<CM::ConstraintField> for RunningInstanceVar<CM> {
+impl<CM: CommitmentDefGadget> GR1CSVar<CF<CM>> for RunningInstanceVar<CM> {
     type Value = RunningInstance<CM::Widget>;
 
-    fn cs(&self) -> ConstraintSystemRef<CM::ConstraintField> {
+    fn cs(&self) -> ConstraintSystemRef<CF<CM>> {
         self.cm_e
             .cs()
             .or(self.u.cs())
@@ -69,11 +71,8 @@ impl<CM: CommitmentDefGadget> GR1CSVar<CM::ConstraintField> for RunningInstanceV
     }
 }
 
-impl<CM: CommitmentDefGadget> AbsorbableVar<CM::ConstraintField> for RunningInstanceVar<CM> {
-    fn absorb_into(
-        &self,
-        dest: &mut Vec<FpVar<CM::ConstraintField>>,
-    ) -> Result<(), SynthesisError> {
+impl<CM: CommitmentDefGadget> AbsorbableVar<CF<CM>> for RunningInstanceVar<CM> {
+    fn absorb_into(&self, dest: &mut Vec<FpVar<CF<CM>>>) -> Result<(), SynthesisError> {
         self.u.absorb_into(dest)?;
         self.x.absorb_into(dest)?;
         self.cm_e.absorb_into(dest)?;
@@ -81,9 +80,9 @@ impl<CM: CommitmentDefGadget> AbsorbableVar<CM::ConstraintField> for RunningInst
     }
 }
 
-impl<CM: CommitmentDefGadget> CondSelectGadget<CM::ConstraintField> for RunningInstanceVar<CM> {
+impl<CM: CommitmentDefGadget> CondSelectGadget<CF<CM>> for RunningInstanceVar<CM> {
     fn conditionally_select(
-        cond: &Boolean<CM::ConstraintField>,
+        cond: &Boolean<CF<CM>>,
         true_value: &Self,
         false_value: &Self,
     ) -> Result<Self, SynthesisError> {
@@ -109,14 +108,14 @@ impl<CM: CommitmentDefGadget> FoldingInstanceVar<CM> for RunningInstanceVar<CM> 
         vec![&self.cm_w, &self.cm_e]
     }
 
-    fn public_inputs(&self) -> &Vec<CM::ScalarVar> {
+    fn public_inputs(&self) -> &Vec<CM::UnitVar> {
         &self.x
     }
 
     fn new_witness_with_public_inputs(
-        cs: impl Into<Namespace<CM::ConstraintField>>,
+        cs: impl Into<Namespace<CF<CM>>>,
         u: &Self::Value,
-        x: Vec<CM::ScalarVar>,
+        x: Vec<CM::UnitVar>,
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();
         Ok(Self {
@@ -135,14 +134,14 @@ pub struct IncomingInstanceVar<CM: CommitmentDefGadget> {
     pub cm_w: CM::CommitmentVar,
     /// [`IncomingInstanceVar::x`] is the vector of public inputs (to the
     /// circuit).
-    pub x: Vec<CM::ScalarVar>,
+    pub x: Vec<CM::UnitVar>,
 }
 
-impl<CM: CommitmentDefGadget> AllocVar<IncomingInstance<CM::Widget>, CM::ConstraintField>
+impl<CM: CommitmentDefGadget> AllocVar<IncomingInstance<CM::Widget>, CF<CM>>
     for IncomingInstanceVar<CM>
 {
     fn new_variable<T: Borrow<IncomingInstance<CM::Widget>>>(
-        cs: impl Into<Namespace<CM::ConstraintField>>,
+        cs: impl Into<Namespace<CF<CM>>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
@@ -156,10 +155,10 @@ impl<CM: CommitmentDefGadget> AllocVar<IncomingInstance<CM::Widget>, CM::Constra
     }
 }
 
-impl<CM: CommitmentDefGadget> GR1CSVar<CM::ConstraintField> for IncomingInstanceVar<CM> {
+impl<CM: CommitmentDefGadget> GR1CSVar<CF<CM>> for IncomingInstanceVar<CM> {
     type Value = IncomingInstance<CM::Widget>;
 
-    fn cs(&self) -> ConstraintSystemRef<CM::ConstraintField> {
+    fn cs(&self) -> ConstraintSystemRef<CF<CM>> {
         self.cm_w.cs().or(self.x.cs())
     }
 
@@ -171,19 +170,16 @@ impl<CM: CommitmentDefGadget> GR1CSVar<CM::ConstraintField> for IncomingInstance
     }
 }
 
-impl<CM: CommitmentDefGadget> AbsorbableVar<CM::ConstraintField> for IncomingInstanceVar<CM> {
-    fn absorb_into(
-        &self,
-        dest: &mut Vec<FpVar<CM::ConstraintField>>,
-    ) -> Result<(), SynthesisError> {
+impl<CM: CommitmentDefGadget> AbsorbableVar<CF<CM>> for IncomingInstanceVar<CM> {
+    fn absorb_into(&self, dest: &mut Vec<FpVar<CF<CM>>>) -> Result<(), SynthesisError> {
         self.x.absorb_into(dest)?;
         self.cm_w.absorb_into(dest)
     }
 }
 
-impl<CM: CommitmentDefGadget> CondSelectGadget<CM::ConstraintField> for IncomingInstanceVar<CM> {
+impl<CM: CommitmentDefGadget> CondSelectGadget<CF<CM>> for IncomingInstanceVar<CM> {
     fn conditionally_select(
-        cond: &Boolean<CM::ConstraintField>,
+        cond: &Boolean<CF<CM>>,
         true_value: &Self,
         false_value: &Self,
     ) -> Result<Self, SynthesisError> {
@@ -207,14 +203,14 @@ impl<CM: CommitmentDefGadget> FoldingInstanceVar<CM> for IncomingInstanceVar<CM>
         vec![&self.cm_w]
     }
 
-    fn public_inputs(&self) -> &Vec<CM::ScalarVar> {
+    fn public_inputs(&self) -> &Vec<CM::UnitVar> {
         &self.x
     }
 
     fn new_witness_with_public_inputs(
-        cs: impl Into<Namespace<CM::ConstraintField>>,
+        cs: impl Into<Namespace<CF<CM>>>,
         u: &Self::Value,
-        x: Vec<CM::ScalarVar>,
+        x: Vec<CM::UnitVar>,
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();
         Ok(Self {

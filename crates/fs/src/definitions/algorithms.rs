@@ -50,7 +50,7 @@ pub trait FoldingSchemeProver<const M: usize, const N: usize>: FoldingSchemeDef 
     #[allow(non_snake_case, clippy::type_complexity)]
     fn prove(
         pk: &<Self::DeciderKey as DeciderKey>::ProverKey,
-        transcript: &mut impl Transcript<Self::TranscriptField>,
+        transcript: &mut impl Transcript<Field = Self::TranscriptField>,
         Ws: &[impl Borrow<Self::RW>; M],
         Us: &[impl Borrow<Self::RU>; M],
         ws: &[impl Borrow<Self::IW>; N],
@@ -69,7 +69,7 @@ pub trait FoldingSchemeVerifier<const M: usize, const N: usize>: FoldingSchemeDe
     #[allow(non_snake_case)]
     fn verify(
         vk: &<Self::DeciderKey as DeciderKey>::VerifierKey,
-        transcript: &mut impl Transcript<Self::TranscriptField>,
+        transcript: &mut impl Transcript<Field = Self::TranscriptField>,
         Us: &[impl Borrow<Self::RU>; M],
         us: &[impl Borrow<Self::IU>; N],
         proof: &Self::Proof<M, N>,

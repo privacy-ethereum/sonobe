@@ -16,8 +16,11 @@ use ark_std::{
 };
 
 use crate::{
-    algebra::{Val, field::emulated::EmulatedFieldVar},
-    circuits::WitnessToPublic,
+    algebra::field::emulated::EmulatedFieldVar,
+    circuits::{
+        WitnessToPublic,
+        linkage::{Canonical, Emulated, HasConstraintField, HasValue, HasVar},
+    },
     traits::{Inputize, InputizeEmulated},
     transcripts::{Absorbable, AbsorbableVar},
 };
@@ -30,10 +33,8 @@ pub trait SonobeField:
     PrimeField<BasePrimeField = Self>
     + Absorbable
     + Inputize<Self>
-    + Val<
-        Var: FieldVar<Self, Self> + WitnessToPublic,
-        EmulatedVar<Self> = EmulatedFieldVar<Self, Self>,
-    >
+    + HasVar<Canonical, Var: FieldVar<Self, Self> + WitnessToPublic>
+    + HasVar<Emulated<Self>, Var = EmulatedFieldVar<Self, Self>>
 {
     /// [`SonobeField::BITS_PER_LIMB`] defines the bit length of each limb when
     /// representing field elements as limbs in an emulated field variable.
@@ -46,11 +47,20 @@ impl<P: FpConfig<N>, const N: usize> SonobeField for Fp<P, N> {
     const BITS_PER_LIMB: usize = 32;
 }
 
-impl<P: FpConfig<N>, const N: usize> Val for Fp<P, N> {
-    type PreferredConstraintField = Self;
-    type Var = FpVar<Self>;
+impl<F: PrimeField> HasConstraintField for FpVar<F> {
+    type ConstraintField = F;
+}
 
-    type EmulatedVar<F: SonobeField> = EmulatedFieldVar<F, Self>;
+impl<F: PrimeField> HasValue for FpVar<F> {
+    type Value = F;
+}
+
+impl<P: FpConfig<N>, const N: usize> HasVar<Canonical> for Fp<P, N> {
+    type Var = FpVar<Self>;
+}
+
+impl<P: FpConfig<N>, const N: usize, F: SonobeField> HasVar<Emulated<F>> for Fp<P, N> {
+    type Var = EmulatedFieldVar<F, Self>;
 }
 
 impl<P: FpConfig<N>, const N: usize> Absorbable for Fp<P, N> {

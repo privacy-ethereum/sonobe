@@ -4,8 +4,9 @@ use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, groups::CurveVar};
 use ark_relations::gr1cs::SynthesisError;
 use sonobe_primitives::{
     algebra::ops::bits::FromBitsGadget,
+    circuits::linkage::CF,
     commitments::{CommitmentDef, CommitmentDefGadget, GroupBasedCommitment},
-    transcripts::TranscriptGadget,
+    transcripts::TranscriptVar,
 };
 
 use crate::{
@@ -19,13 +20,13 @@ where
     #[allow(non_snake_case)]
     fn verify_hinted(
         _vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptGadget<CM::ConstraintField>,
+        transcript: &mut impl TranscriptVar<ConstraintField = CF<CM>>,
         [U]: [&Self::RU; 1],
         [u]: [&Self::IU; 1],
         proof: &Self::Proof<1, 1>,
     ) -> Result<Self::RU, SynthesisError> {
         let rho_bits = transcript.add(&U)?.add(&u)?.add(proof)?.challenge_bits(B)?;
-        let rho = CM::ScalarVar::from_bits_le(&rho_bits)?;
+        let rho = CM::UnitVar::from_bits_le(&rho_bits)?;
 
         if U.x.len() != u.x.len() {
             return Err(SynthesisError::Unsatisfiable);
@@ -60,13 +61,13 @@ where
     #[allow(non_snake_case)]
     fn verify_hinted(
         _vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptGadget<CM::ConstraintField>,
+        transcript: &mut impl TranscriptVar<ConstraintField = CF<CM>>,
         [U1, U2]: [&Self::RU; 2],
         _: [&Self::IU; 0],
         proof: &Self::Proof<2, 0>,
     ) -> Result<Self::RU, SynthesisError> {
         let rho_bits = transcript.add(&(U1, U2))?.add(proof)?.challenge_bits(B)?;
-        let rho = CM::ScalarVar::from_bits_le(&rho_bits)?;
+        let rho = CM::UnitVar::from_bits_le(&rho_bits)?;
 
         if U1.x.len() != U2.x.len() {
             return Err(SynthesisError::Unsatisfiable);
@@ -106,18 +107,18 @@ where
 impl<CM, const B: usize> FoldingSchemeFullVerifierGadget<1, 1> for AbstractNovaGadget<CM, B>
 where
     CM: CommitmentDefGadget<Widget: GroupBasedCommitment>,
-    CM::CommitmentVar: CurveVar<<CM::Widget as CommitmentDef>::Commitment, CM::ConstraintField>,
+    CM::CommitmentVar: CurveVar<<CM::Widget as CommitmentDef>::Commitment, CF<CM>>,
 {
     #[allow(non_snake_case)]
     fn verify(
         _vk: &Self::VerifierKey,
-        transcript: &mut impl TranscriptGadget<CM::ConstraintField>,
+        transcript: &mut impl TranscriptVar<ConstraintField = CF<CM>>,
         [U]: [&Self::RU; 1],
         [u]: [&Self::IU; 1],
         proof: &Self::Proof<1, 1>,
     ) -> Result<Self::RU, SynthesisError> {
         let rho_bits = transcript.add(&U)?.add(&u)?.add(proof)?.challenge_bits(B)?;
-        let rho = CM::ScalarVar::from_bits_le(&rho_bits)?;
+        let rho = CM::UnitVar::from_bits_le(&rho_bits)?;
 
         if U.x.len() != u.x.len() {
             return Err(SynthesisError::Unsatisfiable);

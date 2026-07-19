@@ -12,6 +12,7 @@ use ark_std::{
 
 use crate::transcripts::{Absorbable, AbsorbableVar};
 
+pub mod linkage;
 pub mod utils;
 
 /// [`FCircuit`] defines the trait of step circuits being proven by IVC schemes.

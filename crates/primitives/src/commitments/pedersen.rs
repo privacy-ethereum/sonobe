@@ -18,11 +18,18 @@ use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{UniformRand, borrow::Borrow, iter::repeat_with, marker::PhantomData, rand::RngCore};
 
-use super::{CommitmentDef, CommitmentDefGadget, CommitmentKey, CommitmentOps, Error};
+use super::{
+    CommitmentDef, CommitmentDefGadget, CommitmentKey, CommitmentOps, Error, FieldFriendly,
+    GroupFriendly,
+};
 use crate::{
-    algebra::{field::emulated::EmulatedFieldVar, group::emulated::EmulatedAffineVar},
-    commitments::{CommitmentOpsGadget, GroupBasedCommitment},
-    traits::{CF1, CF2, SonobeCurve},
+    algebra::{
+        field::emulated::EmulatedFieldVar,
+        group::{BF, HasGroup, SF, emulated::EmulatedAffineVar},
+    },
+    circuits::linkage::{Canonical, HasConstraintField, HasGadget, HasWidget, Var},
+    commitments::CommitmentOpsGadget,
+    traits::SonobeCurve,
     utils::null::Null,
 };
 
@@ -53,7 +60,7 @@ impl<C: SonobeCurve, const H: bool> PedersenKey<C, H> {
 }
 
 impl<C: SonobeCurve> PedersenKey<C, true> {
-    fn commit(&self, v: &[C::ScalarField], r: &C::ScalarField) -> Result<C, Error> {
+    fn commit(&self, v: &[SF<C>], r: &SF<C>) -> Result<C, Error> {
         if self.g.len() < v.len() {
             return Err(Error::MessageTooLong(self.g.len(), v.len()));
         }
@@ -64,7 +71,7 @@ impl<C: SonobeCurve> PedersenKey<C, true> {
 }
 
 impl<C: SonobeCurve> PedersenKey<C, false> {
-    fn commit(&self, v: &[C::ScalarField]) -> Result<C, Error> {
+    fn commit(&self, v: &[SF<C>]) -> Result<C, Error> {
         if self.g.len() < v.len() {
             return Err(Error::MessageTooLong(self.g.len(), v.len()));
         }
@@ -77,24 +84,22 @@ impl<C: SonobeCurve> PedersenKey<C, false> {
 /// [`PedersenKeyVar`] is the in-circuit variable for [`PedersenKey`], whose
 /// generators are encoded in the canonical form.
 pub struct PedersenKeyVar<C: SonobeCurve, const H: bool> {
-    g: Vec<C::Var>,
-    h: C::Var,
+    g: Vec<Var<C, Canonical>>,
+    h: Var<C, Canonical>,
 }
 
 /// [`PedersenEmulatedKeyVar`] is the in-circuit variable for [`PedersenKey`],
 /// whose generators are encoded in the emulated form.
 pub struct PedersenEmulatedKeyVar<C: SonobeCurve, const H: bool> {
     #[allow(dead_code)]
-    g: Vec<EmulatedAffineVar<CF1<C>, C>>,
+    g: Vec<EmulatedAffineVar<SF<C>, C>>,
     #[allow(dead_code)]
-    h: EmulatedAffineVar<CF1<C>, C>,
+    h: EmulatedAffineVar<SF<C>, C>,
 }
 
-impl<C: SonobeCurve, const H: bool> AllocVar<PedersenKey<C, H>, C::BaseField>
-    for PedersenKeyVar<C, H>
-{
+impl<C: SonobeCurve, const H: bool> AllocVar<PedersenKey<C, H>, BF<C>> for PedersenKeyVar<C, H> {
     fn new_variable<T: Borrow<PedersenKey<C, H>>>(
-        cs: impl Into<Namespace<C::BaseField>>,
+        cs: impl Into<Namespace<BF<C>>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
@@ -109,11 +114,11 @@ impl<C: SonobeCurve, const H: bool> AllocVar<PedersenKey<C, H>, C::BaseField>
     }
 }
 
-impl<C: SonobeCurve, const H: bool> AllocVar<PedersenKey<C, H>, CF1<C>>
+impl<C: SonobeCurve, const H: bool> AllocVar<PedersenKey<C, H>, SF<C>>
     for PedersenEmulatedKeyVar<C, H>
 {
     fn new_variable<T: Borrow<PedersenKey<C, H>>>(
-        cs: impl Into<Namespace<CF1<C>>>,
+        cs: impl Into<Namespace<SF<C>>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
@@ -143,7 +148,7 @@ impl<C: SonobeCurve> CommitmentDef for Pedersen<C, false> {
     const IS_HIDING: bool = false;
 
     type Key = PedersenKey<C, false>;
-    type Scalar = C::ScalarField;
+    type Unit = SF<C>;
     type Commitment = C;
     type Randomness = Null;
 }
@@ -152,19 +157,29 @@ impl<C: SonobeCurve> CommitmentDef for Pedersen<C, true> {
     const IS_HIDING: bool = true;
 
     type Key = PedersenKey<C, true>;
-    type Scalar = C::ScalarField;
+    type Unit = SF<C>;
     type Commitment = C;
-    type Randomness = C::ScalarField;
+    type Randomness = SF<C>;
 }
 
-impl<C: SonobeCurve> GroupBasedCommitment for Pedersen<C, false> {
-    type Gadget1 = PedersenGadget<C, false>;
-    type Gadget2 = PedersenEmulatedGadget<C, false>;
+impl<C: SonobeCurve> HasGadget<GroupFriendly> for Pedersen<C, false> {
+    type Gadget = PedersenGadget<C, false>;
+}
+impl<C: SonobeCurve> HasGadget<FieldFriendly> for Pedersen<C, false> {
+    type Gadget = PedersenEmulatedGadget<C, false>;
+}
+impl<C: SonobeCurve> HasGroup for Pedersen<C, false> {
+    type Group = C;
 }
 
-impl<C: SonobeCurve> GroupBasedCommitment for Pedersen<C, true> {
-    type Gadget1 = PedersenGadget<C, true>;
-    type Gadget2 = PedersenEmulatedGadget<C, true>;
+impl<C: SonobeCurve> HasGadget<GroupFriendly> for Pedersen<C, true> {
+    type Gadget = PedersenGadget<C, true>;
+}
+impl<C: SonobeCurve> HasGadget<FieldFriendly> for Pedersen<C, true> {
+    type Gadget = PedersenEmulatedGadget<C, true>;
+}
+impl<C: SonobeCurve> HasGroup for Pedersen<C, true> {
+    type Group = C;
 }
 
 impl<C: SonobeCurve> CommitmentOps for Pedersen<C, false> {
@@ -174,13 +189,13 @@ impl<C: SonobeCurve> CommitmentOps for Pedersen<C, false> {
 
     fn commit(
         ck: &PedersenKey<C, false>,
-        v: &[CF1<C>],
+        v: &[SF<C>],
         _rng: impl RngCore,
     ) -> Result<(C, Null), Error> {
         Ok((ck.commit(v)?, Null))
     }
 
-    fn open(ck: &PedersenKey<C, false>, v: &[CF1<C>], _r: &Null, cm: &C) -> Result<(), Error> {
+    fn open(ck: &PedersenKey<C, false>, v: &[SF<C>], _r: &Null, cm: &C) -> Result<(), Error> {
         (&ck.commit(v)? == cm)
             .then_some(())
             .ok_or(Error::CommitmentVerificationFail)
@@ -194,14 +209,14 @@ impl<C: SonobeCurve> CommitmentOps for Pedersen<C, true> {
 
     fn commit(
         ck: &PedersenKey<C, true>,
-        v: &[CF1<C>],
+        v: &[SF<C>],
         mut rng: impl RngCore,
-    ) -> Result<(C, CF1<C>), Error> {
-        let r = C::ScalarField::rand(&mut rng);
+    ) -> Result<(C, SF<C>), Error> {
+        let r = UniformRand::rand(&mut rng);
         Ok((ck.commit(v, &r)?, r))
     }
 
-    fn open(ck: &PedersenKey<C, true>, v: &[CF1<C>], r: &CF1<C>, cm: &C) -> Result<(), Error> {
+    fn open(ck: &PedersenKey<C, true>, v: &[SF<C>], r: &SF<C>, cm: &C) -> Result<(), Error> {
         (&(ck.commit(v, r)?) == cm)
             .then_some(())
             .ok_or(Error::CommitmentVerificationFail)
@@ -220,8 +235,11 @@ pub struct PedersenGadget<C: SonobeCurve, const H: bool> {
 impl<C: SonobeCurve, const H: bool> PedersenGadget<C, H> {
     /// [`PedersenGadget::msm`] performs multi-scalar multiplication in-circuit
     /// with the given generators `g` and scalar bits `v`.
-    fn msm(g: &[C::Var], v: &[Vec<Boolean<CF2<C>>>]) -> Result<C::Var, SynthesisError> {
-        let mut res = C::Var::zero();
+    fn msm(
+        g: &[Var<C, Canonical>],
+        v: &[Vec<Boolean<BF<C>>>],
+    ) -> Result<Var<C, Canonical>, SynthesisError> {
+        let mut res = CurveVar::zero();
         for (g_i, v_i) in g.iter().zip(v) {
             res += g_i.scalar_mul_le(v_i.to_bits_le()?.iter())?;
         }
@@ -232,9 +250,9 @@ impl<C: SonobeCurve, const H: bool> PedersenGadget<C, H> {
 impl<C: SonobeCurve> CommitmentOpsGadget for PedersenGadget<C, false> {
     fn open(
         ck: &PedersenKeyVar<C, false>,
-        v: &[EmulatedFieldVar<CF2<C>, CF1<C>>],
+        v: &[EmulatedFieldVar<BF<C>, SF<C>>],
         _r: &Null,
-        cm: &C::Var,
+        cm: &Var<C, Canonical>,
     ) -> Result<(), SynthesisError> {
         Self::msm(
             &ck.g,
@@ -249,9 +267,9 @@ impl<C: SonobeCurve> CommitmentOpsGadget for PedersenGadget<C, false> {
 impl<C: SonobeCurve> CommitmentOpsGadget for PedersenGadget<C, true> {
     fn open(
         ck: &PedersenKeyVar<C, true>,
-        v: &[EmulatedFieldVar<CF2<C>, CF1<C>>],
-        r: &EmulatedFieldVar<CF2<C>, CF1<C>>,
-        cm: &C::Var,
+        v: &[EmulatedFieldVar<BF<C>, SF<C>>],
+        r: &EmulatedFieldVar<BF<C>, SF<C>>,
+        cm: &Var<C, Canonical>,
     ) -> Result<(), SynthesisError> {
         let gv = Self::msm(
             &ck.g,
@@ -273,60 +291,76 @@ pub struct PedersenEmulatedGadget<C: SonobeCurve, const H: bool> {
     _c: PhantomData<C>,
 }
 
-impl<C: SonobeCurve> CommitmentDefGadget for PedersenGadget<C, false> {
-    type ConstraintField = CF2<C>;
+impl<C: SonobeCurve> HasConstraintField for PedersenGadget<C, false> {
+    type ConstraintField = BF<C>;
+}
 
+impl<C: SonobeCurve> HasWidget for PedersenGadget<C, false> {
+    type Widget = Pedersen<C, false>;
+}
+
+impl<C: SonobeCurve> CommitmentDefGadget for PedersenGadget<C, false> {
     type KeyVar = PedersenKeyVar<C, false>;
 
-    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
+    type UnitVar = EmulatedFieldVar<BF<C>, SF<C>>;
 
-    type CommitmentVar = C::Var;
+    type CommitmentVar = Var<C, Canonical>;
 
     type RandomnessVar = Null;
+}
 
-    type Widget = Pedersen<C, false>;
+impl<C: SonobeCurve> HasConstraintField for PedersenGadget<C, true> {
+    type ConstraintField = BF<C>;
+}
+
+impl<C: SonobeCurve> HasWidget for PedersenGadget<C, true> {
+    type Widget = Pedersen<C, true>;
 }
 
 impl<C: SonobeCurve> CommitmentDefGadget for PedersenGadget<C, true> {
-    type ConstraintField = CF2<C>;
-
     type KeyVar = PedersenKeyVar<C, true>;
 
-    type ScalarVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
+    type UnitVar = EmulatedFieldVar<BF<C>, SF<C>>;
 
-    type CommitmentVar = C::Var;
+    type CommitmentVar = Var<C, Canonical>;
 
-    type RandomnessVar = EmulatedFieldVar<CF2<C>, CF1<C>>;
-
-    type Widget = Pedersen<C, true>;
+    type RandomnessVar = EmulatedFieldVar<BF<C>, SF<C>>;
 }
 
-impl<C: SonobeCurve> CommitmentDefGadget for PedersenEmulatedGadget<C, false> {
-    type ConstraintField = CF1<C>;
+impl<C: SonobeCurve> HasConstraintField for PedersenEmulatedGadget<C, false> {
+    type ConstraintField = SF<C>;
+}
 
-    type KeyVar = PedersenEmulatedKeyVar<C, false>;
-
-    type ScalarVar = FpVar<CF1<C>>;
-
-    type CommitmentVar = EmulatedAffineVar<CF1<C>, C>;
-
-    type RandomnessVar = Null;
-
+impl<C: SonobeCurve> HasWidget for PedersenEmulatedGadget<C, false> {
     type Widget = Pedersen<C, false>;
 }
 
-impl<C: SonobeCurve> CommitmentDefGadget for PedersenEmulatedGadget<C, true> {
-    type ConstraintField = CF1<C>;
+impl<C: SonobeCurve> CommitmentDefGadget for PedersenEmulatedGadget<C, false> {
+    type KeyVar = PedersenEmulatedKeyVar<C, false>;
 
+    type UnitVar = FpVar<SF<C>>;
+
+    type CommitmentVar = EmulatedAffineVar<SF<C>, C>;
+
+    type RandomnessVar = Null;
+}
+
+impl<C: SonobeCurve> HasConstraintField for PedersenEmulatedGadget<C, true> {
+    type ConstraintField = SF<C>;
+}
+
+impl<C: SonobeCurve> HasWidget for PedersenEmulatedGadget<C, true> {
+    type Widget = Pedersen<C, true>;
+}
+
+impl<C: SonobeCurve> CommitmentDefGadget for PedersenEmulatedGadget<C, true> {
     type KeyVar = PedersenEmulatedKeyVar<C, true>;
 
-    type ScalarVar = FpVar<CF1<C>>;
+    type UnitVar = FpVar<SF<C>>;
 
-    type CommitmentVar = EmulatedAffineVar<CF1<C>, C>;
+    type CommitmentVar = EmulatedAffineVar<SF<C>, C>;
 
-    type RandomnessVar = FpVar<CF1<C>>;
-
-    type Widget = Pedersen<C, true>;
+    type RandomnessVar = FpVar<SF<C>>;
 }
 
 #[cfg(test)]

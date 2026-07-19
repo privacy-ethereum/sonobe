@@ -17,11 +17,11 @@ pub struct RunningInstance<CM: CommitmentDef> {
     /// [`RunningInstance::cm_e`] is the error term commitment.
     pub cm_e: CM::Commitment,
     /// [`RunningInstance::u`] is the constant term.
-    pub u: CM::Scalar,
+    pub u: CM::Unit,
     /// [`RunningInstance::cm_w`] is the witness commitment.
     pub cm_w: CM::Commitment,
     /// [`RunningInstance::x`] is the vector of public inputs (to the circuit).
-    pub x: Vec<CM::Scalar>,
+    pub x: Vec<CM::Unit>,
 }
 
 impl<CM: CommitmentDef> FoldingInstance<CM> for RunningInstance<CM> {
@@ -31,11 +31,11 @@ impl<CM: CommitmentDef> FoldingInstance<CM> for RunningInstance<CM> {
         vec![&self.cm_e, &self.cm_w]
     }
 
-    fn public_inputs(&self) -> &[CM::Scalar] {
+    fn public_inputs(&self) -> &[CM::Unit] {
         &self.x
     }
 
-    fn public_inputs_mut(&mut self) -> &mut [CM::Scalar] {
+    fn public_inputs_mut(&mut self) -> &mut [CM::Unit] {
         &mut self.x
     }
 }
@@ -66,7 +66,7 @@ pub struct IncomingInstance<CM: CommitmentDef> {
     /// [`IncomingInstance::cm_w`] is the witness commitment.
     pub cm_w: CM::Commitment,
     /// [`IncomingInstance::x`] is the vector of public inputs (to the circuit).
-    pub x: Vec<CM::Scalar>,
+    pub x: Vec<CM::Unit>,
 }
 
 impl<CM: CommitmentDef> FoldingInstance<CM> for IncomingInstance<CM> {
@@ -76,11 +76,11 @@ impl<CM: CommitmentDef> FoldingInstance<CM> for IncomingInstance<CM> {
         vec![&self.cm_w]
     }
 
-    fn public_inputs(&self) -> &[CM::Scalar] {
+    fn public_inputs(&self) -> &[CM::Unit] {
         &self.x
     }
 
-    fn public_inputs_mut(&mut self) -> &mut [CM::Scalar] {
+    fn public_inputs_mut(&mut self) -> &mut [CM::Unit] {
         &mut self.x
     }
 }

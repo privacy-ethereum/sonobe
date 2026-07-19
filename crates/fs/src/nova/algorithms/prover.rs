@@ -55,7 +55,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemePro
     #[allow(non_snake_case)]
     fn prove(
         pk: &NovaKey<Self::Arith, CM>,
-        transcript: &mut impl Transcript<TF>,
+        transcript: &mut impl Transcript<Field = TF>,
         Ws: &[impl Borrow<Self::RW>; 1],
         Us: &[impl Borrow<Self::RU>; 1],
         ws: &[impl Borrow<Self::IW>; 1],
@@ -71,7 +71,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemePro
         let (cm_t, r_t) = CM::commit(&pk.ck, &t, rng)?;
 
         let rho_bits = transcript.add(&U).add(&u).add(&cm_t).challenge_bits(B);
-        let rho = CM::Scalar::from_bits_le(&rho_bits);
+        let rho = CM::Unit::from_bits_le(&rho_bits);
 
         let WW = Self::RW {
             e: cfg_iter!(W.e)
@@ -104,7 +104,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemePro
     #[allow(non_snake_case)]
     fn prove(
         pk: &NovaKey<Self::Arith, CM>,
-        transcript: &mut impl Transcript<TF>,
+        transcript: &mut impl Transcript<Field = TF>,
         [W1, W2]: &[impl Borrow<Self::RW>; 2],
         [U1, U2]: &[impl Borrow<Self::RU>; 2],
         _: &[impl Borrow<Self::IW>; 0],
@@ -121,7 +121,7 @@ impl<CM: GroupBasedCommitment, TF: SonobeField, const B: usize> FoldingSchemePro
         let (cm_t, r_t) = CM::commit(&pk.ck, &t, rng)?;
 
         let rho_bits = transcript.add(&(U1, U2)).add(&cm_t).challenge_bits(B);
-        let rho = CM::Scalar::from_bits_le(&rho_bits);
+        let rho = CM::Unit::from_bits_le(&rho_bits);
         let rho_squared = rho * rho;
 
         let WW = Self::RW {

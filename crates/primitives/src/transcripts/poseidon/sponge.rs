@@ -10,12 +10,21 @@ use ark_r1cs_std::fields::{FieldVar, fp::FpVar};
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::mem::transmute_copy;
 
-use crate::transcripts::{AbsorbableVar, Transcript, TranscriptGadget};
+use crate::{
+    circuits::linkage::{Canonical, HasConstraintField, HasValue, HasVar},
+    transcripts::{AbsorbableVar, Transcript, TranscriptTypes, TranscriptVar, TranscriptVarTypes},
+};
 
-impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
+impl<F: PrimeField> HasVar<Canonical> for PoseidonSponge<F> {
+    type Var = PoseidonSpongeVar<F>;
+}
+
+impl<F: PrimeField> TranscriptTypes for PoseidonSponge<F> {
+    type Field = F;
     type Config = PoseidonConfig<F>;
-    type Gadget = PoseidonSpongeVar<F>;
+}
 
+impl<F: PrimeField> Transcript for PoseidonSponge<F> {
     fn new(config: Self::Config) -> Self {
         Self {
             state: vec![F::zero(); config.rate + config.capacity],
@@ -51,10 +60,19 @@ impl<F: PrimeField> Transcript<F> for PoseidonSponge<F> {
     }
 }
 
-impl<F: PrimeField> TranscriptGadget<F> for PoseidonSpongeVar<F> {
-    type Config = PoseidonConfig<F>;
-    type Widget = PoseidonSponge<F>;
+impl<F: PrimeField> HasConstraintField for PoseidonSpongeVar<F> {
+    type ConstraintField = F;
+}
 
+impl<F: PrimeField> HasValue for PoseidonSpongeVar<F> {
+    type Value = PoseidonSponge<F>;
+}
+
+impl<F: PrimeField> TranscriptVarTypes for PoseidonSpongeVar<F> {
+    type Config = PoseidonConfig<F>;
+}
+
+impl<F: PrimeField> TranscriptVar for PoseidonSpongeVar<F> {
     fn new(config: PoseidonConfig<F>) -> Self
     where
         Self: Sized,
@@ -99,7 +117,7 @@ mod tests {
 
     use crate::{
         algebra::group::emulated::EmulatedAffineVar,
-        transcripts::{Transcript, TranscriptGadget, poseidon::poseidon_circom_config},
+        transcripts::{Transcript, TranscriptVar, poseidon::poseidon_circom_config},
     };
 
     // Test with value taken from https://github.com/iden3/circomlibjs/blob/43cc582b100fc3459cf78d903a6f538e5d7f38ee/test/poseidon.js#L32

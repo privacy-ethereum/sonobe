@@ -1,9 +1,6 @@
 //! This module defines helper traits used across Sonobe's crates.
 
-pub use crate::algebra::{
-    field::SonobeField,
-    group::{CF1, CF2, SonobeCurve},
-};
+pub use crate::algebra::{field::SonobeField, group::SonobeCurve};
 
 /// [`Dummy`] provides a way to construct a placeholder ("dummy") value of a
 /// given type, parameterized by some configuration `Cfg`.

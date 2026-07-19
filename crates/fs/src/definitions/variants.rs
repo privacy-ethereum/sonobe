@@ -2,8 +2,9 @@
 //! mathematical structures.
 
 use sonobe_primitives::{
-    commitments::{CommitmentDef, GroupBasedCommitment},
-    traits::CF2,
+    algebra::group::{BF, SF},
+    circuits::linkage::{CircuitRepr, Gadget, HasGadget},
+    commitments::{FieldFriendly, GroupBasedCommitment, GroupFriendly},
 };
 
 use crate::{
@@ -11,18 +12,20 @@ use crate::{
     FoldingSchemePartialVerifierGadget,
 };
 
+pub enum Primary {}
+
+pub enum Secondary {}
+
+impl CircuitRepr for Primary {}
+impl CircuitRepr for Secondary {}
+
 /// [`GroupBasedFoldingSchemePrimaryDef`] defines a folding scheme based on
 /// groups (elliptic curves), whose transcript field is the scalar field of its
 /// group-based commitment scheme.
 pub trait GroupBasedFoldingSchemePrimaryDef:
-    FoldingSchemeDef<
-        CM: GroupBasedCommitment,
-        TranscriptField = <<Self as FoldingSchemeDef>::CM as CommitmentDef>::Scalar,
-    >
+    FoldingSchemeDef<CM: GroupBasedCommitment, TranscriptField = SF<<Self as FoldingSchemeDef>::CM>>
+    + HasGadget<Primary, Gadget: FoldingSchemeDefGadget<CM = Gadget<Self::CM, FieldFriendly>>>
 {
-    /// [`GroupBasedFoldingSchemePrimaryDef::Gadget`] is the in-circuit gadget
-    /// that defines the folding scheme.
-    type Gadget: FoldingSchemeDefGadget<Widget = Self, CM = <Self::CM as GroupBasedCommitment>::Gadget2>;
 }
 
 /// [`GroupBasedFoldingSchemePrimary`] is a convenience trait that combines the
@@ -43,14 +46,9 @@ impl<FS, const M: usize, const N: usize> GroupBasedFoldingSchemePrimary<M, N> fo
 /// groups (elliptic curves), whose transcript field is the base field of its
 /// group-based commitment scheme.
 pub trait GroupBasedFoldingSchemeSecondaryDef:
-    FoldingSchemeDef<
-        CM: GroupBasedCommitment,
-        TranscriptField = CF2<<<Self as FoldingSchemeDef>::CM as CommitmentDef>::Commitment>,
-    >
+    FoldingSchemeDef<CM: GroupBasedCommitment, TranscriptField = BF<<Self as FoldingSchemeDef>::CM>>
+    + HasGadget<Secondary, Gadget: FoldingSchemeDefGadget<CM = Gadget<Self::CM, GroupFriendly>>>
 {
-    /// [`GroupBasedFoldingSchemeSecondaryDef::Gadget`] is the in-circuit gadget
-    /// that defines the folding scheme.
-    type Gadget: FoldingSchemeDefGadget<Widget = Self, CM = <Self::CM as GroupBasedCommitment>::Gadget1>;
 }
 
 /// [`GroupBasedFoldingSchemeSecondary`] is a convenience trait that combines
